@@ -11,3 +11,9 @@ Each game lives in its own directory under `games/` and builds independently. Ke
 ## Contribute
 
 Fix a bug, improve the network code, or help add support for another LEGO game. Open an issue to discuss a change or send a pull request. For a new game, start with its own directory under `games/`.
+
+## License
+
+The mod source code is available under the [MIT License](LICENSE).
+
+This is an unofficial fan project. The LEGO Group and Lucasfilm do not sponsor, authorize, or endorse it. LEGO and Star Wars are trademarks of their respective owners. You need a separate copy of the game. The MIT License covers the mod code and grants no rights to the game or its assets.
