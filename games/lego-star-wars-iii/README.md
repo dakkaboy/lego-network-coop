@@ -28,7 +28,8 @@ Close the game and copy both DLLs next to `LEGOCloneWars.exe`. Back up any exist
 - `src/camera.c` handles views, HUD routing and the in-game menu.
 - `src/network_window.cpp` owns Win32 window behavior during a session.
 - `src/input_buffer.cpp` buffers input edges across simulation waits.
-- `src/lan.c` and `src/sync_wire.c` handle transport and packet layout.
+- `src/lan.c` and `src/sync_wire.cpp` handle transport and packet layout.
+- `src/epoch_state.cpp` tracks level transitions and orders simulation steps.
 - `src/game_sync.c` and `src/coherent_core_body.inc` coordinate simulation steps and game state.
 
 Hooks and memory layouts target the Windows executable for this game.

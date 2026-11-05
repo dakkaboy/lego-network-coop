@@ -2,12 +2,14 @@
 #include <stddef.h>
 #include <string.h>
 #include "sync_wire.h"
+extern "C" {
 #include "geometry_sync.h"
 #include "reaction_sync.h"
 #include "model_input_sync.h"
+}
 
 uint32_t sync_checksum(const void *data,uint32_t size) {
-    const uint8_t *bytes=data;
+    const uint8_t *bytes=static_cast<const uint8_t *>(data);
     uint32_t result=2166136261u;
     for (uint32_t i=0;i<size;++i) result=(result^bytes[i])*16777619u;
     return result;
@@ -118,7 +120,7 @@ static uint32_t frame_checksum(const uint8_t *buffer,uint32_t bytes) {
 uint32_t sync_frame_encode(const SyncFrame *frame,void *buffer,uint32_t capacity) {
     uint32_t bytes=sync_frame_size(frame),header=(uint32_t)offsetof(SyncFrame,actors);
     if (!bytes || bytes>capacity || !sync_frame_valid(frame,bytes)) return 0;
-    uint8_t *wire=buffer;
+    uint8_t *wire=static_cast<uint8_t *>(buffer);
     memcpy(wire,frame,header);
     memcpy(wire+header,frame->actors,frame->actor_count*sizeof(SyncActor));
     memcpy(wire+header+frame->actor_count*sizeof(SyncActor),frame->variables,frame->variable_count*sizeof(SyncVariable));
@@ -139,7 +141,7 @@ uint32_t sync_frame_encode(const SyncFrame *frame,void *buffer,uint32_t capacity
 int sync_frame_decode(SyncFrame *frame,const void *buffer,uint32_t bytes) {
     uint32_t header=(uint32_t)offsetof(SyncFrame,actors);
     if (bytes<header) return 0;
-    const uint8_t *wire=buffer;
+    const uint8_t *wire=static_cast<const uint8_t *>(buffer);
     memcpy(frame,wire,header);
     if (sync_frame_size(frame)!=bytes || frame->checksum!=frame_checksum(wire,bytes)) return 0;
     memcpy(frame->actors,wire+header,frame->actor_count*sizeof(SyncActor));
