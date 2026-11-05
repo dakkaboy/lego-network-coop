@@ -1,7 +1,7 @@
 #include "input_buffer.h"
 
 void input_buffer_reset(InputBuffer *buffer) {
-    *buffer=(InputBuffer){.latest={0,0,128,128,128,128}};
+    *buffer=InputBuffer{{0,0,128,128,128,128},0};
 }
 void input_buffer_sample(InputBuffer *buffer,const SyncInput *input) {
     buffer->latest=*input;

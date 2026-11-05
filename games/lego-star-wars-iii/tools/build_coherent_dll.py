@@ -34,12 +34,17 @@ excluded=set(seh+['proxy','pose_observer','intent_frame_observer','intent_scope_
 if not args.with_hit_entry_observer:excluded.add('hit_entry_observer')
 sources=[p for p in src.glob('*.c') if p.stem not in excluded]
 sources+=list(src.glob('*.S'))
+cpp_objects=[]
+for source in sorted(src.glob('*.cpp')):
+    obj=out/(source.stem+'.cpp.obj')
+    run([zig,'c++','-target','x86-windows-gnu','-std=c++23','-O2','-fno-exceptions','-fno-rtti','-I'+str(src),'-c',source,'-o',obj])
+    cpp_objects.append(obj)
 dll=out/'clonewars-camera.dll'
 defines=[]
 if args.with_hit_entry_observer:defines.append('-DCLONEWARS_HIT_ENTRY_OBSERVER')
 if args.bootstrap:defines.append('-DCOHERENT_CORE_REVIEWED_BOOTSTRAP')
 if args.remote_trace_off:defines.append('-DCLONEWARS_REMOTE_INPUT_TRACE_DISABLED')
-run([zig,'cc','-target','x86-windows-gnu','-shared','-O2','-fms-extensions','-I'+str(src),*defines,*sources,*[out/(n+'.obj') for n in seh],'-o',dll,'-luser32','-lws2_32'])
+run([zig,'cc','-target','x86-windows-gnu','-shared','-O2','-fms-extensions','-I'+str(src),*defines,*sources,*cpp_objects,*[out/(n+'.obj') for n in seh],'-o',dll,'-luser32','-lws2_32'])
 proxy=out/'d3d9.dll'
 run([zig,'cc','-target','x86-windows-gnu','-shared','-O2',src/'proxy.c',src/'proxy.def','-o',proxy])
 assert before=={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in src.iterdir() if p.is_file()},'Sources changed during build'

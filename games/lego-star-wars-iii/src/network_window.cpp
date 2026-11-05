@@ -1,6 +1,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+extern "C" {
 #include "lan.h"
+}
 #include "network_window.h"
 
 #ifndef NETWORK_PROCESS_POLICY
@@ -14,7 +16,9 @@ static POINT drag_offset;
 static DWORD last_drag_move;
 static LONG saved_process_policy;
 static int process_policy_owned;
+extern "C" {
 __declspec(dllexport) volatile LONG clonewars_network_window_debug[8];
+}
 
 static int on_window_thread(void) {
     return network_window && network_window_thread==GetCurrentThreadId();

@@ -22,6 +22,8 @@ static int main_boundary_active;
 static uint32_t core_registered;
 __declspec(dllexport) volatile uint32_t clonewars_coherent_debug[20];
 static uint32_t core_run_count,core_publish_count;
+/* Host ACK-window skips, client empty-queue skips, last host ACK gap. */
+__declspec(dllexport) volatile uint32_t clonewars_coherent_waits[3];
 #include "coherent_core_bindings.inc"
 int game_sync_coherent_register_cohort(CoreCohort id,const CoreCohortBinding*b){
  if((unsigned)id>=CORE_COHORT_COUNT||!b||b->version!=1||!b->ready||!b->bind_metadata||!b->valid||!b->abort_metadata||core.owner||!core_tick_thread||GetCurrentThreadId()!=core_tick_thread)return 0;
@@ -193,11 +195,14 @@ static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,v
  RootControlLease admission_control;if(!span_engine_control_get(&core_adapter,&admission_control)){core.control_stale=1;return CORE_SPAN_SKIP;}
  sample_wait_input();if(!span_engine_control_valid(&core_adapter,&admission_control))return CORE_SPAN_SKIP;uint32_t callback_release_token=release_token();core.release=callback_release_token;core.host=lan_is_host();core.session=lan_session_serial();
  if(core.host){
-  interval.sequence=sequence;if(sync_epoch_unacknowledged(&interval,lan_epoch(),lan_peer_ack())>=8)return CORE_SPAN_SKIP;
+  interval.sequence=sequence;
+  uint32_t unacknowledged=sync_epoch_unacknowledged(&interval,lan_epoch(),lan_peer_ack());
+  clonewars_coherent_waits[2]=unacknowledged;
+  if(unacknowledged>=8){++clonewars_coherent_waits[0];return CORE_SPAN_SKIP;}
   memset(&working,0,sizeof working);working.epoch=interval.epoch;working.sequence=++sequence;working.level=level;interval.sequence=sequence;interval_started=1;
   working.clock=*(uint32_t*)0xfb4b6c;working.rng_game=*(uint32_t*)0xe637b4;working.rng_engine=*(uint32_t*)0xea178c;working.delta=*(float*)0xfb4b74;working.engine_delta=*(float*)((char*)packet+8);working.engine_mode=*(uint32_t*)(engine+0xe30);
  }else{
-  if(!lan_receive_frame(&working))return CORE_SPAN_SKIP;
+  if(!lan_receive_frame(&working)){++clonewars_coherent_waits[1];return CORE_SPAN_SKIP;}
   if(sync_epoch_apply(&interval,level,working.epoch,working.level,working.sequence)<=0){fault=4;return CORE_SPAN_SKIP;}expected=working.sequence;interval_started=1;
   if(*(uint32_t*)(engine+0xe30)!=working.engine_mode){fault=12;return CORE_SPAN_SKIP;}core.expected_calls=working.native_span_calls;core.expected_plan=working.native_span_plan;
  }
