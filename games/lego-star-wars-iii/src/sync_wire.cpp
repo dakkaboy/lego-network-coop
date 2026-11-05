@@ -117,6 +117,23 @@ static uint32_t frame_checksum(const uint8_t *buffer,uint32_t bytes) {
     }
     return checksum;
 }
+void sync_frame_copy_valid(SyncFrame *destination, const SyncFrame *source) {
+    memcpy(destination, source, offsetof(SyncFrame, actors));
+    const auto copy = [](auto &to, const auto &from, uint32_t count) {
+        memcpy(to, from, count * sizeof(from[0]));
+    };
+    copy(destination->actors, source->actors, source->actor_count);
+    copy(destination->variables, source->variables, source->variable_count);
+    copy(destination->shots, source->shots, source->shot_count);
+    copy(destination->projectiles, source->projectiles, source->projectile_count);
+    copy(destination->tags, source->tags, source->tag_count);
+    copy(destination->actor_inputs, source->actor_inputs, source->actor_input_count);
+    copy(destination->cadence, source->cadence, source->cadence_count);
+    copy(destination->geometry, source->geometry, source->geometry_count);
+    copy(destination->reactions, source->reactions, source->reaction_count);
+    copy(destination->model_inputs, source->model_inputs, source->model_input_count);
+}
+
 uint32_t sync_frame_encode(const SyncFrame *frame,void *buffer,uint32_t capacity) {
     uint32_t bytes=sync_frame_size(frame),header=(uint32_t)offsetof(SyncFrame,actors);
     if (!bytes || bytes>capacity || !sync_frame_valid(frame,bytes)) return 0;

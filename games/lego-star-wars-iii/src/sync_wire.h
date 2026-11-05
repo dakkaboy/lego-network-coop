@@ -195,6 +195,8 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes);
 uint32_t sync_frame_size(const SyncFrame *frame);
 uint32_t sync_checksum(const void *data,uint32_t size);
 int sync_profile_valid(const SyncProfile *profile);
+/* Source must be validated. Entries beyond each count are unspecified. */
+void sync_frame_copy_valid(SyncFrame *destination, const SyncFrame *source);
 uint32_t sync_frame_encode(const SyncFrame *frame,void *buffer,uint32_t capacity);
 int sync_frame_decode(SyncFrame *frame,const void *buffer,uint32_t size);
 

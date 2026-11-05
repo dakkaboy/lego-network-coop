@@ -113,14 +113,14 @@ int lan_send_frame(const SyncFrame *frame) {
     if (!sync_frame_valid(frame,sync_frame_size(frame))) return 0;
     lock_queue();
     int ok=out_count < SYNC_QUEUE_SIZE;
-    if (ok) { outbound[(out_head+out_count)%SYNC_QUEUE_SIZE]=*frame; ++out_count; }
+    if (ok) { sync_frame_copy_valid(&outbound[(out_head+out_count)%SYNC_QUEUE_SIZE],frame); ++out_count; }
     LeaveCriticalSection(&queue_lock); return ok;
 }
 int lan_receive_frame(SyncFrame *frame) {
     lock_queue();
     while (in_count && inbound[in_head].epoch<local_state.epoch) { in_head=(in_head+1)%SYNC_QUEUE_SIZE; --in_count; }
     int ok=in_count && inbound[in_head].epoch==local_state.epoch;
-    if (ok) { *frame=inbound[in_head]; in_head=(in_head+1)%SYNC_QUEUE_SIZE; --in_count; }
+    if (ok) { sync_frame_copy_valid(frame,&inbound[in_head]); in_head=(in_head+1)%SYNC_QUEUE_SIZE; --in_count; }
     LeaveCriticalSection(&queue_lock); return ok;
 }
 
@@ -188,7 +188,7 @@ static int session_peer(LONG ticket,const struct PeerState *value){
 }
 static int session_inbound(LONG ticket,const SyncFrame *frame){
     lock_queue();int ok=active(ticket)?(in_count<SYNC_QUEUE_SIZE?1:-1):0;
-    if(ok==1){inbound[(in_head+in_count)%SYNC_QUEUE_SIZE]=*frame;++in_count;}
+    if(ok==1){sync_frame_copy_valid(&inbound[(in_head+in_count)%SYNC_QUEUE_SIZE],frame);++in_count;}
     LeaveCriticalSection(&queue_lock);return ok;
 }
 
@@ -199,7 +199,7 @@ static int session_take_profile(LONG ticket,SyncProfile *value){
 }
 static int session_take_frame(LONG ticket,SyncFrame *value){
     lock_queue();int ok=active(ticket)&&out_count;
-    if(ok){*value=outbound[out_head];out_head=(out_head+1)%SYNC_QUEUE_SIZE;--out_count;}
+    if(ok){sync_frame_copy_valid(value,&outbound[out_head]);out_head=(out_head+1)%SYNC_QUEUE_SIZE;--out_count;}
     LeaveCriticalSection(&queue_lock);return ok;
 }
 
