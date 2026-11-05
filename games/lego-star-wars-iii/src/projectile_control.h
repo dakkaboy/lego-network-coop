@@ -1,9 +1,0 @@
-#pragma once
-#include "span_engine.h"
-typedef enum ProjectileSessionClass {PROJECTILE_SESSION_UNAVAILABLE,PROJECTILE_SESSION_OFFLINE,PROJECTILE_SESSION_BOOTSTRAP,PROJECTILE_SESSION_TRANSITION,PROJECTILE_SESSION_ESTABLISHED,PROJECTILE_SESSION_FAULT} ProjectileSessionClass;
-typedef struct ProjectileSessionContext {uint32_t epoch;int32_t level;uint32_t host;ProjectileSessionClass classification;uint32_t session;} ProjectileSessionContext;
-typedef struct ProjectileRejectContext {uint32_t epoch;int32_t level;uint32_t release,sequence,capability;} ProjectileRejectContext;
-typedef int (*ProjectileSessionProvider)(ProjectileSessionContext*,void*);
-typedef void (*ProjectileRejectAtomic)(unsigned,const ProjectileRejectContext*,void*);
-enum ProjectileControlReason {PROJECTILE_CONTROL_UNAVAILABLE=1,PROJECTILE_CONTROL_EXCEPTION,PROJECTILE_CONTROL_ABANDONED,PROJECTILE_PENDING_PROVENANCE,PROJECTILE_PENDING_CAPACITY,PROJECTILE_CONTROL_EXHAUSTED};
-int projectiles_configure_coherent(SpanEngineAdapter*,ProjectileSessionProvider,ProjectileRejectAtomic,void*);

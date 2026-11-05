@@ -24,14 +24,10 @@ Close the game and copy both DLLs next to `LEGOCloneWars.exe`. Back up any exist
 
 ## Source layout
 
-- `src/proxy.c` loads the mod through Direct3D 9.
-- `src/camera.c` handles views, HUD routing and the in-game menu.
-- `src/network_window.cpp` owns Win32 window behavior during a session.
-- `src/input_buffer.cpp` buffers input edges across simulation waits.
-- `src/lan.c` and `src/sync_wire.cpp` handle transport and packet layout.
-- `src/epoch_state.cpp` tracks level transitions and orders simulation steps.
-- `src/game_sync.c` and `src/coherent_core_body.inc` coordinate simulation steps and game state.
+- `src/net/` handles TCP, queues and the wire format.
+- `src/sync/` orders simulation steps and applies input and state.
+- `src/engine/` contains the proxy, game addresses, hook bridges and exception handlers.
+- `src/render/` handles cameras, the stock HUD, frame capture and window behavior.
+- `src/debug/` contains observers and runtime diagnostics.
 
-Hooks and memory layouts target the Windows executable for this game.
-
-C++ modules use C++23 and expose C linkage to existing C callers. Keep executable addresses and native hooks inside this game directory.
+Some synchronization and rendering modules still contain native hooks. Their addresses and memory layouts target the Windows executable for this game. C++ modules use C++23 and expose C linkage to existing C callers.
