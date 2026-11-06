@@ -207,23 +207,30 @@ int entities_bind(const SyncFrame *frame) {
         keys[slot]=matching_key(slot,count);
         if ((*(uint32_t *)(pool+slot*0x1440+0x50)&3)!=3) keys[slot].generation=0;
     }
+    const int initial_party=frame->sequence==1;
+    const int native_party_count=initial_party ? 8 : 2;
     int missing=0;
     for (int pass=0;pass<2;++pass) {
-    if (pass) for (int player=0;player<2;++player) {
-        int slot=raw_slot(ENTITY_PLAYER(player));
+    if (pass) for (int party=0;party<native_party_count;++party) {
+        int slot=raw_slot(ENTITY_PLAYER(party));
         if (slot>=0 && slot<count) claimed[slot]=1;
     }
     for (unsigned i=0;i<frame->actor_count;++i) {
-        if ((frame->actors[i].player<0)!=(pass==1)) continue;
-        const SyncActor *state=frame->actors+i; Binding *b=bindings+state->slot;
+        const SyncActor *state=frame->actors+i;
+        const int native_party=initial_party && state->party_slot>=2 ? state->party_slot : state->player;
+        if ((native_party<0)!=(pass==1)) continue;
+        Binding *b=bindings+state->slot;
         if (b->remote_generation && b->local_slot>=0 && keys[b->local_slot].character==state->character) continue;
         if (b->local_slot>=0 && b->local_slot<count) claimed[b->local_slot]=0;
         memset(b,0,sizeof(*b)); b->local_slot=-1;
         int slot=-1;
         const Binding *history=known+state->slot;
-        if (state->player>=0) {
-            slot=raw_slot(ENTITY_PLAYER(state->player));
+        if (native_party>=0 && native_party<native_party_count) {
+            slot=raw_slot(ENTITY_PLAYER(native_party));
             if (slot<0 || slot>=count || !keys[slot].generation || keys[slot].character!=state->character || claimed[slot]) slot=-1;
+            // Uncontrolled party members can start at different positions before formation settles.
+            if (slot>=0 && native_party>=2 &&
+                (keys[slot].spawn_tag!=state->spawn_tag || *(int8_t *)(pool+slot*0x1440+0x55)!=native_party)) slot=-1;
         } else if (history->remote_generation==state->generation) {
             slot=history->local_slot;
             if (slot<0 || slot>=count || keys[slot].generation!=history->local_generation ||
