@@ -71,10 +71,21 @@ void lan_publish_transition(uint32_t epoch,int level) {
     local_state.level=level;InterlockedExchange(&local_level,level);
     LeaveCriticalSection(&queue_lock);
 }
-static int publication_snapshot(LONG ticket,struct PeerState *own) {
-    lock_queue();int ok=active(ticket);
-    if(ok){*own=local_state;own->level=local_level;local_state.input.pressed=0;}
-    LeaveCriticalSection(&queue_lock);return ok;
+static int publication_snapshot(LONG ticket, struct PeerState *own, int heartbeat,
+                                uint32_t sent_epoch, uint32_t sent_ack) {
+    lock_queue();
+    int result = -1;
+    if (active(ticket)) {
+        result = heartbeat || (local_state.ack &&
+                               (local_state.epoch != sent_epoch || local_state.ack != sent_ack));
+        if (result) {
+            *own = local_state;
+            own->level = local_level;
+            local_state.input.pressed = 0;
+        }
+    }
+    LeaveCriticalSection(&queue_lock);
+    return result;
 }
 uint32_t lan_epoch(void) {
     lock_queue(); uint32_t value=local_state.epoch; LeaveCriticalSection(&queue_lock); return value;
@@ -247,14 +258,20 @@ static int exchange_packets(SOCKET socket, LONG ticket,int is_host) {
         WSASetLastError(WSAENOBUFS); return 0;
     }
     DWORD sent=GetTickCount()-20, received=GetTickCount();
+    uint32_t sent_epoch=0, sent_ack=0;
     int success=1;
     while (active(ticket)) {
         if (GetTickCount()-received > 10000) { WSASetLastError(WSAETIMEDOUT); success=0; break; }
-        if (GetTickCount()-sent >= 20) {
-            struct PeerState own;
-            if(!publication_snapshot(ticket,&own))break;
+        struct PeerState own;
+        /* The host can be waiting for an ACK even between state heartbeats. */
+        int publish = publication_snapshot(ticket, &own, GetTickCount()-sent >= 20,
+                                           sent_epoch, sent_ack);
+        if (publish < 0) break;
+        if (publish) {
             if (!send_packet(socket,1,&own,sizeof(own),ticket)) { success=0; break; }
             sent=GetTickCount();
+            sent_epoch=own.epoch;
+            sent_ack=own.ack;
         }
         int profile_pending=session_take_profile(ticket,profile);
         if (profile_pending && !send_packet(socket,3,profile,sizeof(*profile),ticket)) { success=0; break; }

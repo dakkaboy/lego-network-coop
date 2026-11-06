@@ -29,9 +29,11 @@ static void update_clock(char *root,int level) {
     own.active=(*flags&1)!=0;
     if (!own.active) return;
     int skip=(*flags&4)!=0;
-    if (lan_status()==LAN_CONNECTED && peer.epoch==own.epoch && peer.level==level) {
+    if (epoch && lan_status()==LAN_CONNECTED && peer.epoch==epoch && peer.level==level) {
         skip|=peer.skip!=0;
-        if (!lan_is_host() && peer.active && isfinite(peer.elapsed))
+        /* A delayed host sample must not rewind the native loading clock. */
+        if (!lan_is_host() && peer.active && isfinite(peer.elapsed) &&
+            peer.elapsed > *(float *)(root+0x3128))
             *(float *)(root+0x3128)=peer.elapsed;
     }
     if (skip) *flags|=4;

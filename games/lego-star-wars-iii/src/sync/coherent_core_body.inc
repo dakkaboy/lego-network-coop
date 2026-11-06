@@ -198,7 +198,12 @@ static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,v
   interval.sequence=sequence;
   uint32_t unacknowledged=sync_epoch_unacknowledged(&interval,lan_epoch(),lan_peer_ack());
   clonewars_coherent_waits[2]=unacknowledged;
-  if(unacknowledged>=8){++clonewars_coherent_waits[0];return CORE_SPAN_SKIP;}
+  // Bound the backlog of simulation steps the client still has to replay.
+  const uint32_t max_unacknowledged_steps=3;
+  if (unacknowledged>=max_unacknowledged_steps) {
+   ++clonewars_coherent_waits[0];
+   return CORE_SPAN_SKIP;
+  }
   memset(&working,0,sizeof working);working.epoch=interval.epoch;working.sequence=++sequence;working.level=level;interval.sequence=sequence;interval_started=1;
   working.clock=*(uint32_t*)0xfb4b6c;working.rng_game=*(uint32_t*)0xe637b4;working.rng_engine=*(uint32_t*)0xea178c;working.delta=*(float*)0xfb4b74;working.engine_delta=*(float*)((char*)packet+8);working.engine_mode=*(uint32_t*)(engine+0xe30);
  }else{
