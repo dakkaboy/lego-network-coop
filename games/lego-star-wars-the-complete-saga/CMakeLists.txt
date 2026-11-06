@@ -17,6 +17,14 @@ add_library(saga_session STATIC src/net/session.cpp)
 target_include_directories(saga_session PUBLIC src)
 target_compile_options(saga_session PRIVATE /W4 /WX)
 
+add_library(saga_catalogue_core STATIC src/game/catalogue.cpp)
+target_include_directories(saga_catalogue_core PUBLIC src)
+target_compile_options(saga_catalogue_core PRIVATE /W4 /WX)
+
+add_executable(saga_catalogue tools/catalogue.cpp tools/live_scene.cpp)
+target_link_libraries(saga_catalogue PRIVATE saga_catalogue_core)
+target_compile_options(saga_catalogue PRIVATE /W4 /WX)
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(d3d9_smoke tests/d3d9_smoke.cpp)
@@ -28,4 +36,12 @@ if(BUILD_TESTING)
     target_compile_options(saga_session_loopback PRIVATE /W4 /WX)
     add_test(NAME saga_session_loopback COMMAND saga_session_loopback)
     set_tests_properties(saga_session_loopback PROPERTIES TIMEOUT 15)
+
+    set(SAGA_TEST_GAME_ARCHIVE "" CACHE FILEPATH "Installed Saga GAME.DAT for the catalogue test")
+    if(SAGA_TEST_GAME_ARCHIVE)
+        add_test(NAME saga_game_catalogue COMMAND saga_catalogue "${SAGA_TEST_GAME_ARCHIVE}"
+            "levels/titles/titles" "levels/map/map/map"
+            "levels/episode_i/negotiations/negotiations_a/negotiations_a"
+            "levels/bonus/new_town/new_town")
+    endif()
 endif()

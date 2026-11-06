@@ -85,6 +85,19 @@ The bounty catalogue defines 20 routes that reuse existing rooms. Test them from
 
 ## Reproducing the archive check
 
+The `saga_catalogue` tool reads the four catalogue files directly from the installed `GAME.DAT`. It resolves chapter and room references and retains the flags declared in the archive, including bonus and Free Play restrictions. It also lists unresolved room references. The Steam archive contains a dangling room ID in the JimTest area.
+
+```powershell
+$catalogue = './games/lego-star-wars-the-complete-saga/build/Release/saga_catalogue.exe'
+& $catalogue 'C:/path/to/Saga/GAME.DAT'
+& $catalogue 'C:/path/to/Saga/GAME.DAT' --list
+& $catalogue 'C:/path/to/Saga/GAME.DAT' --pid 1234
+```
+
+Replace `1234` with the game process ID. The live check verifies the Steam scene-reader signature, reads the scene record and resolves its asset path against the archive. During loading it can report that the scene is unavailable. The path identifies the room. A restart of the same room and the active mode still need lifecycle observations.
+
+Configure with `-DSAGA_TEST_GAME_ARCHIVE=<path>` to include catalogue lookups in CTest.
+
 Read `LEVELS\EPISODES.TXT`, `LEVELS\AREAS.TXT`, `LEVELS\LEVELS.TXT` and `LEVELS\MISSIONS.TXT` from `GAME.DAT`. Join episode area IDs to area records, then area scene IDs to level records, case-insensitively. Use the level's directory and ID to check the matching `_PC.GSC` path in the archive indices. Two Episode II non-gameplay records have an unterminated quoted ID. Both IDs are visible before the line break.
 
 The audit used [tt-oldera-tools at a8a21be](https://github.com/stryderjoe/tt-oldera-tools/tree/a8a21beb2f8944da23242e2f1a63fec42a55a7af) to read the installed archives. It resolved 12,174 file paths in `GAME.DAT` and 285 across the six episode archives, with no unnamed entries. All four catalogue files are stored without compression. The episode archives mark their file payloads as LZ2K-compressed. Keep extracted files in a local test directory.
