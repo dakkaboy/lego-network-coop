@@ -531,7 +531,7 @@ static int collect_actors(SyncFrame *frame) {
         memcpy(a->animation.clips,p+0xefa,10);
         a->animation.reserved=0;
     }
-    return sync_frame_valid(frame,sync_frame_size(frame));
+    return entities_collect_dormant_party(frame) && sync_frame_valid(frame,sync_frame_size(frame));
 }
 static int correct_actors_impl(const SyncFrame *frame,const CoherentFrameToken*original) {
     if(!core_live()||!coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return 0;

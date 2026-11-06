@@ -61,6 +61,10 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
         for (float coordinate : gate.origin) if (!isfinite(coordinate)) return 0;
     }
     uint32_t party_seen=0;
+    for (unsigned party=0;party<8;++party) {
+        if (frame->dormant_party[party]>4096) return 0;
+        if (frame->dormant_party[party]) party_seen|=1u<<party;
+    }
     for (uint32_t i=0; i<frame->actor_count; ++i) {
         const SyncActor *actor = &frame->actors[i];
         if (actor->slot >= 4096 || actor->character < -1 || actor->character >= 4096 || !actor->generation || actor->player < -1 || actor->player > 1) return 0;

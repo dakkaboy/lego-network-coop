@@ -10,8 +10,8 @@
 #define SYNC_MAX_RTS_TIMER_CHOICES 32
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
-#define SYNC_LAYOUT_VERSION 32
-#define SYNC_WIRE_VERSION 33
+#define SYNC_LAYOUT_VERSION 33
+#define SYNC_WIRE_VERSION 34
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -205,6 +205,7 @@ typedef struct SyncFrame {
     uint32_t spawn_timer_reserved;
     uint32_t fire_task_gate_count,fire_task_gate_reserved;
     uint32_t rts_team_timer_count,rts_timer_choice_count;
+    uint16_t dormant_party[8]; /* Zero for no dormant member, otherwise character + 1. */
     SyncActor actors[SYNC_MAX_ACTORS];
     SyncVariable variables[SYNC_MAX_VARIABLES];
     SyncShot shots[SYNC_MAX_SHOTS];

@@ -158,6 +158,25 @@ void *entities_resolve_identity(const SyncFrame *frame,uint32_t network_slot,uin
     }
     return entities_resolve_reference(state);
 }
+static int dormant_party_character(char *actor,int party,int count) {
+    if (!actor) return 0;
+    const int slot=raw_slot(actor);
+    if (slot<0 || slot>=count || !valid(actor,0x1440) || *(int8_t *)(actor+0x55)!=party) return -1;
+    const uint32_t flags=*(uint32_t *)(actor+0x50)&3;
+    if (flags==3) return 0;
+    const int character=*(int16_t *)(actor+0xdc0);
+    return flags==1 && character>=0 && character<4096 ? character+1 : -1;
+}
+int entities_collect_dormant_party(SyncFrame *frame) {
+    current_pool();
+    const int count=game_actor_count();
+    for (int party=0;party<8;++party) {
+        const int character=dormant_party_character(ENTITY_PLAYER(party),party,count);
+        if (character<0) return 0;
+        frame->dormant_party[party]=(uint16_t)character;
+    }
+    return 1;
+}
 int entities_party_matches(const SyncFrame *frame) {
     void *desired[8]={0};
     for (uint32_t i=0;i<frame->actor_count;++i) {
@@ -167,9 +186,12 @@ int entities_party_matches(const SyncFrame *frame) {
         desired[state->party_slot]=entities_resolve_identity(frame,state->slot,state->generation);
         if (!desired[state->party_slot]) return 0;
     }
+    current_pool();
+    const int count=game_actor_count();
     for (int party=0;party<8;++party) {
         char *actor=ENTITY_PLAYER(party);
-        if (actor!=desired[party] || (actor && *(int8_t *)(actor+0x55)!=party)) return 0;
+        if (dormant_party_character(actor,party,count)!=frame->dormant_party[party]) return 0;
+        if (!frame->dormant_party[party] && actor!=desired[party]) return 0;
     }
     return 1;
 }

@@ -62,6 +62,31 @@ int main(void) {
     ++frame->actors[2].spawn_tag;
     assert(!entities_bind(frame) && !entities_actor(2,102));
 
+    entities_reset_bindings();
+    prepare_party(frame);
+    const uint32_t allocated=1;
+    char *reserve=entity_test_players[3];
+    memcpy(reserve+0x50,&allocated,sizeof(allocated));
+    --frame->actor_count;
+    assert(entities_collect_dormant_party(frame));
+    assert(frame->dormant_party[3]==139);
+    assert(entities_bind(frame) && entities_party_matches(frame));
+    entity_test_players[3]=NULL;
+    assert(!entities_party_matches(frame));
+    entity_test_players[3]=reserve;
+    ++frame->dormant_party[3];
+    assert(!entities_party_matches(frame));
+    --frame->dormant_party[3];
+    reserve[0x55]=2;
+    assert(!entities_party_matches(frame) && !entities_collect_dormant_party(frame));
+    reserve[0x55]=3;
+    const uint32_t active=3;
+    memcpy(reserve+0x50,&active,sizeof(active));
+    assert(!entities_party_matches(frame));
+    ++frame->actor_count;
+    assert(entities_collect_dormant_party(frame) && frame->dormant_party[3]==0);
+    assert(entities_bind(frame) && entities_party_matches(frame));
+
     free(frame);
     free(entity_test_pool);
     return 0;

@@ -16,6 +16,7 @@ int entities_observed_identity(const void *actor,uint32_t *slot,uint32_t *genera
 
 void entities_reset_bindings(void);
 void *entities_resolve_identity(const SyncFrame *frame,uint32_t slot,uint32_t generation);
+int entities_collect_dormant_party(SyncFrame *frame);
 int entities_party_matches(const SyncFrame *frame);
 
 void *entities_resolve_reference(const SyncActor *state);
