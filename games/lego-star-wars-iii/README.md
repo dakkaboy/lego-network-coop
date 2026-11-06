@@ -17,7 +17,7 @@ From an x86 Visual Studio Developer PowerShell with CMake, Ninja and LLVM on `PA
 ./build-camera.ps1
 ```
 
-The x86 build writes `d3d9.dll` and `clonewars-camera.dll` to `build/`. The proxy loads the mod, which owns the camera, game hooks and network session. Both players need the same build. The current source uses wire protocol 30.
+The x86 build writes `d3d9.dll` and `clonewars-camera.dll` to `build/`. The proxy loads the mod, which owns the camera, game hooks and network session. Both players need the same build. The current source uses wire protocol 31.
 
 ## Run
 

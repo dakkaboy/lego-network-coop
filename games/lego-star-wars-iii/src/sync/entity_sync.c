@@ -63,6 +63,22 @@ static int raw_slot(const void *actor) {
     uintptr_t offset=(uintptr_t)actor-(uintptr_t)pool;
     return actor && pool && offset%0x1440==0 && offset/0x1440<SYNC_MAX_ACTORS ? (int)(offset/0x1440) : -1;
 }
+static EntityKey matching_key(int slot,int count) {
+    EntityKey key=local[slot].key;
+    char *actor=pool+slot*0x1440;
+    if (slot>=count || !local[slot].origin_ready || *(uint32_t *)(actor+0x760)!=2) return key;
+
+    char *mount=*(char **)(actor+0x75c);
+    int mount_slot=raw_slot(mount);
+    if (mount_slot<0 || mount_slot>=count || !local[mount_slot].origin_ready ||
+        (*(uint32_t *)(mount+0x50)&3)!=3 || *(uint32_t *)(mount+0x760)!=1 ||
+        *(char **)(mount+0x75c)!=actor) return key;
+
+    // The rider can start at a placeholder position until the mount updates its pose.
+    key.spawn_tag|=UINT32_C(0x80000000);
+    memcpy(key.origin,local[mount_slot].key.origin,sizeof key.origin);
+    return key;
+}
 static char *create_hook(void) {
     uintptr_t caller=(uintptr_t)__builtin_return_address(0);
     char *actor=original_create();
@@ -100,9 +116,9 @@ void entities_update(void) {
 void entities_describe(SyncActor *state,const void *actor) {
     int slot=raw_slot(actor);
     if (slot<0) return;
-    const EntityKey *key=&local[slot].key;
-    state->generation=key->generation; state->spawn_tag=key->spawn_tag;
-    memcpy(state->spawn_position,key->origin,12);
+    EntityKey key=matching_key(slot,game_actor_count());
+    state->generation=key.generation; state->spawn_tag=key.spawn_tag;
+    memcpy(state->spawn_position,key.origin,12);
     state->player=-1; state->party_slot=-1;
     for (int party=0;party<8;++party) if (ENTITY_PLAYER(party)==actor) {
         state->party_slot=(int16_t)party;
@@ -122,7 +138,7 @@ void *entities_resolve_reference(const SyncActor *state) {
     } else {
         unsigned char unavailable[SYNC_MAX_ACTORS]={0};
         for (int i=0;i<count;++i) {
-            keys[i]=local[i].key;
+            keys[i]=matching_key(i,count);
             if ((*(uint32_t *)(pool+i*0x1440+0x50)&3)!=3) keys[i].generation=0;
             if (assigned[i].local_generation==keys[i].generation &&
                 (assigned[i].remote_slot!=network_slot || assigned[i].remote_generation!=wanted_generation)) unavailable[i]=1;
@@ -188,7 +204,7 @@ int entities_bind(const SyncFrame *frame) {
         } else claimed[b->local_slot]=1;
     }
     for (int slot=0;slot<count;++slot) {
-        keys[slot]=local[slot].key;
+        keys[slot]=matching_key(slot,count);
         if ((*(uint32_t *)(pool+slot*0x1440+0x50)&3)!=3) keys[slot].generation=0;
     }
     int missing=0;

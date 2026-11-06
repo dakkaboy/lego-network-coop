@@ -13,6 +13,7 @@ src=args.source.resolve()
 out=args.output.resolve()
 out.mkdir(parents=True,exist_ok=True)
 layout=re.search(r'#define\s+SYNC_LAYOUT_VERSION\s+(\d+)',(src/'net/sync_wire.h').read_text())
+wire=re.search(r'#define\s+SYNC_WIRE_VERSION\s+(\d+)',(src/'net/sync_wire.h').read_text()) or layout
 if not layout or int(layout[1]) not in (28,29,30) or not (src/'sync/coherent_core_body.inc').is_file() or not (src/'engine/user_mapping_install.c').is_file():
     raise SystemExit('Integrated coherent Core sources are required')
 zig=shutil.which('zig')
@@ -56,5 +57,5 @@ run([zig,'cc','-target','x86-windows-gnu','-shared','-O2','-fms-extensions','-I'
 proxy=out/'d3d9.dll'
 run([zig,'cc','-target','x86-windows-gnu','-shared','-O2',src/'engine/proxy.c',src/'engine/proxy.def','-o',proxy])
 assert before==source_hashes(),'Sources changed during build'
-(out/'build-info.json').write_text(json.dumps({'dll_sha256':hashlib.sha256(dll.read_bytes()).hexdigest(),'proxy_sha256':hashlib.sha256(proxy.read_bytes()).hexdigest(),'layout_version':int(layout[1]),'wire_version':int(layout[1]),'mode':'normal','model_input_authority':True,'optional_observers':args.with_hit_entry_observer,'hit_entry_observer':args.with_hit_entry_observer,'linked':True,'runtime_verified':False,'installed':False,'bootstrap_requested':args.bootstrap,'remote_trace_disabled':args.remote_trace_off,'sources':before},indent=2))
+(out/'build-info.json').write_text(json.dumps({'dll_sha256':hashlib.sha256(dll.read_bytes()).hexdigest(),'proxy_sha256':hashlib.sha256(proxy.read_bytes()).hexdigest(),'layout_version':int(layout[1]),'wire_version':int(wire[1]),'mode':'normal','model_input_authority':True,'optional_observers':args.with_hit_entry_observer,'hit_entry_observer':args.with_hit_entry_observer,'linked':True,'runtime_verified':False,'installed':False,'bootstrap_requested':args.bootstrap,'remote_trace_disabled':args.remote_trace_off,'sources':before},indent=2))
 print('Linked',dll,'not runtime-verified or installed')
