@@ -15,6 +15,7 @@ using namespace saga::net;
 constexpr std::uint64_t build = 0x085688e73561c61f;
 constexpr std::uint64_t token = 0x721beae54551dd63;
 constexpr std::uint64_t nonce = 0x43bf805f3eb88093;
+constexpr std::uint64_t room = 0xf673a61cf3c42b08;
 
 void require(bool success, const char* step) {
     if (!success) {
@@ -56,6 +57,7 @@ void verify_protocol() {
     const Peer other{0x7f000001, 20003};
     HostSession receiver(build, token);
     ClientSession client(host, build, nonce);
+    require(receiver.publish_scene(room), "publish the opening room");
     require(!client.make_input(1, 12, 13), "input before welcome");
 
     const auto hello = encode(client.hello());
@@ -78,6 +80,21 @@ void verify_protocol() {
     require(client.receive(other, encode(*welcome)) == JoinState::waiting, "reject foreign welcome");
     require(client.receive(host, encode(*welcome)) == JoinState::connected, "accept host welcome");
     require(client.receive(host, encode(*reject)) == JoinState::connected, "ignore late rejection");
+    require(!client.make_input(1, 12, 13), "input before scene publication");
+
+    const auto initial_scene = receiver.scene_packet();
+    require(initial_scene.has_value(), "send initial scene to the joined peer");
+    require(client.receive(other, encode(*initial_scene)) == JoinState::connected
+            && client.pending_scene() == Scene{}, "ignore a scene from another peer");
+    auto foreign_scene = *initial_scene;
+    ++foreign_scene.session;
+    client.receive(host, encode(foreign_scene));
+    require(client.pending_scene() == Scene{}, "ignore a scene from another session");
+    client.receive(host, encode(*initial_scene));
+    require(!client.make_input(1, 12, 13), "input before local scene confirmation");
+    require(!client.confirm_scene({initial_scene->scene.generation, room + 1}),
+            "refuse a mismatched local room");
+    require(client.confirm_scene(initial_scene->scene), "confirm the opening scene");
 
     const auto input = client.make_input(0x0123, -32768, 32767);
     require(input.has_value(), "produce input");
@@ -92,6 +109,31 @@ void verify_protocol() {
     require(!receiver.latest_input(), "foreign peer and stale session cannot update input");
     receiver.receive(first, wire);
     require(receiver.latest_input() == input->input, "apply input from the joined client");
+
+    require(receiver.publish_scene(0), "start a scene reload");
+    receiver.receive(first, wire);
+    require(!receiver.latest_input(), "loading clears remote input");
+    client.receive(host, encode(*receiver.scene_packet()));
+    require(!client.confirm_scene(client.pending_scene()) && !client.make_input(1, 2, 3),
+            "loading blocks confirmation and input");
+    require(receiver.publish_scene(room), "republish the same room");
+    const auto reloaded = receiver.scene_packet();
+    require(reloaded && reloaded->scene.generation > initial_scene->scene.generation,
+            "same room receives a fresh generation");
+    client.receive(host, encode(*reloaded));
+    client.receive(host, encode(*initial_scene));
+    require(!client.confirm_scene(initial_scene->scene) && !client.make_input(1, 2, 3),
+            "an older load of the same room cannot unlock input");
+    require(client.confirm_scene(reloaded->scene), "confirm the fresh scene");
+    client.receive(host, encode(*reloaded));
+    const auto fresh_input = client.make_input(0, 0, 0);
+    require(fresh_input.has_value(), "a repeated publication preserves scene confirmation");
+    auto delayed_input = *input;
+    delayed_input.input.sequence = fresh_input->input.sequence + 100;
+    receiver.receive(first, encode(delayed_input));
+    require(!receiver.latest_input(), "a newer sequence from the old scene is discarded");
+    receiver.receive(first, encode(*fresh_input));
+    require(receiver.latest_input() == fresh_input->input, "accept input for the new scene");
 }
 
 void run_client(SOCKET socket, const sockaddr_in& host) {
@@ -107,6 +149,10 @@ void run_client(SOCKET socket, const sockaddr_in& host) {
     transmit(socket, host, encode(client.hello()));
     const auto acceptance = receive(socket, sender, buffer);
     require(client.receive(peer(sender), acceptance) == JoinState::connected, "client joins by IP");
+    const auto initial_scene = receive(socket, sender, buffer);
+    client.receive(peer(sender), initial_scene);
+    const auto initial_ticket = client.pending_scene();
+    require(initial_ticket.room == room && client.confirm_scene(initial_ticket), "match opening room");
 
     const auto first = *client.make_input(1, 20, -50);
     const auto second = *client.make_input(0, 0, 0);
@@ -118,6 +164,20 @@ void run_client(SOCKET socket, const sockaddr_in& host) {
     duplicate.input.buttons = 4;
     transmit(socket, host, encode(duplicate));
     transmit(socket, host, std::span(neutral).first(neutral.size() - 1));
+
+    const auto loading = receive(socket, sender, buffer);
+    client.receive(peer(sender), loading);
+    require(client.pending_scene().room == 0 && !client.make_input(1, 20, -50),
+            "wait during the reload");
+    const auto reloaded = receive(socket, sender, buffer);
+    client.receive(peer(sender), reloaded);
+    require(!client.confirm_scene(initial_ticket) && !client.make_input(1, 20, -50),
+            "old scene confirmation does not carry into the same room");
+    require(client.confirm_scene(client.pending_scene()), "confirm the reloaded room");
+    auto stale = first;
+    stale.input.sequence = 60000;
+    transmit(socket, host, encode(stale));
+    transmit(socket, host, encode(*client.make_input(2, 4, -5)));
 }
 
 void run_host(SOCKET socket, const wchar_t* executable) {
@@ -138,15 +198,34 @@ void run_host(SOCKET socket, const wchar_t* executable) {
     CloseHandle(child.hThread);
 
     HostSession host(build, token);
+    require(host.publish_scene(room), "prepare opening scene");
+    sockaddr_in client{};
     for (int packet = 0; packet < 7; ++packet) {
         sockaddr_in sender{};
         Wire buffer{};
         const auto bytes = receive(socket, sender, buffer);
         if (const auto response = host.receive(peer(sender), bytes)) {
             transmit(socket, sender, encode(*response));
+            if (response->kind == Kind::welcome) {
+                client = sender;
+                transmit(socket, client, encode(*host.scene_packet()));
+            }
         }
     }
     require(host.latest_input() == Input{.sequence = 2}, "duplicate and stale input preserve release");
+    require(host.publish_scene(0), "publish loading state");
+    transmit(socket, client, encode(*host.scene_packet()));
+    require(host.publish_scene(room), "publish reloaded room");
+    transmit(socket, client, encode(*host.scene_packet()));
+    sockaddr_in sender{};
+    Wire buffer{};
+    const auto delayed = receive(socket, sender, buffer);
+    host.receive(peer(sender), delayed);
+    require(!host.latest_input(), "ignore old-room input on loopback");
+    const auto current = receive(socket, sender, buffer);
+    host.receive(peer(sender), current);
+    require(host.latest_input() == Input{.sequence = 3, .buttons = 2, .x = 4, .y = -5},
+            "accept input on loopback after scene confirmation");
     require(WaitForSingleObject(child.hProcess, 4000) == WAIT_OBJECT_0, "client exits");
     DWORD child_status{};
     require(GetExitCodeProcess(child.hProcess, &child_status) && child_status == 0,

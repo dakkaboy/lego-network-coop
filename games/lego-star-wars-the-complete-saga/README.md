@@ -15,7 +15,7 @@ ctest --test-dir "$saga/build" -C Release --output-on-failure
 
 The build produces a 32-bit `d3d9.dll` in `build/Release`. The smoke test checks the x86 export table, calls the three exports and enumerates Direct3D adapters. It runs independently of the game.
 
-The network test runs a host and a client in separate processes over UDP on loopback. It checks build and protocol compatibility, retries, and input sequence handling. The session code is currently exercised by the test executable. See [LAN session](NETWORK.md).
+The network test runs a host and a client in separate processes over UDP on loopback. It checks build and protocol compatibility, retries, input sequence handling and stale input across a reload. The session code is currently exercised by the test executable. See [LAN session](NETWORK.md).
 
 The proxy has no game hooks. It resolves the three observed exports from the system Direct3D library on first use, outside DLL initialization. Use a disposable copy of the game to test the proxy. An existing `d3d9.dll` in that copy may belong to another mod.
 

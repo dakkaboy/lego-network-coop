@@ -34,8 +34,9 @@ Wire encode(const Packet& packet) {
     bytes[4] = packet.version;
     bytes[5] = static_cast<std::uint8_t>(packet.kind);
     write(bytes, 6, packet.input.buttons);
-    write(bytes, 8, packet.build);
-    write(bytes, 16, packet.nonce);
+    const bool scene_context = packet.kind == Kind::input || packet.kind == Kind::scene;
+    write(bytes, 8, scene_context ? packet.scene.generation : packet.build);
+    write(bytes, 16, scene_context ? packet.scene.room : packet.nonce);
     write(bytes, 24, packet.session);
     write(bytes, 32, packet.input.sequence);
     write(bytes, 36, std::bit_cast<std::uint16_t>(packet.input.x));
@@ -49,11 +50,15 @@ std::optional<Packet> decode(std::span<const std::uint8_t> bytes) {
         return std::nullopt;
     }
 
+    const auto kind = static_cast<Kind>(bytes[5]);
+    const bool scene_context = kind == Kind::input || kind == Kind::scene;
+    const auto context = read<std::uint64_t>(bytes, 8);
+    const auto identity = read<std::uint64_t>(bytes, 16);
     Packet packet{
-        .kind = static_cast<Kind>(bytes[5]),
+        .kind = kind,
         .version = bytes[4],
-        .build = read<std::uint64_t>(bytes, 8),
-        .nonce = read<std::uint64_t>(bytes, 16),
+        .build = scene_context ? 0 : context,
+        .nonce = scene_context ? 0 : identity,
         .session = read<std::uint64_t>(bytes, 24),
         .input = {
             .sequence = read<std::uint32_t>(bytes, 32),
@@ -61,6 +66,7 @@ std::optional<Packet> decode(std::span<const std::uint8_t> bytes) {
             .x = std::bit_cast<std::int16_t>(read<std::uint16_t>(bytes, 36)),
             .y = std::bit_cast<std::int16_t>(read<std::uint16_t>(bytes, 38)),
         },
+        .scene = scene_context ? Scene{context, identity} : Scene{},
     };
 
     switch (packet.kind) {
@@ -73,8 +79,13 @@ std::optional<Packet> decode(std::span<const std::uint8_t> bytes) {
         }
         break;
     case Kind::input:
-        if (packet.build == 0 && packet.nonce == 0 && packet.session != 0
-            && packet.input.sequence != 0) {
+        if (packet.session != 0 && packet.input.sequence != 0
+            && packet.scene.generation != 0 && packet.scene.room == 0) {
+            return packet;
+        }
+        break;
+    case Kind::scene:
+        if (packet.session != 0 && packet.scene.generation != 0 && packet.input == Input{}) {
             return packet;
         }
         break;
@@ -84,6 +95,23 @@ std::optional<Packet> decode(std::span<const std::uint8_t> bytes) {
 
 HostSession::HostSession(std::uint64_t build, std::uint64_t session)
     : build_(build), session_(session) {}
+
+bool HostSession::publish_scene(std::uint64_t room) {
+    input_.reset();
+    if (scene_.generation == std::numeric_limits<std::uint64_t>::max()) {
+        scene_.room = 0;
+        return false;
+    }
+    scene_ = {scene_.generation + 1, room};
+    return true;
+}
+
+std::optional<Packet> HostSession::scene_packet() const {
+    if (!peer_ || scene_.generation == 0) {
+        return std::nullopt;
+    }
+    return Packet{.kind = Kind::scene, .session = session_, .scene = scene_};
+}
 
 std::optional<Packet> HostSession::receive(Peer sender, std::span<const std::uint8_t> bytes) {
     const auto packet = decode(bytes);
@@ -103,6 +131,7 @@ std::optional<Packet> HostSession::receive(Peer sender, std::span<const std::uin
     }
     if (packet->kind == Kind::input && packet->version == protocol_version
         && peer_ == sender && packet->session == session_
+        && scene_.room != 0 && packet->scene.generation == scene_.generation
         && (!input_ || packet->input.sequence > input_->sequence)) {
         input_ = packet->input;
     }
@@ -117,11 +146,22 @@ Packet ClientSession::hello() const {
 }
 
 JoinState ClientSession::receive(Peer sender, std::span<const std::uint8_t> bytes) {
-    if (state_ != JoinState::waiting || sender != host_) {
+    if (state_ == JoinState::incompatible || sender != host_) {
         return state_;
     }
     const auto packet = decode(bytes);
-    if (!packet || packet->nonce != nonce_) {
+    if (!packet) {
+        return state_;
+    }
+    if (state_ == JoinState::connected) {
+        if (packet->kind == Kind::scene && packet->version == protocol_version
+            && packet->session == session_ && packet->scene.generation > scene_.generation) {
+            scene_ = packet->scene;
+            scene_ready_ = false;
+        }
+        return state_;
+    }
+    if (packet->nonce != nonce_) {
         return state_;
     }
     if (packet->kind == Kind::incompatible) {
@@ -134,15 +174,24 @@ JoinState ClientSession::receive(Peer sender, std::span<const std::uint8_t> byte
     return state_;
 }
 
+bool ClientSession::confirm_scene(Scene scene) {
+    if (scene.room == 0 || scene != scene_) {
+        return false;
+    }
+    scene_ready_ = true;
+    return true;
+}
+
 std::optional<Packet> ClientSession::make_input(std::uint16_t buttons, std::int16_t x,
                                                std::int16_t y) {
-    if (state_ != JoinState::connected || sequence_ == std::numeric_limits<std::uint32_t>::max()) {
+    if (!scene_ready_ || sequence_ == std::numeric_limits<std::uint32_t>::max()) {
         return std::nullopt;
     }
     return Packet{
         .kind = Kind::input,
         .session = session_,
         .input = {.sequence = ++sequence_, .buttons = buttons, .x = x, .y = y},
+        .scene = {.generation = scene_.generation},
     };
 }
 
