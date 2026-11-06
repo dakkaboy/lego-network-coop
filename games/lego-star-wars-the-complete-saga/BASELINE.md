@@ -19,7 +19,7 @@ The Steam executable fingerprint is in the [build audit](README.md). Use a dispo
 
 The test used a copy of the Steam game with a disposable LocalAppData directory and injected keyboard states at the native DirectInput boundary. The diagnostic window stayed at `(-30000, -30000)`. Direct3D rendered to a windowed back buffer, which supplied the local frames. Opening the copy without Steam application context produced `5:0000065434`. The same copy reached the game with app ID 32440 and the running Steam client. An inactive Windows desktop gave a graphics initialization error. A window outside the screen on the active desktop rendered successfully.
 
-With two simultaneous processes in separate game directories and profiles, both created Direct3D devices and the second process opened all seven archives. Its back buffer stayed black in the startup loop while the first process rendered the cantina. Physical controller join, drop-out and chapter completion still need a baseline pass.
+With two simultaneous processes in separate game directories and profiles, both created Direct3D devices and the second process opened all seven archives. Its back buffer stayed black in a startup loop with a null scene pointer while the first process rendered the cantina. Delivering focus messages to the second game's offscreen window left it in that loop. Physical controller join, drop-out and chapter completion still need a baseline pass.
 
 ## Observed calls
 
@@ -37,6 +37,8 @@ The keyboard poll writes a 256-byte scan-code buffer and alternates between two 
 ## Frame and controller probes
 
 In a paused cantina sample, `Present` advanced by 94 frames. The paths at `0x93370`, `0x93405`, `0x93416` and `0x2579f0` each also advanced by 94 calls. Those counts follow frame cadence through pause. Use a probe inside the gated gameplay update to identify simulation steps.
+
+The scene routine at `0x927f0` is a narrower probe. It ran 352 times during 351 presents in an active Episode I lobby sample, zero times during 244 presents while paused, and 195 times during 195 presents after resuming. The caller loads the scene pointer into ESI at `0x93565` and invokes the routine at `0x9356b`. Verify its side effects and timing under different render rates before using it as a simulation boundary.
 
 The pointer at RVA `0x402c54` held the same value from the cantina through the chapter selector and crawl. It changed by the first playable Negotiations room. It also read as null in the stalled second process. This is a candidate for observing active room state. Reset and hub return still need measurements.
 
