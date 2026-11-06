@@ -11,7 +11,7 @@ Network co-op for two Windows PCs. One player hosts, the other joins by IP, and 
 
 ## Build
 
-On Windows, put Python 3, Zig and Clang on PATH. Run this from the game project directory:
+On Windows, run this from the game project directory. The [build script](tools/build_coherent_dll.py) lists the tools it expects on `PATH`.
 
 ```powershell
 ./build-camera.ps1 -WithHitEntryObserver

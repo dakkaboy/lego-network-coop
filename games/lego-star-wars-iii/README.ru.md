@@ -11,7 +11,7 @@
 
 ## Сборка
 
-Добавьте Python 3, Zig и Clang в PATH. Выполните команду из папки игры в репозитории.
+Выполните команду в Windows из папки игры в репозитории. Список инструментов, которые должны быть в `PATH`, есть в [скрипте сборки](tools/build_coherent_dll.py).
 
 ```powershell
 ./build-camera.ps1 -WithHitEntryObserver
