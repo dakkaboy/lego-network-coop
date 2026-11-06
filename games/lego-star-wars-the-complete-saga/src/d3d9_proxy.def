@@ -1,0 +1,5 @@
+LIBRARY d3d9
+EXPORTS
+    Direct3DCreate9 = saga_create9@4
+    D3DPERF_BeginEvent = saga_begin_event@8
+    D3DPERF_EndEvent = saga_end_event@0
