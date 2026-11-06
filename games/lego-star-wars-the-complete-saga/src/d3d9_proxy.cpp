@@ -3,6 +3,8 @@
 #include <d3d9.h>
 #include <bit>
 
+#include "game/event_isolation.hpp"
+
 namespace {
 
 using Create9 = decltype(&Direct3DCreate9);
@@ -38,7 +40,11 @@ BOOL CALLBACK load_system_d3d9(PINIT_ONCE, PVOID, PVOID*) {
 
 extern "C" IDirect3D9* WINAPI saga_create9(UINT sdk_version) {
     InitOnceExecuteOnce(&init_once, load_system_d3d9, nullptr, nullptr);
-    return create9 ? create9(sdk_version) : nullptr;
+    auto* d3d = create9 ? create9(sdk_version) : nullptr;
+    if (d3d) {
+        saga::game::enable_test_event_isolation();
+    }
+    return d3d;
 }
 
 extern "C" int WINAPI saga_begin_event(D3DCOLOR color, LPCWSTR name) {

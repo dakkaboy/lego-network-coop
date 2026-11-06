@@ -25,6 +25,14 @@ A follow-up reversed the order of the copies and started both during the opening
 
 A Direct3D call sample confirmed that the second process did not submit geometry during the black interval. Across a 300-frame window it made 1,500 `Clear` calls and zero `DrawPrimitive` or `DrawIndexedPrimitive` calls. `Present` succeeded. The first process submitted 10,881 indexed draws and 182 non-indexed draws in a 300-frame title sample. The second process needs tracing before the render submission boundary.
 
+## Paired cantina run
+
+Use separate game directories, disposable LocalAppData profiles and windowed back buffers. Move the windows to different offscreen coordinates. Start the second copy after the first has submitted geometry in the cantina. Wait for the second to submit geometry in the title scene before sending the keyboard selection and New Game inputs. A scene pointer or a successful present alone can precede visible geometry.
+
+The first staggered control reached the titles and published the cantina in the second copy. Its last capture still showed the transition. A repeat left the second copy at zero geometry draws and a null scene pointer after 42 seconds. Staggering the launch therefore gave mixed results.
+
+In the failing run, both processes requested the same three named events and the second received `ERROR_ALREADY_EXISTS` on all three calls. The executable calls `CreateEventA` for `SpotManager Event` at return RVA `0x297e28`, `BGWorkToDo` at `0xfef3a` and `BGFreeze` at `0xfef4c`. In the isolated diagnostic variant, only those calls received process-specific event names. In two consecutive runs both processes created fresh events, rendered the cantina, accepted F2 for player two and responded to independent local input. The captured frames show Qui-Gon moving in one copy and Obi-Wan in the other. To test the same isolation with the C++ proxy, set `COMPLETE_SAGA_ISOLATE_TEST_EVENTS=1` in the environment of the disposable copies. The proxy checks the running Steam build and the original event import before enabling isolation. Leave the variable unset for ordinary runs. The paired route also passed with only the proxy performing isolation. Its trace recorded all three event names with distinct process prefixes and successful creation in both copies. The F2 and movement checks exercise local co-op independently in each process.
+
 ## Observed calls
 
 These RVAs are call return addresses from the running Steam executable.
