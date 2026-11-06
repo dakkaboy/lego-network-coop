@@ -46,4 +46,6 @@ llvm-objdump --private-headers --section-headers ./LEGOStarWarsSaga.exe
 
 Use one loading path for all six episodes in Story and Free Play. Entering from the cantina, changing chapters and returning to the hub should use the same lifecycle for both peers. If a native mode needs different parameters, select them by transition type or gameplay phase. Keep chapter identifiers in level selection and test data.
 
+See the [local co-op baseline](BASELINE.md) for the native route and observed input and rendering calls.
+
 Game-specific addresses, hooks and packet layouts belong here. Use `common/` for code that can run independently of either game's executable and state.
