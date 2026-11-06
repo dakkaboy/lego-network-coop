@@ -56,6 +56,11 @@ int main(void) {
     };
     input->fire_task_gates[1]=input->fire_task_gates[0];
     input->fire_task_gates[1].allowed=0;
+    input->rts_team_timer_count=2;
+    input->rts_team_timers[0]=(SyncRtsTeamTimers){.slot=1,.remaining={0,0,3.5831935f}};
+    input->rts_team_timers[1]=(SyncRtsTeamTimers){.slot=3,.remaining={1.25f,0,0}};
+    input->rts_timer_choice_count=1;
+    input->rts_timer_choices[0]=(SyncRtsTimerChoice){.slot=1,.index=2,.remaining=3.25f};
     uint32_t bytes=sync_frame_encode(input,wire,sizeof(*input));
     assert(bytes && bytes<sizeof(*input));
     assert(sync_frame_decode(output,wire,bytes));
@@ -73,6 +78,25 @@ int main(void) {
     assert(output->projectiles[1].velocity[2]==6.75f);
     assert(output->fire_task_gate_count==2 && output->fire_task_gates[0].allowed==1 && output->fire_task_gates[1].allowed==0);
     assert(output->fire_task_gates[1].generation==17 && output->fire_task_gates[1].origin[2]==3);
+    assert(output->rts_team_timer_count==2 && output->rts_team_timers[0].slot==1);
+    assert(output->rts_team_timers[0].remaining[2]==3.5831935f && output->rts_team_timers[1].remaining[0]==1.25f);
+    assert(output->rts_timer_choice_count==1 && output->rts_timer_choices[0].index==2 &&
+        output->rts_timer_choices[0].remaining==3.25f);
+    input->rts_timer_choices[0].index=3;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->rts_timer_choices[0].index=2;
+    input->rts_timer_choices[0].remaining=4.01f;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->rts_timer_choices[0].remaining=3.25f;
+    input->rts_team_timers[1].slot=1;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->rts_team_timers[1].slot=3;
+    input->rts_team_timers[1].remaining[0]=NAN;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->rts_team_timers[1].remaining[0]=1.25f;
+    input->sequence=2;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->sequence=1;
     input->fire_task_gates[0].allowed=2;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->fire_task_gates[0].allowed=1;

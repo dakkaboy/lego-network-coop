@@ -6,10 +6,12 @@
 #define SYNC_MAX_PROJECTILES 512
 #define SYNC_MAX_TAGS 16
 #define SYNC_MAX_SPAWN_TIMERS 192
+#define SYNC_MAX_RTS_TEAMS 8
+#define SYNC_MAX_RTS_TIMER_CHOICES 32
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
-#define SYNC_LAYOUT_VERSION 31
-#define SYNC_WIRE_VERSION 32
+#define SYNC_LAYOUT_VERSION 32
+#define SYNC_WIRE_VERSION 33
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -166,6 +168,14 @@ typedef struct SyncFireTaskGate {
     uint16_t flags,action;
     uint32_t allowed;
 } SyncFireTaskGate;
+typedef struct SyncRtsTeamTimers {
+    uint32_t slot;
+    float remaining[3];
+} SyncRtsTeamTimers;
+typedef struct SyncRtsTimerChoice {
+    uint32_t slot,index;
+    float remaining;
+} SyncRtsTimerChoice;
 
 typedef struct SyncFrame {
     uint32_t epoch;
@@ -194,6 +204,7 @@ typedef struct SyncFrame {
     uint32_t spawn_timer_count;
     uint32_t spawn_timer_reserved;
     uint32_t fire_task_gate_count,fire_task_gate_reserved;
+    uint32_t rts_team_timer_count,rts_timer_choice_count;
     SyncActor actors[SYNC_MAX_ACTORS];
     SyncVariable variables[SYNC_MAX_VARIABLES];
     SyncShot shots[SYNC_MAX_SHOTS];
@@ -206,6 +217,8 @@ typedef struct SyncFrame {
     SyncModelInput model_inputs[SYNC_MAX_ACTORS];
     SyncSpawnTimer spawn_timers[SYNC_MAX_SPAWN_TIMERS];
     SyncFireTaskGate fire_task_gates[SYNC_MAX_ACTORS];
+    SyncRtsTeamTimers rts_team_timers[SYNC_MAX_RTS_TEAMS];
+    SyncRtsTimerChoice rts_timer_choices[SYNC_MAX_RTS_TIMER_CHOICES];
 } SyncFrame;
 #ifdef __cplusplus
 extern "C" {

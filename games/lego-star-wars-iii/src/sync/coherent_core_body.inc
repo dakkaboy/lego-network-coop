@@ -112,6 +112,7 @@ static int core_install_safe(void*engine,const NativeOwnerInput*input,void*user)
   if(!spawn_observer_install()||!combat_observer_install()||!collision_observer_install())return 0;core_module_install_mask|=1u<<CORE_GEOMETRY;
   if(!cadence_install())return 0;core_module_install_mask|=1u<<CORE_CADENCE;
   if(!reaction_install())return 0;core_module_install_mask|=1u<<CORE_REACTION;
+  if(!rts_spawn_timers_install())return 0;
   if(!model_input_install())return 0;core_module_install_mask|=1u<<CORE_MODEL;
   if(!game_sync_coherent_register_actual_modules())return 0;
   core_dependency_install_state=1;hooked=1;permission_install_owner=native_owner_current();permission_install_nonce=native_owner_scope_nonce(permission_install_owner);
@@ -304,6 +305,7 @@ static void core_finish(NativeOwnerScope*owner,unsigned nonce,void*unused){
  uint32_t callback_release_token=core.release;
  action_dispatch_close();running=0;
  if(!core_finish_order_verified||!core_drain_dispatch()){core_reject_atomic(29,NULL);return;}
+ if(!rts_spawn_timers_finish(&working)){if(!fault)fault=21;return;}
  if(!core.host){
   if(working.level==12&&!reaction_drain_arena()){if(!fault)fault=17;return;}
   if(!core_live())return;
