@@ -37,7 +37,7 @@ Get-FileHash -Algorithm SHA256 ./LEGOStarWarsSaga.exe
 llvm-objdump --private-headers --section-headers ./LEGOStarWarsSaga.exe
 ```
 
-`GAME.DAT` and the six episode archives share a header. In all seven files the first two little-endian 32-bit fields give a file offset and the number of bytes from that offset to EOF. The target region starts with `fd ff ff ff`. The layout of its entries still needs verification. The executable contains references to `levels\levels.txt`, `SavedGames` and `pcconfig.txt`. These are starting points for locating the mission catalogue and testing save isolation.
+`GAME.DAT` and the six episode archives share an index. In all seven files the first two little-endian 32-bit fields give its offset and the number of bytes from that offset to EOF. The index version is `-3`. See the [mission checklist](MISSIONS.md) for the chapters and bonus routes found in those archives. The executable also contains references to `SavedGames` and `pcconfig.txt` for testing save isolation.
 
 ## Mission lifecycle
 
