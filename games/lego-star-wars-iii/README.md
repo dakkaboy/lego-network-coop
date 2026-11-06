@@ -11,10 +11,10 @@ Network co-op for two Windows PCs. One player hosts, the other joins by IP, and 
 
 ## Build
 
-On Windows, run this from the game project directory. The [build script](tools/build_coherent_dll.py) lists the tools it expects on `PATH`.
+From an x86 Visual Studio Developer PowerShell with CMake, Ninja and LLVM on `PATH`, run this in the game project directory.
 
 ```powershell
-./build-camera.ps1 -WithHitEntryObserver
+./build-camera.ps1
 ```
 
 The x86 build writes `d3d9.dll` and `clonewars-camera.dll` to `build/`. The proxy loads the mod; the mod owns the camera, game hooks and network session. The wire protocol is 29. Both players need the same build.

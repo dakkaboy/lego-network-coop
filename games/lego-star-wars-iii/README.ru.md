@@ -11,10 +11,10 @@
 
 ## Сборка
 
-Выполните команду в Windows из папки игры в репозитории. Список инструментов, которые должны быть в `PATH`, есть в [скрипте сборки](tools/build_coherent_dll.py).
+Откройте Visual Studio Developer PowerShell для x86. Добавьте CMake, Ninja и LLVM в `PATH` и выполните команду из папки игры в репозитории.
 
 ```powershell
-./build-camera.ps1 -WithHitEntryObserver
+./build-camera.ps1
 ```
 
 Сборка x86 сохраняет `d3d9.dll` и `clonewars-camera.dll` в папку `build/`. DLL-прокси загружает мод, который управляет камерой, перехватчиками и сетевой сессией. Версия сетевого протокола — 29. Обоим игрокам нужна одинаковая сборка.

@@ -4,7 +4,8 @@ if ($SteeringTraceOnly -or $WithIntentObserver -or $WithPoseObserver -or $WithBa
     throw 'Diagnostic observer builds require a separate reviewed configuration.'
 }
 $cameraBuildDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $OutputDirectory))
-$cameraBuildArgs = @('--source', (Join-Path $PSScriptRoot 'src'), '--output', $cameraBuildDirectory)
-if ($WithHitEntryObserver) { $cameraBuildArgs += '--with-hit-entry-observer' }
-python (Join-Path $PSScriptRoot 'tools\build_coherent_dll.py') @cameraBuildArgs
-if ($LASTEXITCODE -ne 0) { throw 'Coherent DLL build failed' }
+$hitEntryObserver = if ($WithHitEntryObserver) { 'ON' } else { 'OFF' }
+cmake --preset windows-x86 -S $PSScriptRoot -B $cameraBuildDirectory "-DCLONEWARS_HIT_ENTRY_OBSERVER=$hitEntryObserver"
+if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed' }
+cmake --build $cameraBuildDirectory
+if ($LASTEXITCODE -ne 0) { throw 'DLL build failed' }

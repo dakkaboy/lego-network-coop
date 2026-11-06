@@ -1,24 +1,51 @@
 #define WIN32_LEAN_AND_MEAN
-#define COBJMACROS
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
 #include <d3d9.h>
-#include <d3dx9core.h>
 #include <stdio.h>
 #include <wchar.h>
 #include <string.h>
 #include "overlay.h"
+extern "C" {
 #include "../net/lan.h"
 #include "../engine/game_state.h"
 #include "../sync/game_sync.h"
 #include "../engine/loading.h"
+}
+
+namespace {
+
+struct FontDescA;
+struct FontDescW;
+struct Sprite;
+
+// ABI of the font returned by the game's D3DXCreateFontW.
+struct Font : IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE GetDevice(IDirect3DDevice9 **) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetDescA(FontDescA *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetDescW(FontDescW *) = 0;
+    virtual BOOL STDMETHODCALLTYPE GetTextMetricsA(TEXTMETRICA *) = 0;
+    virtual BOOL STDMETHODCALLTYPE GetTextMetricsW(TEXTMETRICW *) = 0;
+    virtual HDC STDMETHODCALLTYPE GetDC() = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetGlyphData(UINT, IDirect3DTexture9 **, RECT *, POINT *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE PreloadCharacters(UINT, UINT) = 0;
+    virtual HRESULT STDMETHODCALLTYPE PreloadGlyphs(UINT, UINT) = 0;
+    virtual HRESULT STDMETHODCALLTYPE PreloadTextA(const char *, INT) = 0;
+    virtual HRESULT STDMETHODCALLTYPE PreloadTextW(const wchar_t *, INT) = 0;
+    virtual INT STDMETHODCALLTYPE DrawTextA(Sprite *, const char *, INT, RECT *, DWORD, D3DCOLOR) = 0;
+    virtual INT STDMETHODCALLTYPE DrawTextW(Sprite *, const wchar_t *, INT, RECT *, DWORD, D3DCOLOR) = 0;
+    virtual HRESULT STDMETHODCALLTYPE OnLostDevice() = 0;
+    virtual HRESULT STDMETHODCALLTYPE OnResetDevice() = 0;
+};
+
+}
 
 static LONG opened;
 static int address_focus;
 static char address[64] = "127.0.0.1";
 static float scale = 1.0f;
-static ID3DXFont *font, *title_font;
+static Font *font, *title_font;
 static int keyboard_focus = 1;
 static unsigned char previous_keyboard_block;
 enum {
@@ -38,25 +65,25 @@ static void rectangle(IDirect3DDevice9 *device, float x, float y, float width, f
     float right = (x + width) * scale - 0.5f, bottom = (y + height) * scale - 0.5f;
     struct Vertex vertices[] = {{left,top,0,1,color},{right,top,0,1,color},
                                 {left,bottom,0,1,color},{right,bottom,0,1,color}};
-    IDirect3DDevice9_SetTexture(device, 0, NULL);
-    IDirect3DDevice9_SetPixelShader(device, NULL);
-    IDirect3DDevice9_SetVertexShader(device, NULL);
-    IDirect3DDevice9_SetFVF(device, D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
-    IDirect3DDevice9_SetRenderState(device, D3DRS_ZENABLE, FALSE);
-    IDirect3DDevice9_SetRenderState(device, D3DRS_CULLMODE, D3DCULL_NONE);
-    IDirect3DDevice9_SetRenderState(device, D3DRS_ALPHABLENDENABLE, TRUE);
-    IDirect3DDevice9_SetRenderState(device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    IDirect3DDevice9_SetRenderState(device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    IDirect3DDevice9_SetTextureStageState(device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-    IDirect3DDevice9_SetTextureStageState(device, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-    IDirect3DDevice9_SetTextureStageState(device, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
-    IDirect3DDevice9_SetTextureStageState(device, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-    IDirect3DDevice9_DrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(vertices[0]));
+    device->SetTexture(0, NULL);
+    device->SetPixelShader(NULL);
+    device->SetVertexShader(NULL);
+    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->SetRenderState(D3DRS_ZENABLE, FALSE);
+    device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(vertices[0]));
 }
 
 static void text(const wchar_t *label, int x, int y, int width, DWORD color, int title) {
     RECT bounds = {(int)(x*scale),(int)(y*scale),(int)((x+width)*scale),(int)((y+60)*scale)};
-    ID3DXFont_DrawTextW(title ? title_font : font, NULL, label, -1, &bounds,
+    (title ? title_font : font)->DrawTextW(nullptr, label, -1, &bounds,
                        DT_LEFT | DT_NOCLIP, color);
 }
 
@@ -100,23 +127,23 @@ static void draw_hud(const CoopHudPlayer hud[2]) {
 
 void coop_draw(IDirect3DDevice9 *device,const CoopHudPlayer hud[2]) {
     D3DVIEWPORT9 viewport;
-    if (FAILED(IDirect3DDevice9_GetViewport(device, &viewport)) || !viewport.Width || !viewport.Height) return;
+    if (FAILED(device->GetViewport(&viewport)) || !viewport.Width || !viewport.Height) return;
     float wanted_scale = (float)viewport.Width / 1280.0f;
     if (font && (scale > wanted_scale + 0.01f || scale < wanted_scale - 0.01f)) {
-        ID3DXFont_Release(font);
-        ID3DXFont_Release(title_font);
+        font->Release();
+        title_font->Release();
         font = title_font = NULL;
     }
     scale = wanted_scale;
     if (!font) {
-        typedef HRESULT (WINAPI *CreateFont)(IDirect3DDevice9 *,INT,UINT,UINT,UINT,BOOL,DWORD,DWORD,DWORD,DWORD,LPCWSTR,ID3DXFont **);
+        typedef HRESULT (WINAPI *CreateFont)(IDirect3DDevice9 *,INT,UINT,UINT,UINT,BOOL,DWORD,DWORD,DWORD,DWORD,LPCWSTR,Font **);
         HMODULE library = GetModuleHandleW(L"d3dx9_41.dll");
         CreateFont create = library ? (CreateFont)GetProcAddress(library,"D3DXCreateFontW") : NULL;
         if (!create || FAILED(create(device,(int)(23*scale),0,FW_SEMIBOLD,1,FALSE,DEFAULT_CHARSET,
                                      OUT_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Segoe UI",&font))) return;
         if (FAILED(create(device,(int)(38*scale),0,FW_BOLD,1,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
                           ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Segoe UI",&title_font))) {
-            ID3DXFont_Release(font);
+            font->Release();
             font = NULL;
             return;
         }
@@ -183,17 +210,17 @@ void coop_toggle(void) {
     } else *input_flags = (*input_flags & ~2) | previous_keyboard_block;
 }
 void coop_release_fonts(void) {
-    if (font) ID3DXFont_Release(font);
-    if (title_font) ID3DXFont_Release(title_font);
+    if (font) font->Release();
+    if (title_font) title_font->Release();
     font = title_font = NULL;
 }
 void coop_fonts_lost(void) {
-    if (font) ID3DXFont_OnLostDevice(font);
-    if (title_font) ID3DXFont_OnLostDevice(title_font);
+    if (font) font->OnLostDevice();
+    if (title_font) title_font->OnLostDevice();
 }
 void coop_fonts_reset(void) {
-    if (font) ID3DXFont_OnResetDevice(font);
-    if (title_font) ID3DXFont_OnResetDevice(title_font);
+    if (font) font->OnResetDevice();
+    if (title_font) title_font->OnResetDevice();
 }
 
 int coop_input(HWND window, UINT message, WPARAM wp, LPARAM lp) {
