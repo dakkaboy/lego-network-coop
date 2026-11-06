@@ -212,6 +212,9 @@ static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,v
   if(*(uint32_t*)(engine+0xe30)!=working.engine_mode){fault=12;return CORE_SPAN_SKIP;}core.expected_calls=working.native_span_calls;core.expected_plan=working.native_span_plan;
  }
  if(release_changed(callback_release_token)||!core_open(owner,nonce))return CORE_SPAN_SKIP;
+ int timers_ready=spawn_timers_prepare(&core.token,&working,core.host);
+ if(!core_live())return CORE_SPAN_SKIP;
+ if(!timers_ready){fault=21;return CORE_SPAN_SKIP;}
  if(!core.host){
   /* Restore the host context before Tag/world/native preparation, not after it. */
   *(uint32_t*)0xfb4b6c=working.clock;*(uint32_t*)0xe637b4=working.rng_game;*(uint32_t*)0xea178c=working.rng_engine;*(float*)0xfb4b74=working.delta;*(float*)((char*)packet+8)=working.engine_delta;*(uint32_t*)((char*)packet+0xc)=working.engine_mode;*(float*)(engine+0xe0c)=working.engine_delta;

@@ -5,9 +5,10 @@
 #define SYNC_MAX_SHOTS 128
 #define SYNC_MAX_PROJECTILES 512
 #define SYNC_MAX_TAGS 16
+#define SYNC_MAX_SPAWN_TIMERS 192
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
-#define SYNC_LAYOUT_VERSION 29
+#define SYNC_LAYOUT_VERSION 30
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -152,6 +153,11 @@ typedef struct SyncModelInput {
     SyncModelInputContext context;
 } SyncModelInput;
 
+typedef struct SyncSpawnTimer {
+    uint32_t id,type;
+    float remaining;
+} SyncSpawnTimer;
+
 typedef struct SyncFrame {
     uint32_t epoch;
     uint32_t sequence;
@@ -176,6 +182,8 @@ typedef struct SyncFrame {
     uint32_t checksum;
     uint32_t native_span_plan;
     uint32_t native_span_calls;
+    uint32_t spawn_timer_count;
+    uint32_t spawn_timer_reserved;
     SyncActor actors[SYNC_MAX_ACTORS];
     SyncVariable variables[SYNC_MAX_VARIABLES];
     SyncShot shots[SYNC_MAX_SHOTS];
@@ -186,6 +194,7 @@ typedef struct SyncFrame {
     SyncCollider geometry[SYNC_MAX_ACTORS];
     SyncReactionChoice reactions[SYNC_MAX_ACTORS];
     SyncModelInput model_inputs[SYNC_MAX_ACTORS];
+    SyncSpawnTimer spawn_timers[SYNC_MAX_SPAWN_TIMERS];
 } SyncFrame;
 #ifdef __cplusplus
 extern "C" {

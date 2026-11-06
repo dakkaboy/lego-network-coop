@@ -64,6 +64,7 @@ add_library(clonewars-camera SHARED
     src/sync/projectile_sync.c
     src/sync/reaction_journal.c
     src/sync/reaction_sync.c
+    src/sync/spawn_timer_sync.cpp
     src/sync/tag_sync.c
     src/sync/world_vars.c
 )

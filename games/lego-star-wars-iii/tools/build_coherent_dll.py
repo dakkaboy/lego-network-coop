@@ -13,7 +13,7 @@ src=args.source.resolve()
 out=args.output.resolve()
 out.mkdir(parents=True,exist_ok=True)
 layout=re.search(r'#define\s+SYNC_LAYOUT_VERSION\s+(\d+)',(src/'net/sync_wire.h').read_text())
-if not layout or int(layout[1]) not in (28,29) or not (src/'sync/coherent_core_body.inc').is_file() or not (src/'engine/user_mapping_install.c').is_file():
+if not layout or int(layout[1]) not in (28,29,30) or not (src/'sync/coherent_core_body.inc').is_file() or not (src/'engine/user_mapping_install.c').is_file():
     raise SystemExit('Integrated coherent Core sources are required')
 zig=shutil.which('zig')
 clang=shutil.which('clang')

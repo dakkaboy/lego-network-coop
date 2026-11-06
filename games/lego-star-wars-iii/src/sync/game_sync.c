@@ -30,6 +30,7 @@
 #define POSE_BOUNDARY(stage) ((void)0)
 #endif
 #include "world_vars.h"
+#include "spawn_timer_sync.h"
 #include "projectile_sync.h"
 #include "entity_sync.h"
 #include "epoch_state.h"
