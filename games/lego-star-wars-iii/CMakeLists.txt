@@ -88,3 +88,9 @@ endif()
 target_link_libraries(clonewars-camera PRIVATE user32 ws2_32 shell32)
 
 add_library(d3d9 SHARED src/engine/proxy.c src/engine/proxy.def)
+
+option(CLONEWARS_NETWORK_TESTS "Build checks that run without the game" OFF)
+if(CLONEWARS_NETWORK_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

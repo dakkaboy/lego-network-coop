@@ -1,0 +1,119 @@
+#undef NDEBUG
+#include <assert.h>
+#include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <stdio.h>
+#include "net/sync_wire.h"
+_Static_assert(sizeof(SyncActor)==152,"Actor wire layout changed");
+_Static_assert(offsetof(SyncActor,party_slot)==102,"Party slot must use defined padding");
+int main(void) {
+    SyncFrame *input=calloc(1,sizeof(*input)),*output=calloc(1,sizeof(*output));
+    unsigned char *wire=malloc(sizeof(*input));
+    assert(input && output && wire);
+    input->epoch=7; input->sequence=1; input->level=6; input->delta=1.0f/60;
+    input->engine_delta=.017f; input->world_calls=1; input->tick_calls=1;
+    input->geometry_calls=1;input->geometry_count=2;
+    input->geometry[0]=(SyncCollider){.manager_ordinal=1,.slot=0,.generation=12,.character=360,.bounds={-1,-1,-1,1,1,1},.extents={.5f,1}};
+    input->geometry[1]=input->geometry[0];input->geometry[1].slot=5;input->geometry[1].generation=17;input->geometry[1].character=321;
+    input->cadence_count=1;
+    input->cadence[0]=(SyncCadence){.slot=5,.generation=17,.character=321,.period=8,.phase=5,.elapsed=.05f};
+    input->reaction_count=2;
+    input->reactions[0]=(SyncReactionChoice){.slot=6,.generation=26,.spawn_tag=123,.character=321,.old_action=-1,.clip=975,.source_id=667};
+    input->reactions[1]=input->reactions[0];input->reactions[1].old_action=20;input->reactions[1].clip=-1;
+    input->actor_input_count=2;
+    input->actor_inputs[0]=(SyncActorInput){.slot=15,.generation=27,.spawn_tag=123,.character=321,.pressed=0x8000};
+    input->actor_inputs[1]=input->actor_inputs[0]; input->actor_inputs[1].pressed=0;
+    input->actor_count=2; input->variable_count=1; input->shot_count=1; input->projectile_count=2;
+    input->actors[0].party_slot=0; input->actors[1].party_slot=1;
+    input->rng_game_after=123; input->rng_engine_after=456;
+    input->tag_count=1; input->tags[0]=(SyncTag){.id=1,.from=0,.to=1,.from_generation=7,.to_generation=8,.phase=1,.delta=.016f};
+    input->actors[0].generation=7; input->actors[0].player=0;
+    input->actors[1].generation=8; input->actors[1].player=1;
+    input->inputs[1].aim_x=13; input->inputs[1].aim_y=219;
+    input->actors[1].spawn_tag=0x5c5cff; input->actors[1].spawn_position[2]=3.5f;
+    input->actors[1].slot=1; input->actors[1].animation.current=100;
+    input->actors[1].animation.frames[3]=19.5f;
+    input->actors[1].animation.clips[2]=-1;
+    input->actors[1].position[1]=1;
+    input->actors[1].previous_position[1]=.5f;
+    input->actors[1].render_position[1]=2;
+    input->actors[1].previous_render_position[1]=1.5f;
+    input->actors[1].velocity[1]=3;
+    input->actors[1].render_heading=1234;
+    input->combat_ready=1;
+    strcpy(input->variables[0].name,"QuestDoor"); input->variables[0].value=1;
+    input->shots[0].phase=1; input->shots[0].clock=77; input->shots[0].rng_game=123; input->shots[0].rng_engine=456; input->shots[0].delta=.015f;
+    input->shots[0].id=42; input->shots[0].owner=1; input->shots[0].owner_generation=8; input->shots[0].weapon=7;
+    input->shots[0].origin[0]=12.25f; input->shots[0].transform[15]=1;
+    input->projectiles[0].id=41; input->projectiles[1].id=42;
+    input->projectiles[1].velocity[2]=6.75f;
+    uint32_t bytes=sync_frame_encode(input,wire,sizeof(*input));
+    assert(bytes && bytes<sizeof(*input));
+    assert(sync_frame_decode(output,wire,bytes));
+    assert(output->epoch==7 && output->sequence==1);
+    assert(output->actors[1].party_slot==1 && output->rng_game_after==123 && output->rng_engine_after==456);
+    assert(output->tag_count==1 && output->tags[0].id==1 && output->tags[0].to_generation==8 && output->tags[0].phase==1);
+    assert(output->actors[1].animation.current==100 && output->actors[1].animation.frames[3]==19.5f);
+    assert(output->actors[1].animation.clips[2]==-1 && output->variables[0].value==1);
+    assert(output->actors[1].position[1]==1 && output->actors[1].previous_position[1]==.5f);
+    assert(output->actors[1].render_position[1]==2 && output->actors[1].previous_render_position[1]==1.5f);
+    assert(output->actors[1].velocity[1]==3 && output->actors[1].render_heading==1234 && output->combat_ready==1);
+    assert(output->actors[1].generation==8 && output->actors[1].spawn_tag==0x5c5cff && output->actors[1].spawn_position[2]==3.5f);
+    assert(output->inputs[1].aim_x==13 && output->inputs[1].aim_y==219 && output->shots[0].owner_generation==8);
+    assert(output->shots[0].id==42 && output->shots[0].origin[0]==12.25f);
+    assert(output->projectiles[1].velocity[2]==6.75f);
+    assert(!sync_frame_decode(output,wire,bytes-1));
+    wire[bytes-1]^=1; assert(!sync_frame_decode(output,wire,bytes)); wire[bytes-1]^=1;
+    input->tags[0].parent=123; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->tags[0].parent=0;
+    input->tags[0].to_generation=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->tags[0].to_generation=8;
+    input->actors[1].party_slot=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].party_slot=1;
+    input->epoch=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->epoch=7;
+    input->sequence=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->sequence=1;
+    input->actors[1].animation.frames[0]=NAN;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].animation.frames[0]=0;
+    input->projectiles[0].position[0]=INFINITY;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->projectiles[0].position[0]=0;
+    assert(output->engine_delta==.017f && output->world_calls==1 && output->tick_calls==1);
+    assert(output->actor_input_count==2 && output->actor_inputs[0].pressed==0x8000 && output->actor_inputs[1].pressed==0);
+    input->actor_inputs[0].generation=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->actor_inputs[0].generation=27;
+    input->actor_inputs[0].origin[0]=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->actor_inputs[0].origin[0]=0;
+    assert(output->geometry_count==2 && output->geometry_calls==1 && output->geometry[1].slot==5 && output->geometry[1].bounds[3]==1 && output->geometry[1].extents[0]==.5f);
+    input->geometry[1].slot=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->geometry[1].slot=5;
+    input->geometry[0].bounds[0]=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->geometry[0].bounds[0]=-1;
+    input->geometry[0].extents[0]=-1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->geometry[0].extents[0]=.5f;
+    input->geometry_calls=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->geometry_calls=1;
+    assert(output->cadence_count==1 && output->cadence[0].period==8 && output->cadence[0].phase==5 && output->cadence[0].elapsed==.05f);
+    input->cadence[0].period=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence[0].period=8;
+    input->cadence[0].phase=256;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence[0].phase=5;
+    input->cadence[0].elapsed=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence[0].elapsed=.05f;
+    input->cadence_reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence_reserved=0;
+    assert(output->reaction_count==2 && output->reactions[0].clip==975 && output->reactions[0].source_id==667 && output->reactions[1].clip==-1 && output->reactions[1].old_action==20);
+    input->reaction_reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reaction_reserved=0;
+    input->reactions[0].clip=4096;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[0].clip=975;
+    input->reactions[0].generation=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[0].generation=26;
+    input->reactions[0].origin[0]=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[0].origin[0]=0;
+    input->actor_input_reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->actor_input_reserved=0;
+    input->engine_delta=NAN; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->engine_delta=.017f;
+    input->shots[0].phase=2; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[0].phase=1;
+    input->shots[0].delta=INFINITY; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[0].delta=.015f;
+    input->shot_count=SYNC_MAX_SHOTS+1; assert(!sync_frame_size(input)); input->shot_count=1;
+    input->projectile_count=SYNC_MAX_PROJECTILES+1; assert(!sync_frame_size(input));
+    memset(input,0,sizeof(*input));
+    input->epoch=7; input->sequence=2; input->level=12; input->delta=1.0f/60;
+    input->reaction_count=1;
+    input->reactions[0]=(SyncReactionChoice){.slot=1,.generation=13,.character=100,.old_action=-1,.clip=-2,
+        .arena_attacker_slot=7,.arena_attacker_generation=19};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));
+    assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->reactions[0].arena_attacker_slot==7 && output->reactions[0].arena_attacker_generation==19);
+    input->level=6; assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->level=12; input->reactions[0].source_id=1; assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->reactions[0].source_id=0; input->reactions[0].arena_attacker_generation=0;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    free(wire); free(output); free(input);
+    printf("Protocol %u frame=%zu header=%zu shot=%zu\n",SYNC_PROTOCOL_VERSION,sizeof(SyncFrame),offsetof(SyncFrame,actors),sizeof(SyncShot));
+    puts("Combat wire: animation, mixed arrays, shots, projectile state, checksum, bounds and finite values passed");
+    return 0;
+}
