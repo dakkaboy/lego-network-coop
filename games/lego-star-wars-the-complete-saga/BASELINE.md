@@ -19,7 +19,7 @@ The Steam executable fingerprint is in the [build audit](README.md). Use a dispo
 
 The test used a copy of the Steam game with a disposable LocalAppData directory and injected keyboard states at the native DirectInput boundary. The diagnostic window stayed at `(-30000, -30000)`. Direct3D rendered to a windowed back buffer, which supplied the local frames. Opening the copy without Steam application context produced `5:0000065434`. The same copy reached the game with app ID 32440 and the running Steam client. An inactive Windows desktop gave a graphics initialization error. A window outside the screen on the active desktop rendered successfully.
 
-With two simultaneous processes in separate game directories and profiles, both created Direct3D devices and the second process opened all seven archives. Its back buffer stayed black in the startup loop while the first process rendered the cantina. Controller join, drop-out and chapter completion still need a baseline pass.
+With two simultaneous processes in separate game directories and profiles, both created Direct3D devices and the second process opened all seven archives. Its back buffer stayed black in the startup loop while the first process rendered the cantina. Physical controller join, drop-out and chapter completion still need a baseline pass.
 
 ## Observed calls
 
@@ -40,4 +40,6 @@ In a paused cantina sample, `Present` advanced by 94 frames. The paths at `0x933
 
 The pointer at RVA `0x402c54` held the same value from the cantina through the chapter selector and crawl. It changed by the first playable Negotiations room. It also read as null in the stalled second process. This is a candidate for observing active room state. Reset and hub return still need measurements.
 
-The XInput capability call returns to `0x2da23d` during startup and enumerates indices 0–3. The native device poll beginning at `0x2d74e0` calls `XInputGetState` at `0x2d7584` when its mapped device is in indices 0–3 with type 6. The resolved runtime import slots for capabilities, state and vibration are `0x3512a4`, `0x3512a8` and `0x3512ac`. These came from the loaded game and were matched to system exports. The controller probe has yet to confirm gameplay through that path.
+The XInput capability call returns to `0x2da23d` during startup and enumerates indices 0–3. The native device poll beginning at `0x2d74e0` calls `XInputGetState` at `0x2d7584` when its mapped device is in indices 0–3 with type 6. The resolved runtime import slots for capabilities, state and vibration are `0x3512a4`, `0x3512a8` and `0x3512ac`. These came from the loaded game and were matched to system exports.
+
+In the diagnostic run, synthetic capabilities made index 0 present while its type field remained zero. The test selected type 6 for that empty record after the game initialized. A through `XInputGetState` added Obi-Wan as player two. The native mapped device state contained signed X values of 21,999 and −21,999 for XInput values of ±22,000. A positive Y value of 28,000 mapped to −27,999. Release cleared the sampled analog state. A simulated disconnect returned an unavailable device and an empty state, and the pause HUD identified Obi-Wan. Character movement through that mapped state, menu navigation and clean drop-out need separate verification.
