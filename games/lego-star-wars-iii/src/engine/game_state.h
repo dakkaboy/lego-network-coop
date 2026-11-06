@@ -11,6 +11,7 @@ int game_network_profile_ready(void);
 
 void game_cancel_level_request(void);
 int game_network_target_level(void);
+int game_network_level_valid(int level);
 int game_network_level_authorized(int level);
 
 int game_native_profile_ready(void);

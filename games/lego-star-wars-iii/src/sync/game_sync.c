@@ -238,7 +238,7 @@ int game_sync_poll_epoch(int target,int transitioning) {
         if (!lan_is_host()) interval=(SyncEpochCursor){.level=-1};
     }
     if (lan_is_host()) {
-        if (target<0 || target>=290) {
+        if (!game_network_level_valid(target)) {
             if(interval.active||lan_epoch()){suspend_epoch_publication();return 1;}
             return 0;
         }
@@ -252,7 +252,7 @@ int game_sync_poll_epoch(int target,int transitioning) {
         LanTransition remote=lan_remote_transition();
         uint32_t epoch=remote.epoch;int level=remote.level;
         if(!epoch){if(interval.active){suspend_epoch_publication();return 1;}return 0;}
-        if (epoch && epoch>interval.epoch && level>=0 && level<290) {
+        if (epoch>interval.epoch && game_network_level_valid(level)) {
             prepare_epoch(epoch,level);
             return 1;
         }

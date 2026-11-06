@@ -35,6 +35,25 @@ static int accessible(const void *pointer, SIZE_T bytes) {
            (uintptr_t)pointer+bytes <= (uintptr_t)info.BaseAddress+info.RegionSize;
 }
 
+static char *native_level_definition(int level) {
+    char *catalog = *(char **)0xfb8404;
+    unsigned count = *(unsigned *)0xfb8410;
+    if (!catalog || level < 0 || (unsigned)level >= count || count > 4096) return NULL;
+    char *definition = catalog + level * 0x1b0;
+    return accessible(definition,0x1b0) && *(int16_t *)(definition+0x94) == level ? definition : NULL;
+}
+
+static int is_native_titles(int level) {
+    char *titles = *(char **)0xfb8414;
+    return accessible(titles,0x96) && *(int16_t *)(titles+0x94) == level;
+}
+
+int game_network_level_valid(int level) {
+    char *definition = native_level_definition(level);
+    char *titles = *(char **)0xfb8414;
+    return definition && titles && definition != titles;
+}
+
 int game_actor_count(void) {
     unsigned int count = *(unsigned int *)0xfb2e3c;
     return count <= 4096 ? (int)count : 0;
@@ -66,7 +85,7 @@ int game_network_level_authorized(int level) {
     return !lan_is_host()||InterlockedCompareExchange(&requested,0,0)<0||accepted_serial==request_serial;
 }
 static void commit_target(int level,uint32_t serial,int transitioning) {
-    if(lan_status()!=LAN_CONNECTED||!lan_is_host()||level<0||level>=290)return;
+    if(lan_status()!=LAN_CONNECTED||!lan_is_host()||!game_network_level_valid(level))return;
     if(serial&&(serial!=request_serial||InterlockedCompareExchange(&requested,0,0)!=level))return;
     committed_level=level;if(serial)accepted_serial=serial;
     game_sync_poll_epoch(level,transitioning);
@@ -79,9 +98,9 @@ static void host_publication(int current,int playing,int pending) {
         else lan_publish_ready(0);
         return;
     }
-    if(pending>=0&&pending<290){commit_target(pending,0,1);return;}
-    if(current>=0&&current<290&&playing&&game_native_profile_ready()){commit_target(current,0,0);return;}
-    if(current>=290&&pending<0){
+    if(game_network_level_valid(pending)){commit_target(pending,0,1);return;}
+    if(playing&&game_native_profile_ready()&&game_network_level_valid(current)){commit_target(current,0,0);return;}
+    if(pending<0&&is_native_titles(current)){
         committed_level=-1;accepted_serial=0;game_sync_poll_epoch(-1,0);
         lan_publish_transition(0,-1);lan_publish_ready(0);
     }
@@ -161,8 +180,8 @@ static void native_transition(int desired,int stage) {
     unsigned int count = *(unsigned int *)0xfb8410;
     if (!accessible(root,0x1b7c) || !catalog || desired >= (int)count ||
         !*(void **)0xfbd8bc || !*(void **)0xfb8414) return;
-    char *definition = catalog+desired*0x1b0;
-    if (!accessible(definition,0x1b0) || *(short *)(definition+0x94) != desired) {
+    char *definition = native_level_definition(desired);
+    if (!definition) {
         InterlockedExchange(&load_status,-1);
         InterlockedExchange(&requested,-1);
         return;
@@ -235,7 +254,7 @@ void game_poll(void) {
         char *storage = *(char **)0xfb0864;
         char *flow = *(char **)0xfb2e60;
         int phase = accessible(flow,0x1b7c) ? *(int *)(flow+0x1b78) : -1;
-        if ((!bootstrap_started || (current==290 && GetTickCount()-bootstrap_started>3000)) && current >= 0 && (phase == 0xd || phase == 0xe) &&
+        if ((!bootstrap_started || (is_native_titles(current) && GetTickCount()-bootstrap_started>3000)) && current >= 0 && (phase == 0xd || phase == 0xe) &&
             accessible(frontend,0x428) && accessible(storage,0x24)) {
             typedef void (__attribute__((thiscall)) *WithoutSaving)(void *);
             int local_device=*(int *)0xeb1a70;
