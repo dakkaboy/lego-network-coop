@@ -61,3 +61,9 @@ A write watch on the active scene pointer observed the same publication instruct
 The XInput capability call returns to `0x2da23d` during startup and enumerates indices 0–3. The native device poll beginning at `0x2d74e0` calls `XInputGetState` at `0x2d7584` when its mapped device is in indices 0–3 with type 6. The resolved runtime import slots for capabilities, state and vibration are `0x3512a4`, `0x3512a8` and `0x3512ac`. These came from the loaded game and were matched to system exports.
 
 In the diagnostic run, synthetic capabilities made index 0 present while its type field remained zero. The test selected type 6 for that empty record after the game initialized. A through `XInputGetState` added Obi-Wan as player two. The native mapped device state contained signed X values of 21,999 and −21,999 for XInput values of ±22,000. A positive Y value of 28,000 mapped to −27,999. Release cleared the sampled analog state. A simulated disconnect returned an unavailable device and an empty state, and the pause HUD identified Obi-Wan. Character movement through that mapped state, menu navigation and clean drop-out need separate verification.
+
+## Loopback player-two input
+
+With both copies offscreen, Start from the client supplied scan code 60 at the host keyboard poll and joined Obi-Wan. Left-stick and D-pad directions supplied the native arrow scan codes. Captures show Obi-Wan moving in the cantina and the first playable Negotiations room while the host was idle. The test supplied controller samples at the client XInput boundary and used real UDP between the game processes.
+
+A held direction was present when the host returned from Negotiations to the cantina. The native load cleared the input. The host published the cantina and resumed receiving input after the client separately returned and confirmed that publication.

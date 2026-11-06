@@ -4,6 +4,7 @@
 #include <bit>
 
 #include "game/event_isolation.hpp"
+#include "game/local_input_hooks.hpp"
 
 namespace {
 
@@ -43,6 +44,7 @@ extern "C" IDirect3D9* WINAPI saga_create9(UINT sdk_version) {
     auto* d3d = create9 ? create9(sdk_version) : nullptr;
     if (d3d) {
         saga::game::enable_test_event_isolation();
+        saga::game::enable_local_input();
     }
     return d3d;
 }

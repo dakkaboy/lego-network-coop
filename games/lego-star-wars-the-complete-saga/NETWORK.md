@@ -27,4 +27,10 @@ Each datagram is 40 bytes. Multi-byte integers use network byte order.
 
 Message types are hello (1), welcome (2), incompatible (3), input (4), and scene (5). Hello, welcome and incompatible carry a nonzero build ID and nonce. Welcome, input and scene carry a nonzero session ID. Input and scene carry a nonzero generation. Only scene carries the room key. Only input carries a sequence, buttons and axes. Unused fields are zero. An incompatible reply includes the host's build ID and protocol version.
 
-The game integration still needs to bind scene announcements and confirmations to native lifecycle events, provide the executable build ID and fresh session IDs, and own connection timeouts and input delivery.
+## In-game loopback test
+
+Set `COMPLETE_SAGA_LOCAL_INPUT` to `host` in the first disposable copy and to `client` in the second. Set `COMPLETE_SAGA_ISOLATE_TEST_EVENTS=1` for both on the same PC. Use the default keyboard controls on the host. The client reads XInput controller 0. Start the first copy, reach the cantina, then start the second and reach the same scene through the native menu.
+
+The test listens on IPv4 loopback port 34244. The host maps Start to F2 and the left stick or D-pad to the native direction keys for player two. It neutralizes those inputs on a scene change or after 250 ms without new input. The client sends input once both copies have published the same room. It requires a fresh local publication before accepting a new generation, even when the native room path is unchanged.
+
+The room key comes from the normalized native asset path. The copies still load their scenes independently. Matching Story and Free Play modes, coordinating loads and synchronizing world state need separate integration.

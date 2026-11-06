@@ -10,8 +10,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-add_library(d3d9 SHARED src/d3d9_proxy.cpp src/d3d9_proxy.def src/game/event_isolation.cpp)
+add_library(d3d9 SHARED src/d3d9_proxy.cpp src/d3d9_proxy.def src/game/event_isolation.cpp src/game/local_input_hooks.cpp src/net/local_input.cpp)
 target_compile_options(d3d9 PRIVATE /W4 /WX)
+target_include_directories(d3d9 PRIVATE src)
+target_link_libraries(d3d9 PRIVATE saga_session ws2_32 bcrypt)
 
 add_library(saga_session STATIC src/net/session.cpp)
 target_include_directories(saga_session PUBLIC src)
