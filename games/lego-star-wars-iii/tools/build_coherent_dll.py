@@ -2,6 +2,7 @@ from pathlib import Path
 import argparse,hashlib,json,re,shutil,subprocess
 
 here=Path(__file__).resolve().parents[1]
+common=here.parents[1]/'common'
 parser=argparse.ArgumentParser()
 parser.add_argument('--with-hit-entry-observer',action='store_true')
 parser.add_argument('--source',type=Path,default=here/'src')
@@ -27,8 +28,11 @@ def run(args):
         p.check_returncode()
 
 def source_hashes():
-    return {p.relative_to(src).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
+    hashes={p.relative_to(src).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(src.rglob('*')) if p.is_file()}
+    header=Path('net/input_edges.h')
+    hashes[(Path('common')/header).as_posix()]=hashlib.sha256((common/header).read_bytes()).hexdigest()
+    return hashes
 
 before=source_hashes()
 seh=sorted(src.rglob('*seh.c'))
@@ -41,7 +45,7 @@ sources+=list(src.rglob('*.S'))
 cpp_objects=[]
 for source in sorted(src.rglob('*.cpp')):
     obj=out/(source.stem+'.cpp.obj')
-    run([zig,'c++','-target','x86-windows-gnu','-std=c++23','-O2','-fno-exceptions','-fno-rtti','-I'+str(src),'-c',source,'-o',obj])
+    run([zig,'c++','-target','x86-windows-gnu','-std=c++23','-O2','-fno-exceptions','-fno-rtti','-I'+str(src),'-I'+str(common),'-c',source,'-o',obj])
     cpp_objects.append(obj)
 dll=out/'clonewars-camera.dll'
 defines=[]

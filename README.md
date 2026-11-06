@@ -11,7 +11,7 @@ Windows network co-op mods for LEGO games.
 | LEGO Indiana Jones: The Original Adventures | Planned | [Milestone](https://github.com/dakkaboy/lego-network-coop/milestone/3) | — |
 | LEGO Indiana Jones 2: The Adventure Continues | Planned | [Milestone](https://github.com/dakkaboy/lego-network-coop/milestone/4) | — |
 
-Each game lives in its own directory under `games/` and builds independently. Keep executable addresses, hooks, game state, protocol layouts and packaging with the game that owns them. Extract shared code when a second game has a concrete use for it.
+Each game lives in its own directory under `games/` and builds independently. Keep executable addresses, hooks, game state, protocol layouts and packaging with the game that owns them. The `common/` directory contains reusable code, starting with controller button presses and holds.
 
 ## Contribute
 
