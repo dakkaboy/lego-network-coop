@@ -30,8 +30,6 @@ __declspec(dllexport) volatile LONG clonewars_transition_api_used;
 __declspec(dllexport) volatile uint32_t clonewars_transition_context[60];
 __declspec(dllexport) volatile uint32_t clonewars_transition_debug[12];
 
-static int profile_ready(void);
-
 static int accessible(const void *pointer, SIZE_T bytes) {
     MEMORY_BASIC_INFORMATION info;
     if (!pointer || !VirtualQuery(pointer,&info,sizeof(info))) return 0;
@@ -39,24 +37,10 @@ static int accessible(const void *pointer, SIZE_T bytes) {
            (uintptr_t)pointer+bytes <= (uintptr_t)info.BaseAddress+info.RegionSize;
 }
 
-int game_current_level(void) {
-    char *area = *(char **)0xfb4a20;
-    char *level = accessible(area,0x224) ? *(char **)(area+0x220) : NULL;
-    return accessible(level,0x98) ? *(short *)(level+0x94) : -1;
-}
-
 int game_actor_count(void) {
     unsigned int count = *(unsigned int *)0xfb2e3c;
     return count <= 4096 ? (int)count : 0;
 }
-
-static int profile_ready(void) {
-    char *player = *(char **)0xfb4940;
-    return accessible(player,0x1440) && *(short *)(player+0xdc0) >= 0 &&
-           accessible(*(void **)(player+0xf08),4);
-}
-
-int game_native_profile_ready(void){return profile_ready();}
 
 void game_request_level(int level) {
     if (level >= 0 && level < 4096) {
@@ -98,7 +82,7 @@ static void host_publication(int current,int playing,int pending) {
         return;
     }
     if(pending>=0&&pending<290){commit_target(pending,0,1);return;}
-    if(current>=0&&current<290&&playing&&profile_ready()){commit_target(current,0,0);return;}
+    if(current>=0&&current<290&&playing&&game_native_profile_ready()){commit_target(current,0,0);return;}
     if(current>=290&&pending<0){
         committed_level=-1;accepted_serial=0;game_sync_poll_epoch(-1,0);
         lan_publish_transition(0,-1);lan_publish_ready(0);
@@ -140,7 +124,7 @@ static void poll_profile(void) {
         memcpy(profile_packet.data,profile,SYNC_PROFILE_BYTES);
         profile_packet.checksum=sync_checksum(profile_packet.data,SYNC_PROFILE_BYTES);
         lan_publish_profile(&profile_packet); profile_hash=hash; profile_sent=now; profile_epoch=epoch;
-    } else if (profile_ready()) {
+    } else if (game_native_profile_ready()) {
         uint32_t sequence=game_sync_sequence();
         if (!sequence) sequence=UINT32_MAX;
         if (lan_receive_profile(&profile_packet,sequence) && profile_packet.level==game_network_target_level() &&
@@ -171,7 +155,7 @@ static void capture_transition_context(volatile uint32_t *out,int desired) {
     for (unsigned i=0;i<20;++i) out[i]=values[i];
 }
 static void native_transition(int desired,int stage) {
-    if (desired<0 || InterlockedCompareExchange(&requested,0,0)!=desired || !profile_ready()) return;
+    if (desired<0 || InterlockedCompareExchange(&requested,0,0)!=desired || !game_native_profile_ready()) return;
     if(lan_status()==LAN_CONNECTED&&!lan_is_host()&&!game_network_profile_ready())return;
     uint32_t serial=request_serial;
     char *root = *(char **)0xfb2e60;
@@ -220,7 +204,7 @@ static void native_transition(int desired,int stage) {
 }
 void game_native_tick(void) {
     char *root=*(char **)0xfb2e60;
-    if (accessible(root,0x1b7c) && *(int *)(root+0x1b78)==0xe && game_actor_count()>0 && profile_ready())
+    if (accessible(root,0x1b7c) && *(int *)(root+0x1b78)==0xe && game_actor_count()>0 && game_native_profile_ready())
         tick_seen_gameplay=1;
     clonewars_transition_debug[5]=(uint32_t)tick_seen_gameplay;
     clonewars_transition_debug[10]=(uint32_t)initial_request_completed;
@@ -254,11 +238,11 @@ void game_poll(void) {
         }
     } else {game_sync_poll_epoch(-1,0);committed_level=-1;accepted_serial=0;}
     poll_profile();
-    lan_publish_ready(game_sync_epoch() && game_network_profile_ready() && playing && profile_ready() && game_actor_count()>0 &&
+    lan_publish_ready(game_sync_epoch() && game_network_profile_ready() && playing && game_native_profile_ready() && game_actor_count()>0 &&
                       game_network_level_authorized(current) && game_load_status()!=1 && pending_level<0 && !force_requested);
     int desired = InterlockedCompareExchange(&requested,0,0);
     if (desired < 0) return;
-    if (!profile_ready()) {
+    if (!game_native_profile_ready()) {
         char *frontend = *(char **)0xfb087c;
         char *storage = *(char **)0xfb0864;
         char *flow = *(char **)0xfb2e60;
