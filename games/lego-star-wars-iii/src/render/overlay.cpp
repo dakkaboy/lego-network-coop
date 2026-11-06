@@ -181,11 +181,13 @@ void coop_draw(IDirect3DDevice9 *device,const CoopHudPlayer hud[2]) {
     const wchar_t *sync_description=L"TCP 32510";
     wchar_t sync_text[128];
     if (state==LAN_CONNECTED) {
-        if (game_sync_status()==-8) sync_description=L"Sync disabled";
-        else if (game_sync_status()<0) {
-            swprintf(sync_text,128,L"Sync error: %d. Reconnect.",game_sync_status());
+        const int sync_status=game_sync_status();
+        if (sync_status==-8) sync_description=L"Sync disabled";
+        else if (game_sync_restart_required()) sync_description=L"Sync stopped. Restart the game.";
+        else if (sync_status<0) {
+            swprintf(sync_text,128,L"Sync error: %d. Reconnect.",sync_status);
             sync_description=sync_text;
-        } else if (game_sync_status()==2) {
+        } else if (sync_status==2) {
             swprintf(sync_text,128,L"Frame: %u",game_sync_sequence());
             sync_description=sync_text;
         } else sync_description=L"Waiting for level";

@@ -635,7 +635,16 @@ static void __attribute__((fastcall)) tick_hook(void*flow,void*unused){(void)unu
 #include "coherent_core_body.inc"
 int game_sync_install(void){return 0;}
 
-int game_sync_status(void) { return !enabled ? -8 : !hooked ? -1 : fault ? -fault-1 : sequence || expected ? 2 : 0; }
+int game_sync_restart_required(void) {
+    return InterlockedCompareExchange(&core_reject_bits,0,0)!=0;
+}
+int game_sync_status(void) {
+    if (!enabled) return -8;
+    if (!hooked) return -1;
+    if (fault) return -fault-1;
+    if (lan_status()==LAN_CONNECTED && game_sync_restart_required()) return GAME_SYNC_RESTART_REQUIRED;
+    return sequence || expected ? 2 : 0;
+}
 unsigned game_sync_sequence(void) { return lan_is_host()?sequence:expected; }
 void game_sync_inspect(void) {
     clonewars_epoch_debug[0]=interval.epoch;
