@@ -25,8 +25,6 @@ static void next_request_serial(void){if(!++request_serial)++request_serial;}
 static void commit_target(int level,uint32_t serial,int transitioning);
 static void host_publication(int current,int playing,int pending);
 __declspec(dllexport) volatile LONG clonewars_transition_in_tick;
-__declspec(dllexport) volatile LONG clonewars_transition_api;
-__declspec(dllexport) volatile LONG clonewars_transition_api_used;
 __declspec(dllexport) volatile uint32_t clonewars_transition_context[60];
 __declspec(dllexport) volatile uint32_t clonewars_transition_debug[12];
 
@@ -181,19 +179,9 @@ static void native_transition(int desired,int stage) {
     if (stage) ++clonewars_transition_debug[2];
     capture_transition_context(clonewars_transition_context,desired);
     for (unsigned i=40;i<60;++i) clonewars_transition_context[i]=UINT32_MAX;
-    // Arena requires the mission wrapper's load context before native restoration.
-    const int geonosian_arena_level=12;
-    int api=desired==geonosian_arena_level || clonewars_transition_api==1;
-    clonewars_transition_api_used=api;
-    unsigned char accepted;
-    if (api) {
-        typedef void (__attribute__((cdecl)) *EnterMission)(void *,int,int,int);
-        ((EnterMission)0x8bd740)(definition,-1,-1,0);
-        accepted=*(int *)0xe6e61c==desired;
-    } else {
-        typedef unsigned char (__attribute__((thiscall)) *ChangeLevel)(void *,int,int);
-        accepted=((ChangeLevel)0x9097e0)((void *)0xe6e618,desired,1);
-    }
+    typedef void (__attribute__((cdecl)) *EnterMission)(void *,int,int,int);
+    ((EnterMission)0x8bd740)(definition,-1,-1,0);
+    int accepted=*(int *)0xe6e61c==desired;
     capture_transition_context(clonewars_transition_context+20,desired);
     if(serial!=request_serial||InterlockedCompareExchange(&requested,0,0)!=desired)return;
     if (accepted){++clonewars_transition_debug[3];commit_target(desired,serial,1);}
