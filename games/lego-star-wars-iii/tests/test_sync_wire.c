@@ -49,6 +49,13 @@ int main(void) {
     input->shots[0].origin[0]=12.25f; input->shots[0].transform[15]=1;
     input->projectiles[0].id=41; input->projectiles[1].id=42;
     input->projectiles[1].velocity[2]=6.75f;
+    input->fire_task_gate_count=2;
+    input->fire_task_gates[0]=(SyncFireTaskGate){
+        .slot=5,.generation=17,.character=321,.origin={1,2,3},
+        .flags=SYNC_FIRE_TASK_QUEUES_SHOT,.action=92,.allowed=1
+    };
+    input->fire_task_gates[1]=input->fire_task_gates[0];
+    input->fire_task_gates[1].allowed=0;
     uint32_t bytes=sync_frame_encode(input,wire,sizeof(*input));
     assert(bytes && bytes<sizeof(*input));
     assert(sync_frame_decode(output,wire,bytes));
@@ -64,6 +71,14 @@ int main(void) {
     assert(output->inputs[1].aim_x==13 && output->inputs[1].aim_y==219 && output->shots[0].owner_generation==8);
     assert(output->shots[0].id==42 && output->shots[0].origin[0]==12.25f);
     assert(output->projectiles[1].velocity[2]==6.75f);
+    assert(output->fire_task_gate_count==2 && output->fire_task_gates[0].allowed==1 && output->fire_task_gates[1].allowed==0);
+    assert(output->fire_task_gates[1].generation==17 && output->fire_task_gates[1].origin[2]==3);
+    input->fire_task_gates[0].allowed=2;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[0].allowed=1;
+    input->fire_task_gates[0].flags=0;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[0].flags=SYNC_FIRE_TASK_QUEUES_SHOT;
     assert(!sync_frame_decode(output,wire,bytes-1));
     wire[bytes-1]^=1; assert(!sync_frame_decode(output,wire,bytes)); wire[bytes-1]^=1;
     input->tags[0].parent=123; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->tags[0].parent=0;

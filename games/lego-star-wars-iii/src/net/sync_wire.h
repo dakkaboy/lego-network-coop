@@ -8,12 +8,13 @@
 #define SYNC_MAX_SPAWN_TIMERS 192
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
-#define SYNC_LAYOUT_VERSION 30
-#define SYNC_WIRE_VERSION 31
+#define SYNC_LAYOUT_VERSION 31
+#define SYNC_WIRE_VERSION 32
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
 #define SYNC_NATIVE_SPAN_CALLS_MASK 3u
+#define SYNC_FIRE_TASK_QUEUES_SHOT 0x40u
 #ifdef STEERING_TRACE_ONLY
 #define SYNC_PROTOCOL_VERSION (SYNC_WIRE_VERSION|128)
 #else
@@ -158,6 +159,13 @@ typedef struct SyncSpawnTimer {
     uint32_t id,type;
     float remaining;
 } SyncSpawnTimer;
+typedef struct SyncFireTaskGate {
+    uint32_t slot,generation,spawn_tag;
+    int32_t character;
+    float origin[3];
+    uint16_t flags,action;
+    uint32_t allowed;
+} SyncFireTaskGate;
 
 typedef struct SyncFrame {
     uint32_t epoch;
@@ -185,6 +193,7 @@ typedef struct SyncFrame {
     uint32_t native_span_calls;
     uint32_t spawn_timer_count;
     uint32_t spawn_timer_reserved;
+    uint32_t fire_task_gate_count,fire_task_gate_reserved;
     SyncActor actors[SYNC_MAX_ACTORS];
     SyncVariable variables[SYNC_MAX_VARIABLES];
     SyncShot shots[SYNC_MAX_SHOTS];
@@ -196,6 +205,7 @@ typedef struct SyncFrame {
     SyncReactionChoice reactions[SYNC_MAX_ACTORS];
     SyncModelInput model_inputs[SYNC_MAX_ACTORS];
     SyncSpawnTimer spawn_timers[SYNC_MAX_SPAWN_TIMERS];
+    SyncFireTaskGate fire_task_gates[SYNC_MAX_ACTORS];
 } SyncFrame;
 #ifdef __cplusplus
 extern "C" {

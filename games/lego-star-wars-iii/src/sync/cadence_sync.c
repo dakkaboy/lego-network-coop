@@ -8,6 +8,7 @@
 #include "game_sync.h"
 #include "../engine/module_cohort_binding.h"
 static CadenceJournal journal;
+static uint32_t fire_task_cursor;
 static int active;
 static int cancelled;
 static ModuleCohortBinding binding;
@@ -19,9 +20,11 @@ int cadence_abort_frame(const CadenceFrameLease*op){if(!module_binding_detach(&b
 
 static uint32_t last_epoch;
 __attribute__((used)) static volatile uintptr_t cadence_resume=0x96d954;
+__attribute__((used)) static volatile uintptr_t fire_task_gate_allow=0x42fe42,fire_task_gate_skip=0x42fff6;
 __declspec(dllexport) volatile LONG clonewars_cadence_installed;
 __declspec(dllexport) volatile uint32_t clonewars_cadence_debug[20];
 __declspec(dllexport) volatile uint32_t clonewars_cadence_failure[14];
+__declspec(dllexport) volatile uint32_t clonewars_fire_task_gate_debug[4];
 static int valid(const void *pointer,unsigned size) {
     MEMORY_BASIC_INFORMATION m;return pointer && VirtualQuery(pointer,&m,sizeof(m)) && m.State==MEM_COMMIT &&
         !(m.Protect&(PAGE_GUARD|PAGE_NOACCESS)) && (uintptr_t)pointer+size>=(uintptr_t)pointer && (uintptr_t)pointer+size<=(uintptr_t)m.BaseAddress+m.RegionSize;
@@ -65,12 +68,79 @@ __attribute__((used,noinline)) void cadence_apply_period(void *actor,uint32_t *p
     }
 }
 __attribute__((naked,used)) static void cadence_period_thunk(void) { __asm__ volatile(CADENCE_THUNK_ASM); }
+__attribute__((used,noinline)) int cadence_apply_fire_task_gate(void *actor,const unsigned char *task,int allowed) {
+    uint16_t flags,action;
+    memcpy(&flags,task+4,sizeof(flags));
+    if (!(flags&SYNC_FIRE_TASK_QUEUES_SHOT)) return allowed;
+    CadenceFrameLease op;
+    if (!cadence_frame_lease_get(&op) || !op_live(&op) || !active) return allowed;
+    if (journal.failed) return 0;
+    memcpy(&action,task+6,sizeof(action));
+    if (journal.host) {
+        entities_update();
+        if (!op_live(&op)) return 0;
+        SyncActor identity={0};
+        entities_describe(&identity,actor);
+        const int slot=entities_slot(actor);
+        if (!op_live(&op)) return 0;
+        if (slot>=0 && slot<SYNC_MAX_ACTORS && identity.generation && journal.frame->fire_task_gate_count<SYNC_MAX_ACTORS) {
+            SyncFireTaskGate gate={
+                .slot=(uint32_t)slot,.generation=identity.generation,.spawn_tag=identity.spawn_tag,
+                .character=*(int16_t *)((unsigned char *)actor+0xdc0),.flags=flags,.action=action,.allowed=(uint32_t)allowed
+            };
+            memcpy(gate.origin,identity.spawn_position,sizeof(gate.origin));
+            journal.frame->fire_task_gates[journal.frame->fire_task_gate_count++]=gate;
+            ++clonewars_fire_task_gate_debug[0];
+            return allowed;
+        }
+    } else if (fire_task_cursor<journal.frame->fire_task_gate_count) {
+        const SyncFireTaskGate *gate=&journal.frame->fire_task_gates[fire_task_cursor];
+        if (gate->flags==flags && gate->action==action) {
+            SyncActor identity={.slot=gate->slot,.generation=gate->generation,.spawn_tag=gate->spawn_tag,.character=gate->character};
+            memcpy(identity.spawn_position,gate->origin,sizeof(gate->origin));
+            const int matches=entities_resolve_reference(&identity)==actor;
+            if (!op_live(&op)) return 0;
+            if (matches) {
+                ++fire_task_cursor;
+                ++clonewars_fire_task_gate_debug[1];
+                clonewars_fire_task_gate_debug[2]+=(uint32_t)allowed!=gate->allowed;
+                // The timer samples camera-dependent model visibility before updating the queued shot.
+                return (int)gate->allowed;
+            }
+        }
+    }
+    journal.failed=5;
+    ++clonewars_fire_task_gate_debug[3];
+    failed(&op,actor,NULL,5);
+    return 0;
+}
+__attribute__((naked,used)) static void fire_task_gate_thunk(void) { __asm__ volatile(FIRE_TASK_GATE_THUNK_ASM); }
+
+static int install_jump(unsigned char *entry,size_t size,void (*thunk)(void)) {
+    DWORD protection;
+    if (!VirtualProtect(entry,size,PAGE_EXECUTE_READWRITE,&protection)) return 0;
+    entry[0]=0xe9;
+    *(int32_t *)(entry+1)=(int32_t)((uintptr_t)thunk-(uintptr_t)entry-5);
+    memset(entry+5,0x90,size-5);
+    FlushInstructionCache(GetCurrentProcess(),entry,size);
+    VirtualProtect(entry,size,protection,&protection);
+    return 1;
+}
 int cadence_install(void) {
-    unsigned char *entry=(unsigned char *)0x96d94a;
-    static const unsigned char original[]={0x8b,0x4c,0x24,0x14,0x88,0x8f,0x8e,0x13,0,0};DWORD protection;
-    if (memcmp(entry,original,10) || !VirtualProtect(entry,10,PAGE_EXECUTE_READWRITE,&protection)) { clonewars_cadence_installed=-1;return 0; }
-    entry[0]=0xe9;*(int32_t *)(entry+1)=(int32_t)((uintptr_t)cadence_period_thunk-(uintptr_t)entry-5);memset(entry+5,0x90,5);
-    FlushInstructionCache(GetCurrentProcess(),entry,10);VirtualProtect(entry,10,protection,&protection);clonewars_cadence_installed=1;return 1;
+    unsigned char *period=(unsigned char *)0x96d94a,*fire_task=(unsigned char *)0x42fe2b;
+    static const unsigned char period_native[]={0x8b,0x4c,0x24,0x14,0x88,0x8f,0x8e,0x13,0,0};
+    static const unsigned char fire_task_native[]={
+        0x8b,0x43,0x08,0x85,0xc0,0x74,0x06,0x80,0x78,0x42,0x00,0x75,0x0a,
+        0xf6,0x46,0x04,0x08,0x0f,0x84,0xb4,0x01,0x00,0x00
+    };
+    if (memcmp(period,period_native,sizeof(period_native)) || memcmp(fire_task,fire_task_native,sizeof(fire_task_native)) ||
+        !install_jump(period,sizeof(period_native),cadence_period_thunk) ||
+        !install_jump(fire_task,sizeof(fire_task_native),fire_task_gate_thunk)) {
+        clonewars_cadence_installed=-1;
+        return 0;
+    }
+    clonewars_cadence_installed=1;
+    return 1;
 }
 int cadence_ready(void) { return clonewars_cadence_installed==1; }
 void cadence_cancel(void) { if(binding.bound||!binding.lease.cohort.thread||binding.lease.cohort.thread!=GetCurrentThreadId())return;active=0;cancelled=1;memset(&journal,0,sizeof(journal)); }
@@ -79,12 +149,21 @@ int cadence_begin(SyncFrame *frame,int host) {
     CadenceFrameLease op=binding.lease;if(!module_binding_live(&binding,&op))return 0;
     cancelled=0;
     if (last_epoch!=op.cohort.epoch) { memset((void *)clonewars_cadence_failure,0,sizeof(clonewars_cadence_failure));last_epoch=op.cohort.epoch; }
-    cadence_journal_begin(&journal,frame,host);active=1;return op_live(&op);
+    cadence_journal_begin(&journal,frame,host);
+    fire_task_cursor=0;
+    if (host) frame->fire_task_gate_count=0;
+    active=1;return op_live(&op);
 }
 int cadence_finish(void) {
     CadenceFrameLease op;if(!cadence_frame_lease_get(&op)||!op_live(&op)||!active)return 0;
     if (cancelled) return 0;
     active=0;++clonewars_cadence_debug[15];
     if (!cadence_journal_finish(&journal)) { ++clonewars_cadence_debug[16];if (!journal.failed) { const SyncCadence *entry=cadence_journal_peek(&journal);journal.failed=3;failed(&op,NULL,entry,3); }return 0; }
+    if (!journal.host && fire_task_cursor!=journal.frame->fire_task_gate_count) {
+        ++clonewars_fire_task_gate_debug[3];
+        journal.failed=6;
+        failed(&op,NULL,NULL,6);
+        return 0;
+    }
     return 1;
 }
