@@ -67,3 +67,5 @@ In the diagnostic run, synthetic capabilities made index 0 present while its typ
 With both copies offscreen, Start from the client supplied scan code 60 at the host keyboard poll and joined Obi-Wan. Left-stick and D-pad directions supplied the native arrow scan codes. Captures show Obi-Wan moving in the cantina and the first playable Negotiations room while the host was idle. The test supplied controller samples at the client XInput boundary and used real UDP between the game processes.
 
 A held direction was present when the host returned from Negotiations to the cantina. The native load cleared the input. The host published the cantina and resumed receiving input after the client separately returned and confirmed that publication.
+
+A follow-up returned both copies to the cantina and reentered Negotiations. The same room key received a new native publication, and the host resumed input once the client confirmed it. After reentry, the client held Right and disconnected. The host keyboard poll returned a neutral snapshot after the input stream timed out.
