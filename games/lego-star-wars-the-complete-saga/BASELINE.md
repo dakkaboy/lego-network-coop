@@ -21,6 +21,8 @@ The test used a copy of the Steam game with a disposable LocalAppData directory 
 
 With two simultaneous processes in separate game directories and profiles, both created Direct3D devices and the second process opened all seven archives. Its back buffer stayed black in a startup loop with a null scene pointer while the first process rendered the cantina. Delivering focus messages to the second game's offscreen window left it in that loop. Physical controller join, drop-out and chapter completion still need a baseline pass.
 
+A follow-up reversed the order of the copies and started both during the opening sequence. Both rendered the legal screen and reached a non-null scene pointer. The second still produced a black back buffer after leaving the startup loop, with input and presentation on the title path. The black frame can therefore persist after startup has advanced.
+
 ## Observed calls
 
 These RVAs are call return addresses from the running Steam executable.
