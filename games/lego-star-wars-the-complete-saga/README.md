@@ -4,7 +4,7 @@ The current build is a development proxy for the game's Direct3D 9 imports. LAN 
 
 ## Build
 
-Install Zig 0.15.1 and run from the repository root in PowerShell on Windows.
+Run from the repository root in PowerShell on Windows.
 
 ```powershell
 ./games/lego-star-wars-the-complete-saga/build.ps1 -Test
