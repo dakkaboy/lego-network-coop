@@ -571,7 +571,7 @@ static void __attribute__((fastcall)) personal_render_views(void *state,void *un
     uint32_t separator=*(uint32_t *)((char *)parent+0x13bc);
     unsigned char composite=*(unsigned char *)0xe63007;
     *(float *)((char *)parent+0x13bc)=0.0f;
-    /* A prepared personal view is already last; the other view must not be composited over it. */
+    /* The native split compositor would mix the other camera into the personal view. */
     *(unsigned char *)0xe63007=0;
     original_render_views(state,parent,view);
     *(uint32_t *)((char *)parent+0x13bc)=separator;
@@ -653,15 +653,13 @@ static void __attribute__((fastcall)) update_hook(void *state, void *unused, voi
 static int copy_native_view(IDirect3DDevice9 *device) {
     int player=camera_selected();
     if (!personal_fullscreen(manager) || !camera_order_presentation_ready(manager)) return 0;
-    char *first=*(char **)((char *)manager+0xf24);
-    if (*(short *)(first+0xac)!=player || *(uint32_t *)(first+0x34)!=1) return 0;
     char *view=NULL;
     for (int i=0;i<4;++i) {
         char *candidate=((char **)((char *)manager+0xf24))[i];
         if (readable(candidate,0xb4) && *(int *)(candidate+0x2c)==1 &&
             *(short *)(candidate+0xac)==player) view=candidate;
     }
-    if (!view) return 0;
+    if (!view || *(uint32_t *)(view+0x34)!=1) return 0;
     char *target=*(char **)(view+0xa8);
     if (!readable(target,0x3c)) return 0;
     unsigned id=*(unsigned *)(target+0x38);

@@ -48,21 +48,25 @@ void __cdecl camera_order_enter(CameraOrderBridge *bridge) {
  char *views[2],*targets[2];if(!camera_order_pair(parent,views,targets))return;
  int selected_role=camera_selected();if(selected_role<0 || selected_role>1)return;
  s->parent=parent;s->views[0]=views[0];s->views[1]=views[1];s->targets[0]=targets[0];s->targets[1]=targets[1];s->selected=(uint32_t)selected_role;s->admitted=1;
- if(!(clonewars_camera_fullclip&16) && *(short *)(views[0]+0xac)==selected_role){
+ int copy_resolved_view=(clonewars_camera_fullclip&16)!=0;
+ int selected_first=*(short *)(views[0]+0xac)==selected_role;
+ if(copy_resolved_view!=selected_first){
   char **slots=(char **)(parent+0xf24);slots[0]=views[1];slots[1]=views[0];s->swapped=1;++clonewars_camera_native_order_debug[0];
  }
  ++clonewars_camera_native_order_debug[1];
 }
 static void camera_move_native_hud(const CameraOrderScope *s) {
- if(s->selected!=0 || !(clonewars_camera_fullclip&16) ||
-    *(short *)(s->views[0]+0xac)!=0 || *(short *)(s->views[1]+0xac)!=1 ||
-    *(uint32_t *)(s->views[0]+0x34)!=1 || *(uint32_t *)(s->views[1]+0x34)!=2)return;
+ if(!(clonewars_camera_fullclip&16))return;
+ char *first_view=s->views[s->swapped];
+ char *last_view=s->views[!s->swapped];
+ if(*(short *)(first_view+0xac)!=s->selected ||
+    *(uint32_t *)(first_view+0x34)!=1 || *(uint32_t *)(last_view+0x34)!=2)return;
  char *first=(char *)0xeb8390+0x14f0;
  char *last=first+0x14f0;
  if(*(uintptr_t *)(first+0x40) || *(uintptr_t *)(first+0x64) ||
-    *(uintptr_t *)(last+0x40)!=0x7560b0 || *(char **)(last+0x64)!=s->views[1])return;
+    *(uintptr_t *)(last+0x40)!=0x7560b0 || *(char **)(last+0x64)!=last_view)return;
  // The copied world surface has to include the engine's UI event before the resolve.
- *(char **)(first+0x64)=s->views[0];
+ *(char **)(first+0x64)=first_view;
  *(uintptr_t *)(first+0x40)=0x7560b0;
  *(uintptr_t *)(last+0x40)=0;
  *(uintptr_t *)(last+0x64)=0;
