@@ -4,13 +4,16 @@ The current build is a development proxy for the game's Direct3D 9 imports. LAN 
 
 ## Build
 
-Run from the repository root in PowerShell on Windows.
+Use CMake and a Windows C++23 toolchain that supports Win32. Run from the repository root in PowerShell.
 
 ```powershell
-./games/lego-star-wars-the-complete-saga/build.ps1 -Test
+$saga = 'games/lego-star-wars-the-complete-saga'
+cmake -S $saga -B "$saga/build" -A Win32
+cmake --build "$saga/build" --config Release
+ctest --test-dir "$saga/build" -C Release --output-on-failure
 ```
 
-The script builds a 32-bit `d3d9.dll` in the game's repository `build` directory. The smoke test loads the proxy, calls all three exports and checks that the resulting Direct3D object can enumerate an adapter. It runs independently of the game.
+The build produces a 32-bit `d3d9.dll` in `build/Release`. The smoke test checks the x86 export table, calls the three exports and enumerates Direct3D adapters. It runs independently of the game.
 
 The proxy has no game hooks. It resolves the three observed exports from the system Direct3D library on first use, outside DLL initialization. Use a disposable copy of the game to test the proxy. An existing `d3d9.dll` in that copy may belong to another mod.
 

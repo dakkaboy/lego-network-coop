@@ -4,6 +4,23 @@
 #include <bit>
 #include <cstdio>
 
+namespace {
+
+bool has_expected_export_table(HMODULE proxy) {
+    const auto* base = reinterpret_cast<const unsigned char*>(proxy);
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS32*>(base + dos->e_lfanew);
+    const DWORD exports_rva = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+    if (nt->FileHeader.Machine != IMAGE_FILE_MACHINE_I386 || exports_rva == 0) {
+        return false;
+    }
+
+    const auto* exports = reinterpret_cast<const IMAGE_EXPORT_DIRECTORY*>(base + exports_rva);
+    return exports->NumberOfFunctions == 3 && exports->NumberOfNames == 3;
+}
+
+}  // namespace
+
 int wmain(int argc, wchar_t** argv) {
     if (argc != 2) {
         return 1;
@@ -19,7 +36,8 @@ int wmain(int argc, wchar_t** argv) {
         GetProcAddress(proxy, "D3DPERF_BeginEvent"));
     const auto end = std::bit_cast<decltype(&D3DPERF_EndEvent)>(
         GetProcAddress(proxy, "D3DPERF_EndEvent"));
-    if (!create || !begin || !end) {
+    if (!has_expected_export_table(proxy) || !create || !begin || !end) {
+        std::fputs("Expected exactly three named x86 Direct3D 9 exports.\n", stderr);
         return 3;
     }
 
