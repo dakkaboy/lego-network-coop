@@ -650,12 +650,12 @@ static void __attribute__((fastcall)) update_hook(void *state, void *unused, voi
     if (observed_parent) camera_init_observer_snapshot(parent,3,camera_selected());
 }
 
-static int copy_native_view(IDirect3DDevice9 *device) {
+static int copy_native_view(IDirect3DDevice9 *device,char *parent) {
     int player=camera_selected();
-    if (!personal_fullscreen(manager) || !camera_order_presentation_ready(manager)) return 0;
+    if (!personal_fullscreen(parent) || !camera_order_presentation_ready(parent)) return 0;
     char *view=NULL;
     for (int i=0;i<4;++i) {
-        char *candidate=((char **)((char *)manager+0xf24))[i];
+        char *candidate=((char **)(parent+0xf24))[i];
         if (readable(candidate,0xb4) && *(int *)(candidate+0x2c)==1 &&
             *(short *)(candidate+0xac)==player) view=candidate;
     }
@@ -692,6 +692,8 @@ static int copy_native_view(IDirect3DDevice9 *device) {
 }
 
 static int crop_camera(IDirect3DDevice9 *device) {
+    /* Segment preparation can use a split state the engine entered on its own. */
+    if ((clonewars_camera_fullclip&16) && copy_native_view(device,current_camera_manager())) return 1;
     if (!personal_camera_allowed(manager) || !ordinary_camera_layout(manager) ||
         *(uint32_t *)((char *)manager+0xf20)!=2 || focus_manager!=manager ||
         *(uintptr_t *)(manager+0x1c)!=0xe62090) {
@@ -699,7 +701,6 @@ static int crop_camera(IDirect3DDevice9 *device) {
         return 0;
     }
 
-    if ((clonewars_camera_fullclip&16) && copy_native_view(device)) return 1;
     if (personal_fullscreen(manager) && camera_order_presentation_ready(manager)) return 0;
     if (selected_target && selected_target_player!=camera_selected()) {
         IDirect3DSurface9_Release(selected_target); selected_target=NULL;
