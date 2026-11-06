@@ -48,7 +48,7 @@ defines=[]
 if args.with_hit_entry_observer:defines.append('-DCLONEWARS_HIT_ENTRY_OBSERVER')
 if args.bootstrap:defines.append('-DCOHERENT_CORE_REVIEWED_BOOTSTRAP')
 if args.remote_trace_off:defines.append('-DCLONEWARS_REMOTE_INPUT_TRACE_DISABLED')
-run([zig,'cc','-target','x86-windows-gnu','-shared','-O2','-fms-extensions','-I'+str(src),*defines,*sources,*cpp_objects,*[out/(source.stem+'.obj') for source in seh],'-o',dll,'-luser32','-lws2_32'])
+run([zig,'cc','-target','x86-windows-gnu','-shared','-O2','-fms-extensions','-I'+str(src),*defines,*sources,*cpp_objects,*[out/(source.stem+'.obj') for source in seh],'-o',dll,'-luser32','-lws2_32','-lshell32'])
 proxy=out/'d3d9.dll'
 run([zig,'cc','-target','x86-windows-gnu','-shared','-O2',src/'engine/proxy.c',src/'engine/proxy.def','-o',proxy])
 assert before==source_hashes(),'Sources changed during build'

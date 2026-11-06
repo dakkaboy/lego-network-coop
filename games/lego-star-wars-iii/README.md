@@ -2,9 +2,10 @@
 
 Network co-op for two Windows PCs. One player hosts, the other joins by IP, and each player has their own camera and the original HUD.
 
-0.0.1 is an alpha. Ambush and Geonosian Arena were tested in short sessions with two game instances on one PC. Full missions and connections between separate PCs remain untested.
+0.0.2 fixes broken geometry on the client, reduces simulation overhead, and adds a GitHub link to the LAN menu. Ambush was tested through destruction of the gold coral with two game instances on one PC.
 
-- [Download 0.0.1](https://www.nexusmods.com/legostarwars3theclonewars/mods/28)
+- [Download 0.0.2](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.2)
+- [Nexus Mods](https://www.nexusmods.com/legostarwars3theclonewars/mods/28)
 - [Steam guide (English)](https://steamcommunity.com/sharedfiles/filedetails/?id=3834270478)
 - [Руководство Steam (русский)](https://steamcommunity.com/sharedfiles/filedetails/?id=3834269735)
 

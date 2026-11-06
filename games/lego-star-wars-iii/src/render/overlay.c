@@ -1,6 +1,8 @@
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
 #include <windows.h>
+#include <windowsx.h>
+#include <shellapi.h>
 #include <d3d9.h>
 #include <d3dx9core.h>
 #include <stdio.h>
@@ -19,6 +21,14 @@ static float scale = 1.0f;
 static ID3DXFont *font, *title_font;
 static int keyboard_focus = 1;
 static unsigned char previous_keyboard_block;
+enum {
+    PROJECT_CONTROL = 7,
+    CONTROL_COUNT,
+    PROJECT_X = 230,
+    PROJECT_Y = 576,
+    PROJECT_WIDTH = 260,
+    BUTTON_HEIGHT = 48,
+};
 void coop_set_window(HWND window) { (void)window; }
 
 struct Vertex { float x, y, z, rhw; DWORD color; };
@@ -52,12 +62,12 @@ static void text(const wchar_t *label, int x, int y, int width, DWORD color, int
 
 static void button(IDirect3DDevice9 *device, const wchar_t *label, int x, int y, int width, int checked) {
     DWORD color = checked ? 0xff315c84 : 0xff142c45;
-    rectangle(device,x,y,width,48,color);
+    rectangle(device,x,y,width,BUTTON_HEIGHT,color);
     rectangle(device,x,y,width,2,checked ? 0xffffcf48 : 0xff4384b6);
     text(label,x+16,y+10,width-24,0xfff4f7ff,0);
 }
 
-static void activate(int control) {
+static void activate(HWND window, int control) {
     if (control == 0) address_focus = 1;
     if (control == 1 || control == 2) {
         if (lan_status() == LAN_OFF || lan_status() == LAN_FAILED) lan_start(control == 1,address);
@@ -65,6 +75,8 @@ static void activate(int control) {
     }
     if (control >= 3 && control <= 5) camera_select(control-4);
     if (control == 6) coop_toggle();
+    if (control == PROJECT_CONTROL)
+        ShellExecuteW(window,L"open",L"https://github.com/dakkaboy/lego-network-coop",NULL,NULL,SW_SHOWNORMAL);
 }
 
 static void draw_hud(const CoopHudPlayer hud[2]) {
@@ -157,6 +169,7 @@ void coop_draw(IDirect3DDevice9 *device,const CoopHudPlayer hud[2]) {
     button(device,L"Player 2",790,452,260,camera_selected()==1 || keyboard_focus==5);
     text(L"Tab / Arrows · Enter · Esc",230,530,540,0xffb3c5dc,0);
     button(device,L"Close",790,518,260,keyboard_focus==6);
+    button(device,L"Project on GitHub",PROJECT_X,PROJECT_Y,PROJECT_WIDTH,keyboard_focus==PROJECT_CONTROL);
 }
 
 void coop_toggle(void) {
@@ -184,19 +197,28 @@ void coop_fonts_reset(void) {
 }
 
 int coop_input(HWND window, UINT message, WPARAM wp, LPARAM lp) {
-    (void)window; (void)lp;
     if (!opened) return 0;
     if (message == WM_KEYDOWN && wp == VK_ESCAPE) { coop_toggle(); return 1; }
     if (message == WM_KEYDOWN && (wp == VK_TAB || wp == VK_UP || wp == VK_DOWN ||
                                  wp == VK_LEFT || wp == VK_RIGHT)) {
         int backward = wp == VK_UP || wp == VK_LEFT || (wp == VK_TAB && (GetKeyState(VK_SHIFT)&0x8000));
-        keyboard_focus = (keyboard_focus + (backward ? 6 : 1) + 7) % 7;
+        keyboard_focus = (keyboard_focus + (backward ? CONTROL_COUNT-1 : 1)) % CONTROL_COUNT;
         address_focus = keyboard_focus == 0;
         return 1;
     }
     if (message == WM_KEYDOWN && wp == VK_RETURN) {
-        activate(address_focus ? 2 : keyboard_focus < 0 ? 1 : keyboard_focus);
+        if (keyboard_focus != PROJECT_CONTROL || !(lp & (1L << 30)))
+            activate(window,address_focus ? 2 : keyboard_focus < 0 ? 1 : keyboard_focus);
         return 1;
+    }
+    if (message == WM_LBUTTONUP) {
+        int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
+        if (x >= PROJECT_X*scale && x < (PROJECT_X+PROJECT_WIDTH)*scale &&
+            y >= PROJECT_Y*scale && y < (PROJECT_Y+BUTTON_HEIGHT)*scale) {
+            keyboard_focus = PROJECT_CONTROL;
+            address_focus = 0;
+            activate(window,PROJECT_CONTROL);
+        }
     }
     if (message == WM_CHAR && address_focus) {
         size_t length = strlen(address);
