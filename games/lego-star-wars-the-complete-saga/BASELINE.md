@@ -23,6 +23,8 @@ With two simultaneous processes in separate game directories and profiles, both 
 
 A follow-up reversed the order of the copies and started both during the opening sequence. Both rendered the legal screen and reached a non-null scene pointer. The second still produced a black back buffer after leaving the startup loop, with input and presentation on the title path. The black frame can therefore persist after startup has advanced.
 
+A Direct3D call sample confirmed that the second process did not submit geometry during the black interval. Across a 300-frame window it made 1,500 `Clear` calls and zero `DrawPrimitive` or `DrawIndexedPrimitive` calls. `Present` succeeded. The first process submitted 10,881 indexed draws and 182 non-indexed draws in a 300-frame title sample. The second process needs tracing before the render submission boundary.
+
 ## Observed calls
 
 These RVAs are call return addresses from the running Steam executable.
