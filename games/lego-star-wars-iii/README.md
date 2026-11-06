@@ -1,13 +1,13 @@
 # LEGO Star Wars III: The Clone Wars
 
+[Русский](README.ru.md)
+
 Network co-op for two Windows PCs. One player hosts, the other joins by IP, and each player has their own camera and the original HUD.
 
 0.0.2 fixes broken geometry on the client and reduces simulation overhead. Ambush was tested through destruction of the gold coral with two game instances on one PC.
 
 - [Download 0.0.2](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.2)
 - [Nexus Mods](https://www.nexusmods.com/legostarwars3theclonewars/mods/28)
-- [Steam guide (English)](https://steamcommunity.com/sharedfiles/filedetails/?id=3834270478)
-- [Руководство Steam (русский)](https://steamcommunity.com/sharedfiles/filedetails/?id=3834269735)
 
 ## Build
 

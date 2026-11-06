@@ -1,5 +1,7 @@
 # LEGO Network Co-op
 
+[Русский](README.ru.md)
+
 Windows network co-op mods for LEGO games.
 
 | Game | Status | Download |
