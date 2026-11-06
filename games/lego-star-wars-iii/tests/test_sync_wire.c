@@ -25,7 +25,7 @@ int main(void) {
     input->actor_input_count=2;
     input->actor_inputs[0]=(SyncActorInput){.slot=15,.generation=27,.spawn_tag=123,.character=321,.pressed=0x8000};
     input->actor_inputs[1]=input->actor_inputs[0]; input->actor_inputs[1].pressed=0;
-    input->actor_count=2; input->variable_count=1; input->shot_count=1; input->projectile_count=2;
+    input->actor_count=2; input->variable_count=3; input->shot_count=1; input->projectile_count=2;
     input->actors[0].party_slot=0; input->actors[1].party_slot=1;
     input->rng_game_after=123; input->rng_engine_after=456;
     input->tag_count=1; input->tags[0]=(SyncTag){.id=1,.from=0,.to=1,.from_generation=7,.to_generation=8,.phase=1,.delta=.016f};
@@ -44,6 +44,10 @@ int main(void) {
     input->actors[1].render_heading=1234;
     input->combat_ready=1;
     strcpy(input->variables[0].name,"QuestDoor"); input->variables[0].value=1;
+    input->variables[1]=input->variables[0];
+    input->variables[1].scope=SYNC_VARIABLE_AREA; input->variables[1].value=2;
+    input->variables[2]=input->variables[0];
+    input->variables[2].scope=SYNC_VARIABLE_AREA_DECLARATION; input->variables[2].value=3;
     input->shots[0].phase=1; input->shots[0].clock=77; input->shots[0].rng_game=123; input->shots[0].rng_engine=456; input->shots[0].delta=.015f;
     input->shots[0].id=42; input->shots[0].owner=1; input->shots[0].owner_generation=8; input->shots[0].weapon=7;
     input->shots[0].origin[0]=12.25f; input->shots[0].transform[15]=1;
@@ -69,7 +73,9 @@ int main(void) {
     assert(output->actors[1].party_slot==1 && output->rng_game_after==123 && output->rng_engine_after==456);
     assert(output->tag_count==1 && output->tags[0].id==1 && output->tags[0].to_generation==8 && output->tags[0].phase==1);
     assert(output->actors[1].animation.current==100 && output->actors[1].animation.frames[3]==19.5f);
-    assert(output->actors[1].animation.clips[2]==-1 && output->variables[0].value==1);
+    assert(output->actors[1].animation.clips[2]==-1);
+    assert(output->variable_count==3);
+    assert(!memcmp(output->variables,input->variables,3*sizeof(SyncVariable)));
     assert(output->actors[1].position[1]==1 && output->actors[1].previous_position[1]==.5f);
     assert(output->actors[1].render_position[1]==2 && output->actors[1].previous_render_position[1]==1.5f);
     assert(output->actors[1].velocity[1]==3 && output->actors[1].render_heading==1234 && output->combat_ready==1);
@@ -85,6 +91,9 @@ int main(void) {
     assert(output->rts_timer_choice_count==1 && output->rts_timer_choices[0].index==2 &&
         output->rts_timer_choices[0].remaining==3.25f);
     assert(output->dormant_party[4]==332);
+    input->variables[2].scope=0x06677280;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->variables[2].scope=SYNC_VARIABLE_AREA_DECLARATION;
     input->actors[1].spawn_source.producer=0;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->actors[1].spawn_source.producer=0xf29a3889;

@@ -94,7 +94,7 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
     }
     for (uint32_t i=0;i<frame->variable_count;++i) {
         const SyncVariable *variable=&frame->variables[i];
-        if (!variable->name[0] || variable->scope>1 || !isfinite(variable->value)) return 0;
+        if (!variable->name[0] || variable->scope>SYNC_VARIABLE_AREA_DECLARATION || !isfinite(variable->value)) return 0;
     }
     for (uint32_t i=0;i<frame->shot_count;++i) {
         const SyncShot *shot=&frame->shots[i];

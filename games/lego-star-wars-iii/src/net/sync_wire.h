@@ -11,7 +11,7 @@
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
 #define SYNC_LAYOUT_VERSION 34
-#define SYNC_WIRE_VERSION 35
+#define SYNC_WIRE_VERSION 43
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -107,6 +107,12 @@ typedef struct SyncActor {
     SyncAnimation animation;
     SyncSpawnSource spawn_source;
 } SyncActor;
+
+enum SyncVariableScope {
+    SYNC_VARIABLE_GLOBAL,
+    SYNC_VARIABLE_AREA,
+    SYNC_VARIABLE_AREA_DECLARATION
+};
 
 typedef struct SyncVariable {
     char name[32];
