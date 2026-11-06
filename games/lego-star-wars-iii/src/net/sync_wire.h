@@ -10,8 +10,8 @@
 #define SYNC_MAX_RTS_TIMER_CHOICES 32
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
-#define SYNC_LAYOUT_VERSION 33
-#define SYNC_WIRE_VERSION 34
+#define SYNC_LAYOUT_VERSION 34
+#define SYNC_WIRE_VERSION 35
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -81,6 +81,10 @@ typedef struct SyncTag {
     uint32_t phase;
 } SyncTag;
 
+typedef struct SyncSpawnSource {
+    uint32_t producer,serial;
+} SyncSpawnSource;
+
 typedef struct SyncActor {
     uint32_t slot;
     uint32_t generation,spawn_tag;
@@ -101,6 +105,7 @@ typedef struct SyncActor {
     uint64_t wallet;
     uint32_t has_wallet;
     SyncAnimation animation;
+    SyncSpawnSource spawn_source;
 } SyncActor;
 
 typedef struct SyncVariable {
@@ -113,6 +118,7 @@ typedef struct SyncActorInput {
     int32_t character;
     float origin[3];
     uint32_t held,pressed;
+    SyncSpawnSource spawn_source;
 } SyncActorInput;
 
 typedef struct SyncCadence {
@@ -121,12 +127,14 @@ typedef struct SyncCadence {
     float origin[3];
     uint32_t period,phase;
     float elapsed;
+    SyncSpawnSource spawn_source;
 } SyncCadence;
 
 typedef struct SyncCollider {
     uint32_t manager_ordinal,slot,generation,spawn_tag;
     int32_t character;
     float origin[3],bounds[6],center[3],extents[2];
+    SyncSpawnSource spawn_source;
 } SyncCollider;
 
 typedef struct SyncReactionChoice {
@@ -136,6 +144,7 @@ typedef struct SyncReactionChoice {
     int32_t old_action,clip;
     uint32_t source_id;
     uint32_t arena_attacker_slot,arena_attacker_generation;
+    SyncSpawnSource spawn_source;
 } SyncReactionChoice;
 
 typedef struct SyncModelInputContext {
@@ -155,6 +164,7 @@ typedef struct SyncModelInput {
     uint32_t input_mode,period,phase;
     float elapsed;
     SyncModelInputContext context;
+    SyncSpawnSource spawn_source;
 } SyncModelInput;
 
 typedef struct SyncSpawnTimer {
@@ -167,6 +177,7 @@ typedef struct SyncFireTaskGate {
     float origin[3];
     uint16_t flags,action;
     uint32_t allowed;
+    SyncSpawnSource spawn_source;
 } SyncFireTaskGate;
 typedef struct SyncRtsTeamTimers {
     uint32_t slot;

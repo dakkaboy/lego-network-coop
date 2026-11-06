@@ -30,6 +30,10 @@ uint32_t sync_frame_size(const SyncFrame *frame) {
            frame->shot_count*sizeof(SyncShot) + frame->projectile_count*sizeof(SyncProjectile) + frame->tag_count*sizeof(SyncTag) + frame->actor_input_count*sizeof(SyncActorInput) + frame->cadence_count*sizeof(SyncCadence) + frame->geometry_count*sizeof(SyncCollider) + frame->reaction_count*sizeof(SyncReactionChoice) + frame->model_input_count*sizeof(SyncModelInput) + frame->spawn_timer_count*sizeof(SyncSpawnTimer) + frame->fire_task_gate_count*sizeof(SyncFireTaskGate) + frame->rts_team_timer_count*sizeof(SyncRtsTeamTimers) + frame->rts_timer_choice_count*sizeof(SyncRtsTimerChoice);
 }
 
+static bool spawn_source_valid(SyncSpawnSource source) {
+    return source.producer || !source.serial;
+}
+
 int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
     if (bytes < offsetof(SyncFrame,actors) || frame->actor_count > SYNC_MAX_ACTORS || frame->variable_count>SYNC_MAX_VARIABLES ||
         bytes != sync_frame_size(frame) || (frame->native_span_plan & ~SYNC_NATIVE_SPAN_PLAN_MASK) || (frame->native_span_calls & ~SYNC_NATIVE_SPAN_CALLS_MASK) || !frame->epoch || !frame->sequence || frame->level < 0 || frame->level >= 4096 ||
@@ -56,7 +60,7 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
     }
     for (uint32_t i=0;i<frame->fire_task_gate_count;++i) {
         const SyncFireTaskGate &gate=frame->fire_task_gates[i];
-        if (gate.slot>=SYNC_MAX_ACTORS || !gate.generation || gate.character<0 || gate.character>=4096 ||
+        if (!spawn_source_valid(gate.spawn_source) || gate.slot>=SYNC_MAX_ACTORS || !gate.generation || gate.character<0 || gate.character>=4096 ||
             !(gate.flags&SYNC_FIRE_TASK_QUEUES_SHOT) || gate.allowed>1) return 0;
         for (float coordinate : gate.origin) if (!isfinite(coordinate)) return 0;
     }
@@ -68,7 +72,7 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
     for (uint32_t i=0; i<frame->actor_count; ++i) {
         const SyncActor *actor = &frame->actors[i];
         if (actor->slot >= 4096 || actor->character < -1 || actor->character >= 4096 || !actor->generation || actor->player < -1 || actor->player > 1) return 0;
-        if (actor->has_wallet>1) return 0;
+        if (actor->has_wallet>1 || !spawn_source_valid(actor->spawn_source)) return 0;
         if (actor->party_slot < -1 || actor->party_slot>=8 ||
             (actor->player>=0 && actor->party_slot!=actor->player) ||
             (actor->party_slot>=0 && actor->party_slot<2 && actor->player!=actor->party_slot)) return 0;
@@ -121,22 +125,24 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
     }
     for (uint32_t i=0;i<frame->actor_input_count;++i) {
         const SyncActorInput *entry=frame->actor_inputs+i;
-        if (entry->slot>=SYNC_MAX_ACTORS || !entry->generation || entry->character<0 || entry->character>=4096) return 0;
+        if (!spawn_source_valid(entry->spawn_source) || entry->slot>=SYNC_MAX_ACTORS || !entry->generation || entry->character<0 || entry->character>=4096) return 0;
         for (int j=0;j<3;++j) if (!isfinite(entry->origin[j])) return 0;
     }
     for (uint32_t i=0;i<frame->cadence_count;++i) {
         const SyncCadence *entry=frame->cadence+i;
-        if (entry->slot>=SYNC_MAX_ACTORS || !entry->generation || entry->character<0 || entry->character>=4096 ||
+        if (!spawn_source_valid(entry->spawn_source) || entry->slot>=SYNC_MAX_ACTORS || !entry->generation || entry->character<0 || entry->character>=4096 ||
             !entry->period || entry->period>255 || entry->phase>255 || !isfinite(entry->elapsed) || entry->elapsed<0) return 0;
         for (int j=0;j<3;++j) if (!isfinite(entry->origin[j])) return 0;
     }
     for (uint32_t i=0;i<frame->geometry_count;++i) {
         const SyncCollider *entry=frame->geometry+i;
-        if (!geometry_entry_valid(entry) || entry->manager_ordinal>frame->geometry_calls || (i && (entry->manager_ordinal<frame->geometry[i-1].manager_ordinal || (entry->manager_ordinal==frame->geometry[i-1].manager_ordinal && entry->slot<=frame->geometry[i-1].slot)))) return 0;
+        if (!spawn_source_valid(entry->spawn_source) || !geometry_entry_valid(entry) || entry->manager_ordinal>frame->geometry_calls || (i && (entry->manager_ordinal<frame->geometry[i-1].manager_ordinal || (entry->manager_ordinal==frame->geometry[i-1].manager_ordinal && entry->slot<=frame->geometry[i-1].slot)))) return 0;
     }
     for (uint32_t i=0;i<frame->reaction_count;++i) if (!reaction_entry_valid(frame->reactions+i) ||
+        !spawn_source_valid(frame->reactions[i].spawn_source) ||
         (frame->reactions[i].arena_attacker_generation && frame->level!=12)) return 0;
-    for (uint32_t i=0;i<frame->model_input_count;++i) if (!model_input_entry_valid(frame->model_inputs+i)) return 0;
+    for (uint32_t i=0;i<frame->model_input_count;++i)
+        if (!model_input_entry_valid(frame->model_inputs+i) || !spawn_source_valid(frame->model_inputs[i].spawn_source)) return 0;
     return 1;
 }
 

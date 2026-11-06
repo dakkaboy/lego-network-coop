@@ -50,14 +50,14 @@ __attribute__((used,noinline)) void cadence_apply_period(void *actor,uint32_t *p
     if (journal.host) {
         entities_update();if(!op_live(&op))return;SyncActor identity={0};entities_describe(&identity,actor);if(!op_live(&op))return;
         int actor_slot=entities_slot(actor);if(!op_live(&op))return;
-        SyncCadence entry={.slot=(uint32_t)actor_slot,.generation=identity.generation,.spawn_tag=identity.spawn_tag,
+        SyncCadence entry={.slot=(uint32_t)actor_slot,.generation=identity.generation,.spawn_tag=identity.spawn_tag,.spawn_source=identity.spawn_source,
             .character=*(int16_t *)(p+0xdc0),.period=*period,.phase=phase,.elapsed=*elapsed};
         memcpy(entry.origin,identity.spawn_position,12);
         if (!cadence_journal_record(&journal,&entry)) { failed(&op,actor,&entry,4);return; }
         ++clonewars_cadence_debug[0];
     } else {
         const SyncCadence *entry=cadence_journal_peek(&journal);SyncActor identity={0};
-        if (entry) { identity.slot=entry->slot;identity.generation=entry->generation;identity.spawn_tag=entry->spawn_tag;identity.character=entry->character;memcpy(identity.spawn_position,entry->origin,12); }
+        if (entry) { identity.slot=entry->slot;identity.generation=entry->generation;identity.spawn_tag=entry->spawn_tag;identity.spawn_source=entry->spawn_source;identity.character=entry->character;memcpy(identity.spawn_position,entry->origin,12); }
         uint32_t local_period=*period,local_elapsed=bits(*elapsed);
         int owner_matches=entry && entities_resolve_reference(&identity)==actor;if(!op_live(&op))return;
         if (!cadence_journal_apply(&journal,entry,owner_matches,phase,period,elapsed)) { failed(&op,actor,entry,(unsigned)journal.failed);return; }
@@ -85,7 +85,7 @@ __attribute__((used,noinline)) int cadence_apply_fire_task_gate(void *actor,cons
         if (!op_live(&op)) return 0;
         if (slot>=0 && slot<SYNC_MAX_ACTORS && identity.generation && journal.frame->fire_task_gate_count<SYNC_MAX_ACTORS) {
             SyncFireTaskGate gate={
-                .slot=(uint32_t)slot,.generation=identity.generation,.spawn_tag=identity.spawn_tag,
+                .slot=(uint32_t)slot,.generation=identity.generation,.spawn_tag=identity.spawn_tag,.spawn_source=identity.spawn_source,
                 .character=*(int16_t *)((unsigned char *)actor+0xdc0),.flags=flags,.action=action,.allowed=(uint32_t)allowed
             };
             memcpy(gate.origin,identity.spawn_position,sizeof(gate.origin));
@@ -96,7 +96,7 @@ __attribute__((used,noinline)) int cadence_apply_fire_task_gate(void *actor,cons
     } else if (fire_task_cursor<journal.frame->fire_task_gate_count) {
         const SyncFireTaskGate *gate=&journal.frame->fire_task_gates[fire_task_cursor];
         if (gate->flags==flags && gate->action==action) {
-            SyncActor identity={.slot=gate->slot,.generation=gate->generation,.spawn_tag=gate->spawn_tag,.character=gate->character};
+            SyncActor identity={.slot=gate->slot,.generation=gate->generation,.spawn_tag=gate->spawn_tag,.spawn_source=gate->spawn_source,.character=gate->character};
             memcpy(identity.spawn_position,gate->origin,sizeof(gate->origin));
             const int matches=entities_resolve_reference(&identity)==actor;
             if (!op_live(&op)) return 0;

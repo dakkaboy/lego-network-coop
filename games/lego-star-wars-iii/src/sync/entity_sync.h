@@ -1,8 +1,15 @@
 #pragma once
 #include "../net/sync_wire.h"
 int entities_install(void);
+typedef struct EntitySpawnIdentity {
+    uint32_t site;
+    SyncSpawnSource source;
+} EntitySpawnIdentity;
+EntitySpawnIdentity entities_set_spawn_context(EntitySpawnIdentity identity);
 void entities_update(void);
 void entities_describe(SyncActor *state,const void *actor);
+void entities_note_spawn_source(const void *actor,uint32_t site,SyncSpawnSource source);
+SyncSpawnSource entities_spawn_source(const void *actor,uint32_t *site);
 int entities_bind(const SyncFrame *frame);
 void *entities_actor(uint32_t network_slot,uint32_t generation);
 uint32_t entities_generation(const void *actor);

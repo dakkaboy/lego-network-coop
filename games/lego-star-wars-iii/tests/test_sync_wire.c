@@ -6,7 +6,7 @@
 #include <math.h>
 #include <stdio.h>
 #include "net/sync_wire.h"
-_Static_assert(sizeof(SyncActor)==152,"Actor wire layout changed");
+_Static_assert(sizeof(SyncActor)==160,"Actor wire layout changed");
 _Static_assert(offsetof(SyncActor,party_slot)==102,"Party slot must use defined padding");
 int main(void) {
     SyncFrame *input=calloc(1,sizeof(*input)),*output=calloc(1,sizeof(*output));
@@ -32,7 +32,7 @@ int main(void) {
     input->actors[0].generation=7; input->actors[0].player=0;
     input->actors[1].generation=8; input->actors[1].player=1;
     input->inputs[1].aim_x=13; input->inputs[1].aim_y=219;
-    input->actors[1].spawn_tag=0x5c5cff; input->actors[1].spawn_position[2]=3.5f;
+    input->actors[1].spawn_tag=0x5c5cff; input->actors[1].spawn_source=(SyncSpawnSource){0xf29a3889,17}; input->actors[1].spawn_position[2]=3.5f;
     input->actors[1].slot=1; input->actors[1].animation.current=100;
     input->actors[1].animation.frames[3]=19.5f;
     input->actors[1].animation.clips[2]=-1;
@@ -74,6 +74,7 @@ int main(void) {
     assert(output->actors[1].render_position[1]==2 && output->actors[1].previous_render_position[1]==1.5f);
     assert(output->actors[1].velocity[1]==3 && output->actors[1].render_heading==1234 && output->combat_ready==1);
     assert(output->actors[1].generation==8 && output->actors[1].spawn_tag==0x5c5cff && output->actors[1].spawn_position[2]==3.5f);
+    assert(output->actors[1].spawn_source.producer==0xf29a3889 && output->actors[1].spawn_source.serial==17);
     assert(output->inputs[1].aim_x==13 && output->inputs[1].aim_y==219 && output->shots[0].owner_generation==8);
     assert(output->shots[0].id==42 && output->shots[0].origin[0]==12.25f);
     assert(output->projectiles[1].velocity[2]==6.75f);
@@ -84,6 +85,9 @@ int main(void) {
     assert(output->rts_timer_choice_count==1 && output->rts_timer_choices[0].index==2 &&
         output->rts_timer_choices[0].remaining==3.25f);
     assert(output->dormant_party[4]==332);
+    input->actors[1].spawn_source.producer=0;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->actors[1].spawn_source.producer=0xf29a3889;
     input->dormant_party[4]=4097;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->dormant_party[4]=332;

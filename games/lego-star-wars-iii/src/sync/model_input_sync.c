@@ -17,14 +17,14 @@
 #include "../debug/intent_frame_observer.h"
 #include "../debug/intent_scope_observer.h"
 #endif
-_Static_assert(SYNC_LAYOUT_VERSION==33,"actual layout33");
+_Static_assert(SYNC_LAYOUT_VERSION==34,"actual layout34");
 _Static_assert(sizeof(SyncModelInputContext)==124,"context");
-_Static_assert(sizeof(SyncModelInput)==180,"request");
+_Static_assert(sizeof(SyncModelInput)==188,"request");
 _Static_assert(offsetof(SyncModelInput,input_mode)==40,"mode");
 _Static_assert(offsetof(SyncModelInput,context)==56,"context offset");
 _Static_assert(offsetof(SyncFrame,actors)==192,"header");
-_Static_assert(offsetof(SyncFrame,model_inputs)==1632000,"model input offset");
-_Static_assert(sizeof(SyncFrame)==2519552,"capacity");
+_Static_assert(offsetof(SyncFrame,model_inputs)==1795840,"model input offset");
+_Static_assert(sizeof(SyncFrame)==2748928,"capacity");
 typedef struct ModelInputOutcome {uint32_t committed,sequence,ordinal,slot,generation,valid,reason,actor_local,controller_local,clock,qpc[2];uint32_t actor_heading,controller_heading,magnitude,direction[2],previous_heading,previous_magnitude,last_heading,last_magnitude;uint32_t action,substate,clip,timer,life_54,flags_50,hero_role;float position[3];} ModelInputOutcome;
 typedef struct ProjectionRecord {
  uint32_t committed,id,epoch,sequence,ordinal,slot,generation,thread,clock,qpc[2],actor_local,controller_local,provider_local,native_frame;
@@ -75,7 +75,7 @@ __declspec(dllexport) volatile ModelInputOutcome clonewars_model_input_first_out
 __declspec(dllexport) volatile uint32_t clonewars_model_input_context_encoding=1;
 #define PROJECTION_CAPACITY 2048
 __declspec(dllexport) volatile LONG clonewars_model_projection_enabled,clonewars_model_projection_count;
-__declspec(dllexport) volatile uint32_t clonewars_model_projection_version=2,clonewars_model_projection_stride=sizeof(ProjectionRecord),clonewars_model_projection_capacity=PROJECTION_CAPACITY;
+__declspec(dllexport) volatile uint32_t clonewars_model_projection_version=3,clonewars_model_projection_stride=sizeof(ProjectionRecord),clonewars_model_projection_capacity=PROJECTION_CAPACITY;
 __declspec(dllexport) volatile ProjectionRecord clonewars_model_projection_records[PROJECTION_CAPACITY];
 #ifdef MODEL_INPUT_TEST
 extern int model_input_test_valid(const void *,unsigned);extern void *model_input_test_hero(unsigned);extern uint32_t model_input_test_word(uint32_t);
@@ -127,8 +127,8 @@ __attribute__((used,noinline)) void request_mode_source_checkpoint(uint32_t *sav
  SyncModelInput local;if(!capture(&local,actor,provider,x,z,fx)){failed(&op,actor,NULL,NULL,4);return;}if(!op_live(&op)||scope!=s)return;
  SyncModelInput raw_local=local;uint32_t canonicalized_fields=0;
  const SyncModelInput *entry=NULL;
- if(journal.host){entities_update();if(!op_live(&op)||scope!=s)return;SyncActor identity={0};entities_describe(&identity,actor);if(!op_live(&op)||scope!=s)return;int slot=entities_slot(actor);if(!op_live(&op)||scope!=s)return;local.slot=(uint32_t)slot;local.generation=identity.generation;local.spawn_tag=identity.spawn_tag;memcpy(local.origin,identity.spawn_position,12);raw_local=local;if(!model_context_canonicalize(&local,&raw_local.context,&local.context,&canonicalized_fields)){failed(&op,actor,&raw_local,&raw_local,4);return;}if(!model_input_journal_record(&journal,&local)){failed(&op,actor,&local,&raw_local,(unsigned)journal.failed);return;}entry=journal.frame->model_inputs+journal.frame->model_input_count-1;++clonewars_model_input_debug[0];scope->ordinal=journal.frame->model_input_count-1;}
- else{entry=model_input_journal_peek(&journal);SyncActor reference={0};if(entry){reference.slot=entry->slot;reference.generation=entry->generation;reference.spawn_tag=entry->spawn_tag;reference.character=entry->character;memcpy(reference.spawn_position,entry->origin,12);}void *resolved=entry?entities_resolve_reference(&reference):NULL;if(!op_live(&op)||scope!=s)return;local.slot=entry?entry->slot:UINT32_MAX;local.generation=entities_observed_generation(actor);raw_local=local;
+ if(journal.host){entities_update();if(!op_live(&op)||scope!=s)return;SyncActor identity={0};entities_describe(&identity,actor);if(!op_live(&op)||scope!=s)return;int slot=entities_slot(actor);if(!op_live(&op)||scope!=s)return;local.slot=(uint32_t)slot;local.generation=identity.generation;local.spawn_tag=identity.spawn_tag;local.spawn_source=identity.spawn_source;memcpy(local.origin,identity.spawn_position,12);raw_local=local;if(!model_context_canonicalize(&local,&raw_local.context,&local.context,&canonicalized_fields)){failed(&op,actor,&raw_local,&raw_local,4);return;}if(!model_input_journal_record(&journal,&local)){failed(&op,actor,&local,&raw_local,(unsigned)journal.failed);return;}entry=journal.frame->model_inputs+journal.frame->model_input_count-1;++clonewars_model_input_debug[0];scope->ordinal=journal.frame->model_input_count-1;}
+ else{entry=model_input_journal_peek(&journal);SyncActor reference={0};if(entry){reference.slot=entry->slot;reference.generation=entry->generation;reference.spawn_tag=entry->spawn_tag;reference.spawn_source=entry->spawn_source;reference.character=entry->character;memcpy(reference.spawn_position,entry->origin,12);}void *resolved=entry?entities_resolve_reference(&reference):NULL;if(!op_live(&op)||scope!=s)return;local.slot=entry?entry->slot:UINT32_MAX;local.generation=entities_observed_generation(actor);raw_local=local;
   if(entry&&entry->context.actor_4c_mask!=raw_local.context.actor_4c_mask){failed(&op,actor,entry,&raw_local,9);return;}
   if(entry&&!model_context_canonicalize(entry,&raw_local.context,&local.context,&canonicalized_fields)){failed(&op,actor,entry,&raw_local,4);return;}
   if(entry) local.context.actor_76=entry->context.actor_76;
@@ -161,9 +161,9 @@ __attribute__((used,noinline)) int request_priority_checkpoint(uint32_t *saved,u
  return 1;
 }
 __attribute__((used,noinline)) int request_mode_mov_checkpoint(uint32_t *saved,uint32_t *mode){return consumer(saved,mode,1);}
-_Static_assert(offsetof(ProjectionRecord,raw_source_context)==312,"raw diagnostic context offset");
-_Static_assert(offsetof(ProjectionRecord,canonicalized_fields)==436,"canonicalization mask offset");
-_Static_assert(sizeof(ProjectionRecord)==440,"projection record");
+_Static_assert(offsetof(ProjectionRecord,raw_source_context)==320,"raw diagnostic context offset");
+_Static_assert(offsetof(ProjectionRecord,canonicalized_fields)==444,"canonicalization mask offset");
+_Static_assert(sizeof(ProjectionRecord)==448,"projection record");
 _Static_assert(offsetof(ProjectionRecord,request)==88,"projection request");
 static void projection_record(const ModelInputFrameLease *op,RequestScope *s,unsigned char *p,unsigned char *c){
  if(!op_live(op)||!clonewars_model_projection_enabled)return;ProjectionRecord r={0};r.id=(uint32_t)InterlockedIncrement(&clonewars_model_projection_count);r.epoch=s->epoch;r.sequence=s->sequence;r.ordinal=s->ordinal;r.slot=s->request.slot;r.generation=s->request.generation;r.thread=GetCurrentThreadId();r.clock=global_word(0xfb4b6c);LARGE_INTEGER q;QueryPerformanceCounter(&q);r.qpc[0]=q.LowPart;r.qpc[1]=(uint32_t)q.HighPart;r.actor_local=(uint32_t)(uintptr_t)p;r.controller_local=(uint32_t)(uintptr_t)c;r.provider_local=(uint32_t)(uintptr_t)s->provider;r.native_frame=s->native_frame;r.source_local_mode=s->local_mode;r.cmp_seen=s->cmp_seen;r.mov_seen=s->mov_seen;r.cmp_native_flags=s->cmp_native_flags;r.cmp_effective_flags=s->cmp_effective_flags;r.mov_native_mode=s->mov_native_mode;r.effective_mode=s->request.input_mode;r.request=s->request;r.raw_source_context=s->raw_source_context;r.canonicalized_fields=s->canonicalized_fields;r.control_25=c[0x25];r.heading_26=read16(c+0x26);r.magnitude=read32(c+0x28);r.direction[0]=read32(c+0x2c);r.direction[1]=read32(c+0x30);r.c7c=read32(p+0xc7c);unsigned char *base=*(unsigned char **)(p+0xc08);r.base_valid=valid(base,0x228);r.base_heading=r.base_valid?read32(base+0x224):0;r.actor_heading=read16(p+0x6c);r.action=read16(p+0x2f4);r.life_54=p[0x54];if(!op_live(op)||scope!=s)return;volatile ProjectionRecord *out=clonewars_model_projection_records+(r.id-1)%PROJECTION_CAPACITY;out->committed=0;memcpy((void *)out,&r,sizeof(r));MemoryBarrier();out->committed=r.id;

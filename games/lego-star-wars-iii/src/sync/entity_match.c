@@ -1,18 +1,16 @@
-#include <math.h>
 #include "entity_match.h"
+
 int entity_match_unique(const EntityKey *wanted,const EntityKey *available,const unsigned char *claimed,unsigned count) {
-    int found=-1;
+    if (!wanted->spawn_source.producer) return -1;
+    int match=-1;
     for (unsigned i=0;i<count;++i) {
         const EntityKey *candidate=available+i;
-        if (claimed[i] || !candidate->generation || candidate->character!=wanted->character || candidate->spawn_tag!=wanted->spawn_tag) continue;
-        float distance=0;
-        for (int axis=0;axis<3;++axis) {
-            float delta=candidate->origin[axis]-wanted->origin[axis];
-            distance+=delta*delta;
-        }
-        if (!isfinite(distance) || distance>.25f*.25f) continue;
-        if (found>=0) return -2;
-        found=(int)i;
+        if (claimed[i] || !candidate->generation || candidate->character!=wanted->character ||
+            candidate->spawn_tag!=wanted->spawn_tag ||
+            candidate->spawn_source.producer!=wanted->spawn_source.producer ||
+            candidate->spawn_source.serial!=wanted->spawn_source.serial) continue;
+        if (match>=0) return -2;
+        match=(int)i;
     }
-    return found;
+    return match;
 }

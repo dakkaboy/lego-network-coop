@@ -445,7 +445,7 @@ static void actor_prepare_common_impl(void *actor,int alternate,int native_block
         if (lan_is_host()) {
             entities_update();if(!core_live()||!npc_input_cohort_valid(&npc_inputs,&actor_cohort,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return;SyncActor identity={0};entities_describe(&identity,actor);
             if(!npc_input_cohort_valid(&npc_inputs,&actor_cohort,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return;
-            SyncActorInput entry={.slot=(uint32_t)entities_slot(actor),.generation=identity.generation,.spawn_tag=identity.spawn_tag,
+            SyncActorInput entry={.slot=(uint32_t)entities_slot(actor),.generation=identity.generation,.spawn_tag=identity.spawn_tag,.spawn_source=identity.spawn_source,
                 .character=*(int16_t *)((char *)actor+0xdc0),.held=*held,.pressed=*pressed};
             memcpy(entry.origin,identity.spawn_position,12);
             if (!npc_input_record(&npc_inputs,&entry)) { if (!fault) fault=13;return; }
@@ -453,7 +453,7 @@ static void actor_prepare_common_impl(void *actor,int alternate,int native_block
         } else {
             const SyncActorInput *entry=npc_input_peek(&npc_inputs);
             SyncActor identity={0};
-            if (entry) { identity.slot=entry->slot;identity.generation=entry->generation;identity.spawn_tag=entry->spawn_tag;identity.character=entry->character;memcpy(identity.spawn_position,entry->origin,12); }
+            if (entry) { identity.slot=entry->slot;identity.generation=entry->generation;identity.spawn_tag=entry->spawn_tag;identity.spawn_source=entry->spawn_source;identity.character=entry->character;memcpy(identity.spawn_position,entry->origin,12); }
             clonewars_npc_input_debug[3]=entry ? entry->slot : UINT32_MAX;clonewars_npc_input_debug[4]=entry ? entry->generation : 0;
             clonewars_npc_input_debug[7]=*held;clonewars_npc_input_debug[8]=*pressed;
             int owner_matches=entry && entities_resolve_reference(&identity)==actor;

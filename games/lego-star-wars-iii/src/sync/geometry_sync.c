@@ -71,7 +71,7 @@ int geometry_phase(uint32_t mode) {
         for (int slot=0;slot<count;++slot) {
             if(!op_live(&op))return 0;char *actor=pool+slot*0x1440;if ((*(uint32_t *)(actor+0x50)&3)!=3) continue;
             SyncActor identity={0};entities_describe(&identity,actor);if(!op_live(&op))return 0;
-            SyncCollider entry={.manager_ordinal=journal.ordinal,.slot=(uint32_t)slot,.generation=identity.generation,.spawn_tag=identity.spawn_tag,.character=*(int16_t *)(actor+0xdc0)};
+            SyncCollider entry={.manager_ordinal=journal.ordinal,.slot=(uint32_t)slot,.generation=identity.generation,.spawn_tag=identity.spawn_tag,.spawn_source=identity.spawn_source,.character=*(int16_t *)(actor+0xdc0)};
             memcpy(entry.origin,identity.spawn_position,12);memcpy(entry.bounds,actor+0x30,24);memcpy(entry.center,actor+0xf28,12);memcpy(entry.extents,actor+0x1088,8);
             if (!geometry_journal_record(&journal,&entry)) return fail(&op,&entry,actor,mode,recorded,recorded,2);
             ++recorded;++clonewars_geometry_debug[0];
@@ -81,7 +81,7 @@ int geometry_phase(uint32_t mode) {
     void *resolved[SYNC_MAX_ACTORS];uint32_t resolved_generation[SYNC_MAX_ACTORS];unsigned char claimed[SYNC_MAX_ACTORS]={0};unsigned active_count=0;
     for (uint32_t index=0;index<batch.count;++index) {
         if(!op_live(&op))return 0;const SyncCollider *entry=journal.frame->geometry+batch.start+index;
-        SyncActor identity={.slot=entry->slot,.generation=entry->generation,.spawn_tag=entry->spawn_tag,.character=entry->character};memcpy(identity.spawn_position,entry->origin,12);
+        SyncActor identity={.slot=entry->slot,.generation=entry->generation,.spawn_tag=entry->spawn_tag,.spawn_source=entry->spawn_source,.character=entry->character};memcpy(identity.spawn_position,entry->origin,12);
         char *actor=entities_resolve_reference(&identity);if(!op_live(&op))return 0;resolved[index]=actor;
         uintptr_t offset=(uintptr_t)actor-(uintptr_t)pool;
         int owner_matches=actor && offset%0x1440==0 && offset/0x1440<(unsigned)count && valid(actor,0x1440) && (*(uint32_t *)(actor+0x50)&3)==3;

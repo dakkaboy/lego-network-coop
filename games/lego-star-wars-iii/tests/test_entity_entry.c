@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "sync/entity_sync.h"
+#include "sync/entity_match.h"
 
 enum { ACTOR_COUNT = 4, ACTOR_STRIDE = 0x1440 };
 
@@ -39,6 +40,22 @@ static void prepare_party(SyncFrame *frame) {
 }
 
 int main(void) {
+    EntityKey requested={.generation=12,.spawn_tag=5,.character=171,.spawn_source={0xe033ae01,2}};
+    EntityKey candidates[]={
+        {.generation=21,.spawn_tag=5,.character=171,.spawn_source={0xe033ae01,3}},
+        {.generation=22,.spawn_tag=5,.character=171,.spawn_source={0xa212f067,2}},
+        {.generation=23,.spawn_tag=5,.character=171,.spawn_source={0xe033ae01,2}},
+    };
+    unsigned char unavailable[3]={0};
+    assert(entity_match_unique(&requested,candidates,unavailable,3)==2);
+    unavailable[2]=1;
+    assert(entity_match_unique(&requested,candidates,unavailable,3)==-1);
+    unavailable[2]=0;
+    candidates[1]=candidates[2];
+    assert(entity_match_unique(&requested,candidates,unavailable,3)==-2);
+    requested.spawn_source=(SyncSpawnSource){0};
+    assert(entity_match_unique(&requested,candidates,unavailable,3)==-1);
+
     entity_test_pool=calloc(ACTOR_COUNT,ACTOR_STRIDE);
     SyncFrame *frame=calloc(1,sizeof(*frame));
     assert(entity_test_pool && frame);

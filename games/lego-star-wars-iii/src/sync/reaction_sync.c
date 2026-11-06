@@ -76,7 +76,7 @@ __attribute__((used,noinline)) void reaction_apply_choice(void *actor,uint32_t *
     if (reaction_journal.host) {
         entities_update();if(!op_live(&op))return;SyncActor identity={0};entities_describe(&identity,actor);if(!op_live(&op))return;
         int actor_slot=entities_slot(actor);if(!op_live(&op))return;
-        SyncReactionChoice entry={.slot=(uint32_t)actor_slot,.generation=identity.generation,.spawn_tag=identity.spawn_tag,
+        SyncReactionChoice entry={.slot=(uint32_t)actor_slot,.generation=identity.generation,.spawn_tag=identity.spawn_tag,.spawn_source=identity.spawn_source,
             .character=*(int16_t *)((char *)actor+0xdc0),.old_action=old_action,.clip=(int32_t)*clip,.source_id=source_id};
         memcpy(entry.origin,identity.spawn_position,12);
         if (arena_attacker && actor==arena_victim &&
@@ -87,7 +87,7 @@ __attribute__((used,noinline)) void reaction_apply_choice(void *actor,uint32_t *
         ++clonewars_reaction_debug[0];
     } else {
         const SyncReactionChoice *entry=reaction_journal_peek(&reaction_journal);SyncActor identity={0};
-        if (entry) { identity.slot=entry->slot;identity.generation=entry->generation;identity.spawn_tag=entry->spawn_tag;identity.character=entry->character;memcpy(identity.spawn_position,entry->origin,12); }
+        if (entry) { identity.slot=entry->slot;identity.generation=entry->generation;identity.spawn_tag=entry->spawn_tag;identity.spawn_source=entry->spawn_source;identity.character=entry->character;memcpy(identity.spawn_position,entry->origin,12); }
         int owner_matches=entry && entities_resolve_reference(&identity)==actor;if(!op_live(&op))return;
         if (entry && (!!entry->arena_attacker_generation != !!(arena_attacker && arena_victim==actor))) {
             reaction_journal.failed=8;failed(&op,actor,entry,old_action,source_id,8,local_clip);return;
@@ -166,7 +166,7 @@ __attribute__((used,noinline)) static int __cdecl arena_contact_hit(void *attack
     entities_describe(&identity,victim);
     if (!op_live(&op)) return 0;
     SyncReactionChoice marker={.slot=(uint32_t)entities_slot(victim),.generation=identity.generation,
-        .spawn_tag=identity.spawn_tag,.character=*(int16_t *)((char *)victim+0xdc0),
+        .spawn_tag=identity.spawn_tag,.spawn_source=identity.spawn_source,.character=*(int16_t *)((char *)victim+0xdc0),
         .old_action=*(int16_t *)((char *)victim+0x2f4),.clip=REACTION_ARENA_NO_CLIP};
     memcpy(marker.origin,identity.spawn_position,12);
     if (!entities_observed_identity(attacker,&marker.arena_attacker_slot,&marker.arena_attacker_generation) ||

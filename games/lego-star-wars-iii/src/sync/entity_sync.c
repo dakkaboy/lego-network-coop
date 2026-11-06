@@ -18,6 +18,7 @@ extern char *entity_test_pool,*entity_test_players[8];
 
 typedef struct LocalEntity {
     EntityKey key;
+    float origin[3];
     char *model;
     int origin_ready;
 } LocalEntity;
@@ -32,6 +33,7 @@ static uint32_t birth_counter;
 static struct { uint32_t slot,generation; } retired[SYNC_MAX_PROJECTILES];
 static unsigned retired_head;
 static char *(*original_create)(void);
+static __thread EntitySpawnIdentity spawn_context;
 #ifndef ENTITY_SYNC_API
 #define ENTITY_SYNC_API __declspec(dllexport)
 #endif
@@ -63,35 +65,52 @@ static int raw_slot(const void *actor) {
     uintptr_t offset=(uintptr_t)actor-(uintptr_t)pool;
     return actor && pool && offset%0x1440==0 && offset/0x1440<SYNC_MAX_ACTORS ? (int)(offset/0x1440) : -1;
 }
-static EntityKey matching_key(int slot,int count) {
-    EntityKey key=local[slot].key;
-    char *actor=pool+slot*0x1440;
-    if (slot>=count || !local[slot].origin_ready || *(uint32_t *)(actor+0x760)!=2) return key;
-
-    char *mount=*(char **)(actor+0x75c);
-    int mount_slot=raw_slot(mount);
-    if (mount_slot<0 || mount_slot>=count || !local[mount_slot].origin_ready ||
-        (*(uint32_t *)(mount+0x50)&3)!=3 || *(uint32_t *)(mount+0x760)!=1 ||
-        *(char **)(mount+0x75c)!=actor) return key;
-
-    // The rider can start at a placeholder position until the mount updates its pose.
-    key.spawn_tag|=UINT32_C(0x80000000);
-    memcpy(key.origin,local[mount_slot].key.origin,sizeof key.origin);
-    return key;
-}
-static char *create_hook(void) {
-    uintptr_t caller=(uintptr_t)__builtin_return_address(0);
+static char *create_actor(uint32_t site,SyncSpawnSource source) {
     char *actor=original_create();
     current_pool(); int slot=raw_slot(actor);
     if (slot>=0) {
         LocalEntity *entry=local+slot;
         memset(entry,0,sizeof(*entry));
         entry->key.generation=generation();
-        entry->key.spawn_tag=caller>=0x400000 && caller<0x1100000 ? (uint32_t)(caller-0x400000) : 0;
+        entry->key.spawn_tag=site;
+        entry->key.spawn_source=source;
         ++clonewars_entity_debug[0];
     }
     return actor;
 }
+EntitySpawnIdentity entities_set_spawn_context(EntitySpawnIdentity identity) {
+    const EntitySpawnIdentity previous=spawn_context;
+    spawn_context=identity;
+    return previous;
+}
+static char *create_hook(void) {
+    const uintptr_t caller=(uintptr_t)__builtin_return_address(0);
+    SyncSpawnSource source={0};
+#ifndef ENTITY_SYNC_TEST
+    if (caller==0x9c5ce6 && spawn_context.source.producer)
+        return create_actor(spawn_context.site,spawn_context.source);
+    if (caller==0x9c5ef6) {
+        const uint32_t party=*(uint32_t *)0xfb4968;
+        if (party<8) source=(SyncSpawnSource){1,party};
+    }
+#endif
+    const uint32_t site=caller>=0x400000 && caller<0x1100000 ? (uint32_t)(caller-0x400000) : 0;
+    return create_actor(site,source);
+}
+#ifndef ENTITY_SYNC_TEST
+static char *__attribute__((used,noinline)) create_placement(uint32_t descriptor,uint32_t instance) {
+    return create_actor(0x9c63b1-0x400000,(SyncSpawnSource){descriptor+1,instance});
+}
+static char *__attribute__((naked)) create_placement_thunk(void) {
+    // The loader keeps the descriptor and copy indices at ESP+14h and ESP+18h before the call.
+    __asm__ volatile(
+        "pushl 0x1c(%esp)\n\t"
+        "pushl 0x1c(%esp)\n\t"
+        "call _create_placement\n\t"
+        "addl $8, %esp\n\t"
+        "ret");
+}
+#endif
 void entities_update(void) {
     current_pool(); int count=game_actor_count();
     if (!valid(pool,(SIZE_T)count*0x1440)) return;
@@ -103,12 +122,13 @@ void entities_update(void) {
         char *model=*(char **)(actor+8);
         if (!entry->key.generation || (entry->model && entry->model!=model) ||
             (entry->origin_ready && entry->key.character!=*(short *)(actor+0xdc0))) {
-            memset(entry,0,sizeof(*entry)); entry->key.generation=generation();
+            entry->key.generation=generation();
+            entry->origin_ready=0;
         }
         if (!entry->origin_ready) {
             entry->model=model;
             entry->key.character=*(short *)(actor+0xdc0);
-            memcpy(entry->key.origin,actor+0x24,12);
+            memcpy(entry->origin,actor+0x24,sizeof entry->origin);
             entry->origin_ready=1;
         }
     }
@@ -116,14 +136,37 @@ void entities_update(void) {
 void entities_describe(SyncActor *state,const void *actor) {
     int slot=raw_slot(actor);
     if (slot<0) return;
-    EntityKey key=matching_key(slot,game_actor_count());
-    state->generation=key.generation; state->spawn_tag=key.spawn_tag;
-    memcpy(state->spawn_position,key.origin,12);
+    EntityKey key=local[slot].key;
+    state->generation=key.generation; state->spawn_tag=key.spawn_tag; state->spawn_source=key.spawn_source;
+    memcpy(state->spawn_position,local[slot].origin,sizeof state->spawn_position);
     state->player=-1; state->party_slot=-1;
     for (int party=0;party<8;++party) if (ENTITY_PLAYER(party)==actor) {
         state->party_slot=(int16_t)party;
         if (party<2) state->player=party;
     }
+}
+void entities_note_spawn_source(const void *actor,uint32_t site,SyncSpawnSource source) {
+    if (!source.producer) return;
+    current_pool();
+    const int slot=raw_slot(actor);
+    if (slot>=0 && local[slot].key.generation) {
+        local[slot].key.spawn_tag=site;
+        local[slot].key.spawn_source=source;
+    }
+}
+SyncSpawnSource entities_spawn_source(const void *actor,uint32_t *site) {
+    current_pool();
+    const int slot=raw_slot(actor);
+    if (slot<0 || slot>=game_actor_count() || !local[slot].key.generation)
+        return (SyncSpawnSource){0};
+    *site=local[slot].key.spawn_tag;
+    return local[slot].key.spawn_source;
+}
+static int reference_matches(const EntityKey *local_key,const SyncActor *state) {
+    return local_key->character==state->character &&
+        local_key->spawn_source.producer==state->spawn_source.producer &&
+        local_key->spawn_source.serial==state->spawn_source.serial &&
+        (!state->spawn_source.producer || local_key->spawn_tag==state->spawn_tag);
 }
 void *entities_resolve_reference(const SyncActor *state) {
     if (!state || state->slot>=SYNC_MAX_ACTORS || !state->generation) return NULL;
@@ -134,17 +177,16 @@ void *entities_resolve_reference(const SyncActor *state) {
     if (history->remote_generation==wanted_generation) {
         slot=history->local_slot;
         if (slot<0 || slot>=count || local[slot].key.generation!=history->local_generation ||
-            local[slot].key.character!=state->character || (*(uint32_t *)(pool+slot*0x1440+0x50)&3)!=3) return NULL;
+            !reference_matches(&local[slot].key,state) || (*(uint32_t *)(pool+slot*0x1440+0x50)&3)!=3) return NULL;
     } else {
         unsigned char unavailable[SYNC_MAX_ACTORS]={0};
         for (int i=0;i<count;++i) {
-            keys[i]=matching_key(i,count);
+            keys[i]=local[i].key;
             if ((*(uint32_t *)(pool+i*0x1440+0x50)&3)!=3) keys[i].generation=0;
             if (assigned[i].local_generation==keys[i].generation &&
                 (assigned[i].remote_slot!=network_slot || assigned[i].remote_generation!=wanted_generation)) unavailable[i]=1;
         }
-        EntityKey key={.generation=wanted_generation,.spawn_tag=state->spawn_tag,.character=state->character};
-        memcpy(key.origin,state->spawn_position,12);
+        EntityKey key={.generation=wanted_generation,.spawn_tag=state->spawn_tag,.character=state->character,.spawn_source=state->spawn_source};
         slot=entity_match_unique(&key,keys,unavailable,(unsigned)count);
         if (slot<0) return NULL;
     }
@@ -226,7 +268,7 @@ int entities_bind(const SyncFrame *frame) {
         } else claimed[b->local_slot]=1;
     }
     for (int slot=0;slot<count;++slot) {
-        keys[slot]=matching_key(slot,count);
+        keys[slot]=local[slot].key;
         if ((*(uint32_t *)(pool+slot*0x1440+0x50)&3)!=3) keys[slot].generation=0;
     }
     const int initial_party=frame->sequence==1;
@@ -242,24 +284,23 @@ int entities_bind(const SyncFrame *frame) {
         const int native_party=initial_party && state->party_slot>=2 ? state->party_slot : state->player;
         if ((native_party<0)!=(pass==1)) continue;
         Binding *b=bindings+state->slot;
-        if (b->remote_generation && b->local_slot>=0 && keys[b->local_slot].character==state->character) continue;
+        if (b->remote_generation && b->local_slot>=0 && reference_matches(&keys[b->local_slot],state)) continue;
         if (b->local_slot>=0 && b->local_slot<count) claimed[b->local_slot]=0;
         memset(b,0,sizeof(*b)); b->local_slot=-1;
         int slot=-1;
         const Binding *history=known+state->slot;
         if (native_party>=0 && native_party<native_party_count) {
             slot=raw_slot(ENTITY_PLAYER(native_party));
-            if (slot<0 || slot>=count || !keys[slot].generation || keys[slot].character!=state->character || claimed[slot]) slot=-1;
+            if (slot<0 || slot>=count || !keys[slot].generation || !reference_matches(&keys[slot],state) || claimed[slot]) slot=-1;
             // Uncontrolled party members can start at different positions before formation settles.
             if (slot>=0 && native_party>=2 &&
                 (keys[slot].spawn_tag!=state->spawn_tag || *(int8_t *)(pool+slot*0x1440+0x55)!=native_party)) slot=-1;
         } else if (history->remote_generation==state->generation) {
             slot=history->local_slot;
             if (slot<0 || slot>=count || keys[slot].generation!=history->local_generation ||
-                keys[slot].character!=state->character || claimed[slot]) slot=-1;
+                !reference_matches(&keys[slot],state) || claimed[slot]) slot=-1;
         } else {
-            EntityKey key={.generation=state->generation,.spawn_tag=state->spawn_tag,.character=state->character};
-            memcpy(key.origin,state->spawn_position,12);
+            EntityKey key={.generation=state->generation,.spawn_tag=state->spawn_tag,.character=state->character,.spawn_source=state->spawn_source};
             unsigned char unavailable[SYNC_MAX_ACTORS];memcpy(unavailable,claimed,sizeof(unavailable));
             for (int candidate=0;candidate<count;++candidate)
                 if (assigned[candidate].local_generation==keys[candidate].generation &&
@@ -343,6 +384,11 @@ int entities_install(void) {
     unsigned char *target=(unsigned char *)0x7e53d0;
     const unsigned char expected[]={0xa1,0x20,0x4a,0xfb,0x00};
     if (!valid(target,5) || memcmp(target,expected,5)) return 0;
+#ifndef ENTITY_SYNC_TEST
+    unsigned char *placement=(unsigned char *)0x9c63ac;
+    const unsigned char placement_call[]={0xe8,0x1f,0xf0,0xe1,0xff};
+    if (!valid(placement,5) || memcmp(placement,placement_call,5)) return 0;
+#endif
     unsigned char *trampoline=VirtualAlloc(NULL,10,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);DWORD old;
     if (!trampoline || !VirtualProtect(target,5,PAGE_EXECUTE_READWRITE,&old)) return 0;
     memcpy(trampoline,target,5); trampoline[5]=0xe9;
@@ -350,5 +396,12 @@ int entities_install(void) {
     original_create=(char *(*)(void))trampoline;
     target[0]=0xe9;*(int32_t *)(target+1)=(int32_t)((uintptr_t)create_hook-(uintptr_t)target-5);
     FlushInstructionCache(GetCurrentProcess(),trampoline,10);FlushInstructionCache(GetCurrentProcess(),target,5);
-    VirtualProtect(target,5,old,&old);return 1;
+    VirtualProtect(target,5,old,&old);
+#ifndef ENTITY_SYNC_TEST
+    if (!VirtualProtect(placement,5,PAGE_EXECUTE_READWRITE,&old)) return 0;
+    *(int32_t *)(placement+1)=(int32_t)((uintptr_t)create_placement_thunk-(uintptr_t)placement-5);
+    FlushInstructionCache(GetCurrentProcess(),placement,5);
+    VirtualProtect(placement,5,old,&old);
+#endif
+    return 1;
 }
