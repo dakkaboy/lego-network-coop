@@ -12,7 +12,8 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
     if (!choice || !(choice->flags&0x40000000u) || choice->model>UINT16_MAX ||
         (!choice->name_hash[0] && !choice->name_hash[1]) || choice->site<0x400000 || choice->site>=0xb00000) return 0;
     return (choice->kind==SYNC_PHYSICS_AXIS_SPIN && (choice->flags&0x80u)) ||
-           (choice->kind==SYNC_PHYSICS_ROTATION_SPIN && (choice->flags&0x100000u));
+           (choice->kind==SYNC_PHYSICS_ROTATION_SPIN && (choice->flags&0x100000u)) ||
+           (choice->kind==SYNC_PHYSICS_BREAKUP_LAUNCH && choice->site==0x905f38);
 }
 static inline int physics_choice_same_source(const SyncPhysicsChoice *a,const SyncPhysicsChoice *b) {
     if (!physics_choice_valid(a) || !physics_choice_valid(b) || a->kind!=b->kind || a->site!=b->site ||

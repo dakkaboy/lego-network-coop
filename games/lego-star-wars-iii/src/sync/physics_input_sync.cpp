@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include "physics_input_sync.h"
+#include "../engine/breakup_launch_thunk.h"
 extern "C" {
 #include "geometry_sync.h"
 #include "game_sync.h"
@@ -33,11 +34,14 @@ bool live() {
 }
 uint32_t word(const void *p) {uint32_t value;std::memcpy(&value,p,4);return value;}
 uint32_t &rng() {return *reinterpret_cast<uint32_t *>(0xe5f498);}
+uint32_t &game_rng() {return *reinterpret_cast<uint32_t *>(0xe637b4);}
 }
 
 extern "C" {
 __declspec(dllexport) volatile uint32_t clonewars_physics_input_debug[8];
 __declspec(dllexport) volatile uint32_t clonewars_physics_input_failure[12];
+__declspec(dllexport) volatile uint32_t clonewars_breakup_launch_debug[4],clonewars_breakup_launch_correction[8];
+__attribute__((used)) static volatile uintptr_t breakup_launch_native=0x966af0;
 }
 
 namespace {
@@ -54,10 +58,7 @@ int fail(unsigned reason,const SyncPhysicsChoice *local=nullptr,const SyncPhysic
     }
     ++clonewars_physics_input_debug[2];game_sync_native_fault(15);return 0;
 }
-bool describe(void *raw,unsigned kind,uint32_t site,SyncPhysicsChoice &choice) {
-    auto *p=static_cast<unsigned char *>(raw);
-    if (!readable(p,0x168)) return false;
-    auto *source=reinterpret_cast<const unsigned char *>(word(p+0x164));
+bool describe_name(const unsigned char *source,SyncPhysicsChoice &choice) {
     if (!readable(source,0xb8)) return false;
     auto *name=reinterpret_cast<const unsigned char *>(word(source+0xb4));
     uint32_t hash=2166136261u,second=0x9e3779b9u;
@@ -69,12 +70,49 @@ bool describe(void *raw,unsigned kind,uint32_t site,SyncPhysicsChoice &choice) {
         hash=(hash^value)*16777619u;second=(second^value)*0x85ebca6bu;
     }
     if (!terminated) return false;
+    choice.name_hash[0]=hash;choice.name_hash[1]=second;
+    return true;
+}
+bool describe(void *raw,unsigned kind,uint32_t site,SyncPhysicsChoice &choice) {
+    auto *p=static_cast<unsigned char *>(raw);
+    if (!readable(p,0x168)) return false;
     choice={};choice.kind=kind;choice.site=site;choice.flags=word(p+0x11c);
+    if (!describe_name(reinterpret_cast<const unsigned char *>(word(p+0x164)),choice)) return false;
     uint16_t model;std::memcpy(&model,p+0x156,2);choice.model=model;
     choice.clock=*reinterpret_cast<uint32_t *>(0xfb4b6c);
-    choice.name_hash[0]=hash;choice.name_hash[1]=second;
     std::memcpy(choice.recipe,p+0x124,sizeof(choice.recipe));choice.rng=rng();
     return physics_choice_valid(&choice)!=0;
+}
+
+void apply_launch(const unsigned char *descriptor,const unsigned char *handle) {
+    if (!active || !readable(descriptor,0x30) || !descriptor[0x2c]) return;
+    if (!live() || failed) return;
+    SyncPhysicsChoice local={};
+    local.kind=SYNC_PHYSICS_BREAKUP_LAUNCH;local.site=0x905f38;
+    local.flags=0x40000000u|(descriptor[0x2d]?0x10u:0);
+    local.model=static_cast<uint16_t>(word(descriptor+4));local.clock=*reinterpret_cast<uint32_t *>(0xfb4b6c);
+    std::memcpy(local.recipe,descriptor+8,sizeof(local.recipe));local.rng=game_rng();
+    if (!readable(handle,8) || !describe_name(reinterpret_cast<const unsigned char *>(word(handle+4)),local) ||
+        !physics_choice_valid(&local)) {fail(1,&local);++clonewars_breakup_launch_debug[3];return;}
+    if (!live()) return;
+    if (host) {
+        if (frame->physics_choice_count>=SYNC_MAX_PHYSICS_CHOICES) {fail(2,&local);++clonewars_breakup_launch_debug[3];return;}
+        frame->physics_choices[frame->physics_choice_count++]=local;
+        ++clonewars_physics_input_debug[0];++clonewars_breakup_launch_debug[0];
+    } else {
+        const auto *entry=cursor<frame->physics_choice_count?frame->physics_choices+cursor:nullptr;
+        if (!entry || !physics_choice_same_source(entry,&local)) {fail(3,&local,entry);++clonewars_breakup_launch_debug[3];return;}
+        if (local.rng!=entry->rng) {
+            ++clonewars_breakup_launch_debug[2];
+            if (!clonewars_breakup_launch_correction[0]) {
+                const uint32_t values[]={frame->epoch,frame->sequence,local.clock,local.model,
+                    local.name_hash[0],local.rng,entry->rng,local.site};
+                std::memcpy(const_cast<uint32_t *>(clonewars_breakup_launch_correction),values,sizeof(values));
+            }
+        }
+        // This is the shared game stream: retain the advances of the original 966AF0 call.
+        game_rng()=entry->rng;++cursor;++clonewars_physics_input_debug[1];++clonewars_breakup_launch_debug[1];
+    }
 }
 struct SpinScope {
     void *effect;
@@ -92,6 +130,11 @@ void restore_seed(SpinScope &s) {
         module_cohort_same(&s.seeded_lease.cohort,&lease.cohort)) rng()=s.saved_rng;
     s.seeded=false;
 }
+
+extern "C" void __cdecl physics_apply_breakup_launch(const unsigned char *descriptor,const unsigned char *handle) {
+    const DWORD error=GetLastError();apply_launch(descriptor,handle);SetLastError(error);
+}
+extern "C" __attribute__((naked)) void physics_breakup_launch_thunk(void) {__asm__ volatile(BREAKUP_LAUNCH_THUNK_ASM);}
 void *__cdecl invoke(void *raw) {
     auto &s=*static_cast<SpinScope *>(raw);
     const auto *p=static_cast<const unsigned char *>(s.effect);
@@ -137,6 +180,7 @@ int physics_input_begin(SyncFrame *next,int authority) {
     if (host) frame->physics_choice_count=frame->physics_choice_reserved=0;
     if (last_epoch!=frame->epoch) {
         std::memset(const_cast<uint32_t *>(clonewars_physics_input_failure),0,sizeof(clonewars_physics_input_failure));
+        std::memset(const_cast<uint32_t *>(clonewars_breakup_launch_correction),0,sizeof(clonewars_breakup_launch_correction));
         last_epoch=frame->epoch;
     }
     return live();
@@ -148,6 +192,9 @@ int physics_input_finish(void) {
 }
 void physics_input_cancel(void) {active=false;frame=nullptr;}
 int physics_input_install(void) {
+    auto *launch=reinterpret_cast<unsigned char *>(0x905f33);
+    const unsigned char launch_bytes[]={0xe8,0xb8,0x0b,0x06,0x00};
+    if (std::memcmp(launch,launch_bytes,sizeof(launch_bytes))) return 0;
     const uintptr_t addresses[]={0x71ab90,0x71ac10};
     const unsigned char bytes[2][6]={{0x56,0x57,0x8b,0x7c,0x24,0x0c},{0x56,0x68,0x98,0xf4,0xe5,0x00}};
     void *hooks[]={reinterpret_cast<void *>(axis_hook),reinterpret_cast<void *>(rotation_hook)};
@@ -167,5 +214,11 @@ int physics_input_install(void) {
         entry[0]=0xe9;std::memcpy(entry+1,&jump,4);entry[5]=0x90;
         FlushInstructionCache(GetCurrentProcess(),entry,6);DWORD unused;VirtualProtect(entry,6,old,&unused);
     }
+    DWORD old;
+    if (!VirtualProtect(launch,5,PAGE_EXECUTE_READWRITE,&old)) return 0;
+    const auto relative=static_cast<int32_t>(reinterpret_cast<uintptr_t>(physics_breakup_launch_thunk)-0x905f38);
+    std::memcpy(launch+1,&relative,4);
+    const bool flushed=FlushInstructionCache(GetCurrentProcess(),launch,5)!=0;DWORD ignored;
+    if (!VirtualProtect(launch,5,old,&ignored) || !flushed) return 0;
     clonewars_physics_input_debug[4]=3;return 1;
 }

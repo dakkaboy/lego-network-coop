@@ -26,3 +26,21 @@ target_compile_definitions(test_entity_entry PRIVATE ENTITY_SYNC_TEST ENTITY_SYN
 target_compile_options(test_entity_entry PRIVATE -fms-extensions)
 add_test(NAME clonewars-entity_entry COMMAND test_entity_entry)
 set_tests_properties(clonewars-entity_entry PROPERTIES TIMEOUT 15)
+
+add_executable(test_breakup_visibility test_breakup_visibility.cpp)
+target_compile_features(test_breakup_visibility PRIVATE cxx_std_23)
+target_compile_options(test_breakup_visibility PRIVATE -fms-extensions)
+add_test(NAME clonewars-breakup_visibility COMMAND test_breakup_visibility)
+set_tests_properties(clonewars-breakup_visibility PROPERTIES TIMEOUT 15)
+
+add_executable(test_breakup_launch test_breakup_launch.cpp)
+target_compile_features(test_breakup_launch PRIVATE cxx_std_23)
+target_compile_options(test_breakup_launch PRIVATE -fms-extensions)
+add_test(NAME clonewars-breakup_launch COMMAND test_breakup_launch)
+set_tests_properties(clonewars-breakup_launch PROPERTIES TIMEOUT 15)
+
+add_executable(test_rigid_body_binding test_rigid_body_binding.cpp ../src/engine/rigid_body_binding.cpp)
+target_compile_features(test_rigid_body_binding PRIVATE cxx_std_23)
+target_compile_options(test_rigid_body_binding PRIVATE -fms-extensions)
+add_test(NAME clonewars-rigid_body_binding COMMAND test_rigid_body_binding)
+set_tests_properties(clonewars-rigid_body_binding PROPERTIES TIMEOUT 15)
