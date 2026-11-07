@@ -7,6 +7,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdint.h>
+#include <math.h>
 #include <string.h>
 #include <stdlib.h>
 #include "projectile_sync.h"
@@ -25,7 +26,9 @@
 #endif
 
 typedef char *(__attribute__((thiscall)) *Create)(void *,void *,const float *,const float *,const char *,uint32_t,void *);
+typedef char *(__attribute__((thiscall)) *CreateSecondary)(void *,void *,const float *,const float *,const char *,uint32_t,uint32_t,void *);
 typedef unsigned char (__attribute__((thiscall)) *Remove)(void *,void *,uint32_t,int);
+enum { ACTOR_FOLLOWUP_SITE=0x81f5bb, PROJECTILE_CHILD_SITE=0x8633e0, SECONDARY_ALLOCATOR=0x8630f0 };
 typedef struct Tracked {
     SyncShot birth;
     char *object;
@@ -71,7 +74,7 @@ typedef struct ProjectileFailure {
     ShooterActorObservation actor;
     uint32_t action_timer,cooldown,pending_local,pending_valid,pending_words[7];
 } ProjectileFailure;
-typedef char ProjectileFailureLayout[(sizeof(ProjectileFailure)==620) ? 1 : -1];
+_Static_assert(sizeof(ProjectileFailure)==684,"projectile failure layout");
 __declspec(dllexport) volatile LONG clonewars_projectile_failure_committed;
 __declspec(dllexport) volatile uint32_t clonewars_projectile_failure_stride=sizeof(ProjectileFailure);
 __declspec(dllexport) volatile ProjectileFailure clonewars_projectile_failure;
@@ -149,7 +152,8 @@ static uint64_t legacy_version[SYNC_MAX_PROJECTILES],next_legacy_version;
 static int legacy_set(const ProjectileOperation*op,unsigned i,char*object){if(!operation_live(op))return 0;if(next_legacy_version==UINT64_MAX){operation_exception(op);return 0;}legacy_version[i]=++next_legacy_version;legacy[i]=object;dispatch_changed(op);return operation_live(op);}
 __declspec(dllexport) volatile uint32_t clonewars_projectile_debug[12];
 __declspec(dllexport) volatile uint32_t clonewars_fire_debug[8];
-static const unsigned flight_offsets[]={0x12c,0x130,0x134,0x138,0x154,0x158,0x15c,0x128,0x13c,0x140,0x144,0x148,0x14c,0x150};
+enum { PROJECTILE_CAST_ORIGIN=0xec, PROJECTILE_AGE=0x12c, PROJECTILE_EXPIRES_AT=0x134, PROJECTILE_CAST_COUNTDOWN=0x144 };
+static const unsigned flight_offsets[]={PROJECTILE_AGE,0x130,PROJECTILE_EXPIRES_AT,0x138,0x154,0x158,0x15c,0x128,0x13c,0x140,PROJECTILE_CAST_COUNTDOWN,0x148,0x14c,0x150};
 
 static int valid(const void *p,SIZE_T bytes) {
 #ifdef PROJECTILE_COHORT_FIXTURE
@@ -158,6 +162,89 @@ static int valid(const void *p,SIZE_T bytes) {
     MEMORY_BASIC_INFORMATION m;
     return p && VirtualQuery(p,&m,sizeof(m)) && m.State==MEM_COMMIT &&
         !(m.Protect&(PAGE_GUARD|PAGE_NOACCESS)) && (uintptr_t)p+bytes<=(uintptr_t)m.BaseAddress+m.RegionSize;
+}
+typedef struct ShotLaunchScope {
+    struct ShotLaunchScope *previous;
+    const ProjectileOperation *operation;
+    SyncShot *shot;
+    const void *owner;
+    const float *origin, *transform;
+    int center_visited;
+} ShotLaunchScope;
+static __thread ShotLaunchScope *shot_launch_scope;
+__declspec(dllexport) volatile uint32_t clonewars_shot_center_debug[4];
+static void shot_launch_leave(ShotLaunchScope *scope) {
+    if (shot_launch_scope==scope) shot_launch_scope=scope->previous;
+}
+static ShotLaunchScope *shot_scope_for(const void *owner,const float *origin,const float *transform) {
+    ShotLaunchScope *scope=shot_launch_scope;
+    if (!scope || scope->owner!=owner || scope->origin!=origin ||
+        scope->transform!=transform || !operation_live(scope->operation)) return NULL;
+    return scope;
+}
+__attribute__((used,noinline)) static const float *shot_center_source(
+    const float *native, const void *owner, const float *origin, const float *transform) {
+    ShotLaunchScope *scope=shot_scope_for(owner,origin,transform);
+    if (!scope) return native;
+    SyncShot *shot=scope->shot;
+    scope->center_visited=1;
+    if (scope->operation->session.host) {
+        if (shot->owner>=0 && isfinite(native[0]) && isfinite(native[1]) && isfinite(native[2])) {
+            memcpy(shot->launch_center,native,sizeof(shot->launch_center));
+            shot->has_launch_center=1;
+            ++clonewars_shot_center_debug[0];
+        }
+        return native;
+    }
+    if (!shot->has_launch_center) return native;
+    ++clonewars_shot_center_debug[1];
+    if (memcmp(shot->launch_center,native,sizeof(shot->launch_center)))
+        ++clonewars_shot_center_debug[2];
+    return shot->launch_center;
+}
+__attribute__((used)) static uintptr_t shot_center_resume=0x85ae73;
+__attribute__((naked)) static void shot_center_hook(void) {
+    // EDI supplies both preliminary casts. Substitute only their input, leaving the actor's center available to native movement.
+    __asm__ volatile(
+        "movl 0xc(%ebp),%edi\n\taddl $0xf28,%edi\n\t"
+        "pushfl\n\tpushal\n\tmovl %esp,%eax\n\t"
+        "subl $544,%esp\n\tandl $-16,%esp\n\tmovl %eax,512(%esp)\n\t"
+        "fxsave (%esp)\n\tfninit\n\tmovl $0x1f80,516(%esp)\n\tldmxcsr 516(%esp)\n\tcld\n\t"
+        "call _GetLastError@0\n\tmovl %eax,524(%esp)\n\t"
+        "pushl 0x14(%ebp)\n\tpushl 0x10(%ebp)\n\tpushl 0xc(%ebp)\n\tpushl %edi\n\t"
+        "call _shot_center_source\n\taddl $16,%esp\n\t"
+        "movl 512(%esp),%edx\n\tmovl %eax,(%edx)\n\t"
+        "pushl 524(%esp)\n\tcall _SetLastError@4\n\t"
+        "fxrstor (%esp)\n\tmovl 512(%esp),%esp\n\tpopal\n\tpopfl\n\t"
+        "jmp *_shot_center_resume");
+}
+__attribute__((used,noinline)) static const float *shot_motion_source(
+    const float *native,const void *owner,const float *origin,const float *transform) {
+    ShotLaunchScope *scope=shot_scope_for(owner,origin,transform);
+    if (!scope || scope->shot->owner<0) return native;
+    SyncShot *shot=scope->shot;
+    if (!scope->operation->session.host)
+        return shot->has_launch_motion ? shot->launch_motion : native;
+    if (isfinite(native[0]) && isfinite(native[1]) && isfinite(native[2])) {
+        memcpy(shot->launch_motion,native,sizeof(shot->launch_motion));
+        shot->has_launch_motion=1;
+    }
+    return native;
+}
+__attribute__((used)) static uintptr_t shot_motion_original=0x574af0;
+__attribute__((naked)) static void shot_motion_hook(void) {
+    // Replace only the third argument of the stock vector operation. EBP belongs to the native constructor.
+    __asm__ volatile(
+        "pushfl\n\tpushal\n\tmovl %esp,%eax\n\t"
+        "subl $544,%esp\n\tandl $-16,%esp\n\tmovl %eax,512(%esp)\n\t"
+        "fxsave (%esp)\n\tfninit\n\tmovl $0x1f80,516(%esp)\n\tldmxcsr 516(%esp)\n\tcld\n\t"
+        "call _GetLastError@0\n\tmovl %eax,524(%esp)\n\tmovl 512(%esp),%edx\n\t"
+        "pushl 0x14(%ebp)\n\tpushl 0x10(%ebp)\n\tpushl 0xc(%ebp)\n\tpushl 48(%edx)\n\t"
+        "call _shot_motion_source\n\taddl $16,%esp\n\t"
+        "movl 512(%esp),%edx\n\tmovl %eax,48(%edx)\n\t"
+        "pushl 524(%esp)\n\tcall _SetLastError@4\n\t"
+        "fxrstor (%esp)\n\tmovl 512(%esp),%esp\n\tpopal\n\tpopfl\n\t"
+        "jmp *_shot_motion_original");
 }
 static int actor_slot(const void *actor) { return entities_slot(actor); }
 static void record_failure(const ProjectileOperation*op,uint32_t reason,void *owner,const char *weapon,uint32_t flags,void *target,uint32_t caller,unsigned expected_index) {
@@ -278,6 +365,15 @@ static __attribute__((unused)) char* create_observed(void*m,void*o,const float*p
 #define OBSERVED_CREATE(m,o,p,t,w,f,x,b,k,c) (((Create)0x869060)(m,o,p,t,w,f,x))
 #define OBSERVED_CREATE_CTX(op,m,o,p,t,w,f,x,b,k,c) (((Create)0x869060)(m,o,p,t,w,f,x))
 #endif
+
+static char *create_native_shot(const ProjectileOperation *op,void *manager,void *owner,
+                                const float *origin,const float *transform,const char *weapon,
+                                uint32_t flags,void *target,uint8_t source,uint32_t depth,
+                                const SyncShot *birth,unsigned kind,uint32_t caller) {
+    if (source==SYNC_SHOT_WEAPON)
+        return OBSERVED_CREATE_CTX(op,manager,owner,origin,transform,weapon,flags,target,birth,kind,caller);
+    return ((CreateSecondary)SECONDARY_ALLOCATOR)(manager,owner,origin,transform,weapon,flags,depth,target);
+}
 int projectiles_abort_frame(const ProjectileFrameLease*captured){
  if(!captured||captured->cohort.thread!=GetCurrentThreadId()||!projectile_thread_owned()||!frame_associated||frame_lease.serial!=captured->serial||!same_cohort(&captured->cohort,&frame_lease.cohort))return 0;
 #ifdef CLONEWARS_CONSTRUCTOR_QUERY_OBSERVER
@@ -344,25 +440,141 @@ static Tracked *remember(const ProjectileOperation*op,const SyncShot *shot,char 
  if(object){if(next_instance_serial==UINT32_MAX||creation_count[i]==UINT32_MAX){operation_reject(op,PROJECTILE_CONTROL_EXHAUSTED);return NULL;}instance_serial[i]=++next_instance_serial;++creation_count[i];}
  e->birth=birth;e->object=object;e->resource=resource;dispatch_changed(op);return operation_live(op)?e:NULL;
 }
-typedef struct ReplayCall {ProjectileOperation op;void*manager,*owner,*target;SyncShot birth;char weapon;uint32_t caller;} ReplayCall;
-__attribute__((used,noinline)) static void replay_complete_impl(ReplayCall*c,void*object){const ProjectileOperation*op=&c->op;if(!operation_live(op)){if(op->kind==PROJECTILE_CONTROL)operation_reject(op,PROJECTILE_CONTROL_ABANDONED);return;}if(object)combat_observer_projectile_created();if(!operation_live(op))return;*(void**)0xe8ed28=NULL;remember(op,&c->birth,object);if(operation_live(op)){++clonewars_projectile_debug[3];if(c->birth.owner==1)++clonewars_projectile_debug[9];}}
+static ShotContext native_shot_context(void) {
+    return shot_context_read((uint32_t*)0xfb4b6c,(uint32_t*)0xe637b4,(uint32_t*)0xea178c,(float*)0xfb4b74);
+}
+static void set_native_shot_context(const ShotContext *context) {
+    shot_context_apply(context,(uint32_t*)0xfb4b6c,(uint32_t*)0xe637b4,(uint32_t*)0xea178c,(float*)0xfb4b74);
+}
+static void capture_shot_context(SyncShot *birth) {
+    const ShotContext context=native_shot_context();
+    birth->clock=context.clock;
+    birth->rng_game=context.rng_game;
+    birth->rng_engine=context.rng_engine;
+    birth->delta=context.delta;
+}
+typedef struct ReplayCall {
+    ProjectileOperation op;
+    void *manager,*owner,*target;
+    SyncShot birth;
+    char weapon;
+    uint32_t caller;
+    ShotLaunchScope launch;
+    ShotContext incoming;
+    int context_active;
+} ReplayCall;
+// The stock constructor can run its own contact query. Seed the first flight update only after it returns.
+static void capture_projectile_seed(const ProjectileOperation *op,SyncShot *birth,const char *object){
+    if(!object || !valid(object,0x210) || !operation_live(op))return;
+    SyncProjectileSeed seed;
+    memcpy(seed.cast_origin,object+PROJECTILE_CAST_ORIGIN,sizeof(seed.cast_origin));
+    memcpy(&seed.age,object+PROJECTILE_AGE,sizeof(seed.age));
+    memcpy(&seed.expires_at,object+PROJECTILE_EXPIRES_AT,sizeof(seed.expires_at));
+    memcpy(&seed.cast_countdown,object+PROJECTILE_CAST_COUNTDOWN,sizeof(seed.cast_countdown));
+    for(unsigned i=0;i<3;++i)if(!isfinite(seed.cast_origin[i]))return;
+    if(!isfinite(seed.age)||!isfinite(seed.expires_at)||!isfinite(seed.cast_countdown))return;
+    birth->projectile_seed=seed;
+    birth->has_projectile_seed=1;
+}
+static void apply_projectile_seed(const ProjectileOperation *op,const SyncShot *birth,char *object){
+    if(!birth->has_projectile_seed || !object || !valid(object,0x210) || !operation_live(op))return;
+    const SyncProjectileSeed *seed=&birth->projectile_seed;
+    memcpy(object+PROJECTILE_CAST_ORIGIN,seed->cast_origin,sizeof(seed->cast_origin));
+    memcpy(object+PROJECTILE_AGE,&seed->age,sizeof(seed->age));
+    memcpy(object+PROJECTILE_EXPIRES_AT,&seed->expires_at,sizeof(seed->expires_at));
+    memcpy(object+PROJECTILE_CAST_COUNTDOWN,&seed->cast_countdown,sizeof(seed->cast_countdown));
+}
+__attribute__((used,noinline)) static void replay_complete_impl(ReplayCall *c,void *object) {
+    const ProjectileOperation *op=&c->op;
+    if (!operation_live(op)) return;
+    apply_projectile_seed(op,&c->birth,object);
+    if (!operation_live(op)) return;
+    if (object) combat_observer_projectile_created();
+    if (!operation_live(op)) return;
+    if (c->birth.source==SYNC_SHOT_WEAPON) *(void**)0xe8ed28=NULL;
+    remember(op,&c->birth,object);
+    if (operation_live(op)) {
+        ++clonewars_projectile_debug[3];
+        if (c->birth.owner==1) ++clonewars_projectile_debug[9];
+    }
+}
 __attribute__((naked)) static void replay_complete(ReplayCall*c,void*object){__asm__ volatile(CONSTRUCTOR_OBSERVER_THUNK_ASM("_replay_complete_impl"));}
-static void* __cdecl replay_invoke(void*opaque){ReplayCall*c=opaque;char*object=OBSERVED_CREATE_CTX(&c->op,c->manager,c->owner,c->birth.origin,c->birth.transform,&c->weapon,c->birth.flags,c->target,&c->birth,c->birth.phase==1?3:2,c->caller);replay_complete(c,object);return object;}
-static void __cdecl replay_abort(void*opaque){DWORD error=GetLastError();ReplayCall*c=opaque;operation_exception(&c->op);SetLastError(error);}
+static void replay_leave_context(ReplayCall *c,int completed) {
+    shot_launch_leave(&c->launch);
+    if (!c->context_active || !operation_live(&c->op)) return;
+    c->context_active=0;
+    if (completed && c->birth.phase==0) {
+        // This call occupies its original position in the tick. Keep the native RNG advances for its caller.
+        const ShotContext after=native_shot_context();
+        c->incoming.rng_game=after.rng_game;
+        c->incoming.rng_engine=after.rng_engine;
+    }
+    set_native_shot_context(&c->incoming);
+}
+static void* __cdecl replay_invoke(void*opaque){
+    ReplayCall *c=opaque;
+    if (!operation_live(&c->op)) return NULL;
+    c->launch=(ShotLaunchScope){shot_launch_scope,&c->op,&c->birth,c->owner,c->birth.origin,c->birth.transform,0};
+    shot_launch_scope=&c->launch;
+    c->incoming=native_shot_context();
+    const ShotContext birth={c->birth.clock,c->birth.rng_game,c->birth.rng_engine,c->birth.delta};
+    c->context_active=1;
+    set_native_shot_context(&birth);
+    char *object=create_native_shot(&c->op,c->manager,c->owner,c->birth.origin,c->birth.transform,
+        &c->weapon,c->birth.flags,c->target,c->birth.source,c->birth.depth,&c->birth,c->birth.phase==1?3:2,c->caller);
+    const DWORD error=GetLastError();
+    replay_leave_context(c,1);
+    SetLastError(error);
+    if (c->launch.center_visited!=c->birth.has_launch_center) ++clonewars_shot_center_debug[3];
+    replay_complete(c,object);
+    return object;
+}
+static void __cdecl replay_abort(void *opaque) {
+    DWORD error=GetLastError();
+    ReplayCall *c=opaque;
+    replay_leave_context(c,0);
+    operation_exception(&c->op);
+    SetLastError(error);
+}
 static char *replay(const ProjectileOperation*op,void*manager,const SyncShot*shot,void*target,uint32_t caller){
  if(!operation_live(op)||op->kind!=PROJECTILE_KEYED)return NULL;ReplayCall c={.op=*op,.manager=manager,.target=target,.birth=*shot,.caller=caller};c.weapon=(char)c.birth.weapon;c.owner=actor_at(c.birth.owner,c.birth.owner_generation);
  if(!operation_live(op))return NULL;if(c.birth.owner>=0&&!c.owner&&!entities_is_retired((uint32_t)c.birth.owner,c.birth.owner_generation)){if(operation_live(op))failed=1;return NULL;}
  return constructor_lexical_seh(&c,replay_invoke,replay_abort);
 }
-typedef struct CreateAuthorityCall {ProjectileOperation op;void *manager,*owner,*target;const float *origin,*transform;const char *weapon;uint32_t flags,caller,path,pending_index;const SyncShot*birth;} CreateAuthorityCall;
+typedef struct CreateAuthorityCall {
+    ProjectileOperation op;
+    void *manager,*owner,*target;
+    const float *origin,*transform;
+    const char *weapon;
+    uint32_t flags,caller,path,shot_index,depth;
+    uint8_t source;
+    SyncShot *birth;
+    ShotLaunchScope launch;
+} CreateAuthorityCall;
+static char *invoke_shot_creation(CreateAuthorityCall *c,SyncShot *birth,unsigned kind) {
+    return create_native_shot(&c->op,c->manager,c->owner,c->origin,c->transform,c->weapon,
+        c->flags,c->target,c->source,c->depth,birth,kind,c->caller);
+}
 __attribute__((used,noinline)) static void create_commit_impl(CreateAuthorityCall*c,void*object){
  const ProjectileOperation*op=&c->op;if(!operation_live(op)){if(op->kind==PROJECTILE_CONTROL)operation_reject(op,PROJECTILE_CONTROL_ABANDONED);return;}if(object)combat_observer_projectile_created();if(!operation_live(op)){if(op->kind==PROJECTILE_CONTROL)operation_reject(op,PROJECTILE_CONTROL_ABANDONED);return;}
  if(c->path==1){if(object)for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(!legacy[i]){legacy_set(op,i,object);break;}return;}
- if(c->path==3){if(c->pending_index>=pending_count||pending[c->pending_index].id!=c->birth->id){operation_reject(op,PROJECTILE_PENDING_PROVENANCE);return;}if(!remember(op,c->birth,object)||!operation_live(op))return;pending_provenance[c->pending_index].committed=1;return;}
- if(c->path==2){remember(op,c->birth,object);if(operation_live(op)){++clonewars_projectile_debug[2];if(c->birth->owner==1)++clonewars_projectile_debug[9];}}
+ if(c->path==2||c->path==3)capture_projectile_seed(op,c->birth,object);
+ if(!operation_live(op))return;
+ if(c->path==3){if(c->shot_index>=pending_count||pending[c->shot_index].id!=c->birth->id){operation_reject(op,PROJECTILE_PENDING_PROVENANCE);return;}pending[c->shot_index]=*c->birth;if(!remember(op,c->birth,object)||!operation_live(op))return;pending_provenance[c->shot_index].committed=1;return;}
+ if(c->path==2){current->shots[c->shot_index]=*c->birth;remember(op,c->birth,object);if(operation_live(op)){++clonewars_projectile_debug[2];if(c->birth->owner==1)++clonewars_projectile_debug[9];}}
 }
 __attribute__((naked)) static void create_commit(CreateAuthorityCall*c,void*object){__asm__ volatile(CONSTRUCTOR_OBSERVER_THUNK_ASM("_create_commit_impl"));}
+static char *create_with_launch_scope(CreateAuthorityCall *c,SyncShot *birth,unsigned kind) {
+    c->launch=(ShotLaunchScope){shot_launch_scope,&c->op,birth,c->owner,c->origin,c->transform,0};
+    shot_launch_scope=&c->launch;
+    char *object=invoke_shot_creation(c,birth,kind);
+    shot_launch_leave(&c->launch);
+    return object;
+}
 static void* __cdecl create_authority_invoke(void*opaque){CreateAuthorityCall*c=opaque;const ProjectileOperation*op=&c->op;
+ // Control births are replayed during frame preparation, but their native children still belong to the control span.
+ if(c->source!=SYNC_SHOT_WEAPON && (op->kind!=PROJECTILE_KEYED ||
+     (shot_launch_scope && shot_launch_scope->shot->phase==1))) return invoke_shot_creation(c,NULL,0);
  operation_admit_event(op);if(op->kind==PROJECTILE_CLIENT_DECLINE||op->kind==PROJECTILE_CONTROL_FAULT)return NULL;
  if(op->kind==PROJECTILE_CONTROL){
   if(!op->session.host)return NULL;if(!operation_live(op)){operation_reject(op,PROJECTILE_CONTROL_ABANDONED);return NULL;}
@@ -370,17 +582,18 @@ static void* __cdecl create_authority_invoke(void*opaque){CreateAuthorityCall*c=
   entities_update();if(!operation_live(op)){operation_reject(op,PROJECTILE_CONTROL_ABANDONED);return NULL;}
   SyncShot birth={0};birth.owner=actor_slot(c->owner);birth.owner_generation=entities_generation(c->owner);if(!operation_live(op))return NULL;
   if(!valid(c->weapon,1)||!valid(c->origin,12)||!valid(c->transform,64)||!operation_live(op)||(c->owner&&birth.owner<0)||*c->weapon<0){operation_reject(op,PROJECTILE_CONTROL_UNAVAILABLE);return NULL;}
-  birth.id=++next_id;birth.weapon=*c->weapon;birth.flags=c->flags;birth.phase=1;birth.clock=*(uint32_t*)0xfb4b6c;birth.rng_game=*(uint32_t*)0xe637b4;birth.rng_engine=*(uint32_t*)0xea178c;birth.delta=*(float*)0xfb4b74;memcpy(birth.origin,c->origin,12);memcpy(birth.transform,c->transform,64);
-  if(!operation_live(op))return NULL;c->path=3;c->pending_index=pending_count;pending[pending_count]=birth;pending_provenance[pending_count++]=(PendingProvenance){.epoch=op->control.epoch,.level=op->control.level,.release=op->control.release,.session=op->session.session,.generation=op->reset_generation,.committed=0};c->birth=&birth;
-  char*object=OBSERVED_CREATE_CTX(&c->op,c->manager,c->owner,c->origin,c->transform,c->weapon,c->flags,c->target,&birth,4,c->caller);create_commit(c,object);return object;
+  birth.id=++next_id;birth.weapon=*c->weapon;birth.flags=c->flags;birth.phase=1;capture_shot_context(&birth);memcpy(birth.origin,c->origin,12);memcpy(birth.transform,c->transform,64);
+  if(!operation_live(op))return NULL;c->path=3;c->shot_index=pending_count;pending[pending_count]=birth;pending_provenance[pending_count++]=(PendingProvenance){.epoch=op->control.epoch,.level=op->control.level,.release=op->control.release,.session=op->session.session,.generation=op->reset_generation,.committed=0};c->birth=&birth;
+  char*object=create_with_launch_scope(c,&birth,4);create_commit(c,object);return object;
  }
- if(op->kind!=PROJECTILE_KEYED||!operation_live(op))return OBSERVED_CREATE_CTX(&c->op,c->manager,c->owner,c->origin,c->transform,c->weapon,c->flags,c->target,NULL,0,c->caller);
+ if(op->kind!=PROJECTILE_KEYED||!operation_live(op))return invoke_shot_creation(c,NULL,0);
  ++clonewars_projectile_debug[7];
  if(!is_host){
-  if(!authority){c->path=1;char*object=OBSERVED_CREATE_CTX(&c->op,c->manager,c->owner,c->origin,c->transform,c->weapon,c->flags,c->target,NULL,0,c->caller);create_commit(c,object);return object;}
+  if(!authority){c->path=1;char*object=invoke_shot_creation(c,NULL,0);create_commit(c,object);return object;}
   int slot=actor_slot(c->owner);uint32_t generation=entities_generation(c->owner);if(!operation_live(op))return NULL;
+  if(!valid(c->weapon,1)||!operation_live(op))return NULL;
   for(unsigned i=0;operation_live(op)&&i<current->shot_count;++i){SyncShot*shot=current->shots+i;if(consumed[i]||shot->phase!=0)continue;
-   if(shot_native_match(shot,0,slot,generation,*c->weapon)){consumed[i]=1;return replay(op,c->manager,shot,c->target,c->caller);}
+   if(shot_native_match(shot,slot,generation,*c->weapon,c->source,(uint8_t)c->depth)){consumed[i]=1;return replay(op,c->manager,shot,c->target,c->caller);}
    record_failure(op,1,c->owner,c->weapon,c->flags,c->target,c->caller,i);if(operation_live(op))failed=1;break;
   }
   if(operation_live(op)){record_failure(op,2,c->owner,c->weapon,c->flags,c->target,c->caller,UINT32_MAX);failed=1;++clonewars_projectile_debug[4];}return NULL;
@@ -389,14 +602,26 @@ static void* __cdecl create_authority_invoke(void*opaque){CreateAuthorityCall*c=
  entities_update();if(!operation_live(op))return NULL;
  if(next_id==UINT32_MAX){operation_reject(op,PROJECTILE_CONTROL_EXHAUSTED);return NULL;}SyncShot birth={0};birth.id=++next_id;birth.owner=actor_slot(c->owner);birth.owner_generation=entities_generation(c->owner);if(!operation_live(op))return NULL;
  if(!valid(c->weapon,1)||!operation_live(op))return NULL;birth.weapon=*c->weapon;birth.flags=c->flags;
- if((c->owner&&birth.owner<0)||!valid(c->origin,12)||!valid(c->transform,64)||birth.weapon<0){if(operation_live(op))failed=1;return OBSERVED_CREATE_CTX(&c->op,c->manager,c->owner,c->origin,c->transform,c->weapon,c->flags,c->target,NULL,0,c->caller);}
- if(!operation_live(op))return NULL;birth.phase=0;birth.clock=*(uint32_t*)0xfb4b6c;birth.rng_game=*(uint32_t*)0xe637b4;birth.rng_engine=*(uint32_t*)0xea178c;birth.delta=*(float*)0xfb4b74;memcpy(birth.origin,c->origin,12);memcpy(birth.transform,c->transform,64);
- if(!operation_live(op))return NULL;current->shots[current->shot_count++]=birth;
- c->path=2;c->birth=&birth;char*object=OBSERVED_CREATE_CTX(&c->op,c->manager,c->owner,c->origin,c->transform,c->weapon,c->flags,c->target,&birth,1,c->caller);create_commit(c,object);return object;
+ if((c->owner&&birth.owner<0)||!valid(c->origin,12)||!valid(c->transform,64)||birth.weapon<0){if(operation_live(op))failed=1;return invoke_shot_creation(c,NULL,0);}
+ birth.source=c->source;birth.depth=(uint8_t)c->depth;
+ if(!operation_live(op))return NULL;capture_shot_context(&birth);memcpy(birth.origin,c->origin,12);memcpy(birth.transform,c->transform,64);
+ if(!operation_live(op))return NULL;unsigned index=current->shot_count++;current->shots[index]=birth;
+ c->path=2;c->shot_index=index;c->birth=&birth;
+ char*object=create_with_launch_scope(c,&birth,1);
+ create_commit(c,object);return object;
 }
-static void __cdecl create_authority_abort(void*opaque){CreateAuthorityCall*c=opaque;DWORD error=GetLastError();operation_exception(&c->op);SetLastError(error);}
+static void __cdecl create_authority_abort(void*opaque){CreateAuthorityCall*c=opaque;DWORD error=GetLastError();shot_launch_leave(&c->launch);operation_exception(&c->op);SetLastError(error);}
 static char *__attribute__((fastcall)) create_hook(void *manager,void *unused,void *owner,const float *origin,const float *transform,const char *weapon,uint32_t flags,void *target){
  (void)unused;CreateAuthorityCall c={.op=operation_capture(),.manager=manager,.owner=owner,.target=target,.origin=origin,.transform=transform,.weapon=weapon,.flags=flags,.caller=(uint32_t)(uintptr_t)__builtin_return_address(0)};return constructor_lexical_seh(&c,create_authority_invoke,create_authority_abort);
+}
+static char *__attribute__((fastcall)) create_secondary_hook(void *manager,void *unused,void *owner,
+    const float *origin,const float *transform,const char *weapon,uint32_t flags,uint32_t depth,void *target) {
+    (void)unused;
+    const uintptr_t caller=(uintptr_t)__builtin_return_address(0);
+    CreateAuthorityCall c={.op=operation_capture(),.manager=manager,.owner=owner,.target=target,
+        .origin=origin,.transform=transform,.weapon=weapon,.flags=flags,.caller=(uint32_t)caller,
+        .depth=depth,.source=caller==ACTOR_FOLLOWUP_SITE+5 ? SYNC_SHOT_ACTOR_FOLLOWUP : SYNC_SHOT_PROJECTILE_CHILD};
+    return constructor_lexical_seh(&c,create_authority_invoke,create_authority_abort);
 }
 typedef struct RemoveCall {ProjectileOperation op;void *manager,*object;uint32_t flags;int effects;CombatObservationScope observation;int observing;uint32_t captured_id[SYNC_MAX_PROJECTILES],captured_instance[SYNC_MAX_PROJECTILES];uint64_t captured_legacy[SYNC_MAX_PROJECTILES];uint32_t hook_commit;} RemoveCall;
 static void* __cdecl remove_invoke(void*opaque){RemoveCall*c=opaque;return (void*)(uintptr_t)((Remove)0x846460)(c->manager,c->object,c->flags,c->effects);}
@@ -427,12 +652,14 @@ static int compare(const void *a,const void *b) {
 static int capture(const ProjectileOperation*op,SyncProjectile *state,const Tracked *entry){
  if(!operation_live(op)||op->kind!=PROJECTILE_KEYED)return 0;char*p=entry->object;if(!valid(p,0x210)||!operation_live(op))return 0;
  SyncProjectile value={0};value.id=entry->birth.id;memcpy(value.transform,p+0x24,128);memcpy(value.position,p+0xa4,12);memcpy(value.previous,p+0xbc,12);memcpy(value.velocity,p+0xc8,12);memcpy(value.direction,p+0xd4,12);memcpy(value.previous_direction,p+0xe0,12);for(unsigned j=0;j<14;++j)value.flight[j]=*(float*)(p+flight_offsets[j]);memcpy(value.flags,p+0x160,12);
+ memcpy(value.cast_origin,p+PROJECTILE_CAST_ORIGIN,sizeof(value.cast_origin));
  if(!operation_live(op))return 0;*state=value;return 1;
 }
 static int correct(const ProjectileOperation*op,const SyncProjectile *state,Tracked *entry){
  if(!operation_live(op)||op->kind!=PROJECTILE_KEYED)return 0;SyncProjectile value=*state;char*p=entry->object;
  if(!valid(p,0x210)||!operation_live(op))return 0;
  memcpy(p+0x24,value.transform,128);memcpy(p+0xa4,value.position,12);memcpy(p+0xbc,value.previous,12);memcpy(p+0xc8,value.velocity,12);memcpy(p+0xd4,value.direction,12);memcpy(p+0xe0,value.previous_direction,12);for(unsigned j=0;j<14;++j)*(float*)(p+flight_offsets[j])=value.flight[j];memcpy(p+0x160,value.flags,12);
+ memcpy(p+PROJECTILE_CAST_ORIGIN,value.cast_origin,sizeof(value.cast_origin));
  float radius=*(float*)(p+0x13c);for(unsigned j=0;j<3;++j){*(float*)(p+0xf8+j*4)=value.position[j]-radius;*(float*)(p+0x104+j*4)=value.position[j]+radius;}
  return operation_live(op);
 }
@@ -483,16 +710,23 @@ int projectiles_begin(SyncFrame *frame,int host){
  network_active=1;memset(consumed,0,sizeof consumed);
  if(host){if(!operation_live(&op))return 0;if(control_adapter)for(unsigned i=0;i<pending_count;++i)if(!pending_provenance[i].committed||pending_provenance[i].epoch!=captured.epoch||pending_provenance[i].level!=level||pending_provenance[i].release!=captured.release||pending_provenance[i].session!=session.session||pending_provenance[i].generation!=reset_generation){binding_cancelled=1;operation_reject(&op,PROJECTILE_PENDING_PROVENANCE);return 0;}frame->shot_count=pending_count;frame->projectile_count=0;memcpy(frame->shots,pending,pending_count*sizeof(SyncShot));pending_count=0;return operation_live(&op);}
  if(!operation_live(&op))return 0;authority=frame->combat_ready!=0;char*manager=*(char**)0xe9019c;if(!valid(manager,0x3c)){if(operation_live(&op))failed=1;return operation_live(&op);}
- if(authority)for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i){if(!operation_live(&op))return 0;char*object=legacy[i];uint64_t version=legacy_version[i];if(!object)continue;RemoveCall c={0};c.op=op;c.manager=*(void**)(manager+0x38);c.object=object;if(valid(object,0x210)){if(!operation_live(&op))return 0;remove_observed(&c,2);}if(!operation_live(&op))return 0;if(legacy[i]==object&&legacy_version[i]==version)legacy_set(&op,i,NULL);}
+ if(authority)for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i){char*object=legacy[i];if(!object)continue;if(!operation_live(&op))return 0;uint64_t version=legacy_version[i];RemoveCall c={0};c.op=op;c.manager=*(void**)(manager+0x38);c.object=object;if(valid(object,0x210)){if(!operation_live(&op))return 0;remove_observed(&c,2);}if(!operation_live(&op))return 0;if(legacy[i]==object&&legacy_version[i]==version)legacy_set(&op,i,NULL);}
  for(unsigned i=0;;++i){if(!operation_live(&op))return 0;if(i>=frame->shot_count)break;if(consumed[i]||frame->shots[i].phase!=1)continue;SyncShot *shot=frame->shots+i;char*owner=shot->owner<0?NULL:actor_at(shot->owner,shot->owner_generation);if(!operation_live(&op))return 0;if(shot->owner>=0&&!owner)continue;
-  ShotContext incoming=shot_context_read((uint32_t*)0xfb4b6c,(uint32_t*)0xe637b4,(uint32_t*)0xea178c,(float*)0xfb4b74);ShotContext birth={shot->clock,shot->rng_game,shot->rng_engine,shot->delta};
-  if(!operation_live(&op))return 0;shot_context_apply(&birth,(uint32_t*)0xfb4b6c,(uint32_t*)0xe637b4,(uint32_t*)0xea178c,(float*)0xfb4b74);consumed[i]=1;replay(&op,manager,shot,NULL,0);if(!operation_live(&op))return 0;shot_context_apply(&incoming,(uint32_t*)0xfb4b6c,(uint32_t*)0xe637b4,(uint32_t*)0xea178c,(float*)0xfb4b74);
+  consumed[i]=1;replay(&op,manager,shot,NULL,0);if(!operation_live(&op))return 0;
  }
  return operation_live(&op);
 }
+static int frame_has_projectile(const SyncFrame *frame,uint32_t id){
+ unsigned lo=0,hi=frame->projectile_count;
+ while(lo<hi){
+  unsigned mid=lo+(hi-lo)/2;
+  if(frame->projectiles[mid].id<id)lo=mid+1;else hi=mid;
+ }
+ return lo<frame->projectile_count&&frame->projectiles[lo].id==id;
+}
 static int dispatch_quiet(const ProjectileOperation*op){
  if(!operation_live(op)||failed||!dispatch_completed||dispatch_revision!=dispatch_completed_revision)return 0;
- if(!is_host)for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i){if(!operation_live(op))return 0;if(!tracked[i].birth.id)continue;unsigned j=0;while(j<current->projectile_count&&current->projectiles[j].id!=tracked[i].birth.id)++j;if(j==current->projectile_count)return 0;}
+ if(!is_host)for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i){uint32_t id=tracked[i].birth.id;if(!id)continue;if(!operation_live(op)||!frame_has_projectile(current,id))return 0;}
  return operation_live(op);
 }
 int projectiles_dispatch_revision(const CoherentFrameToken*original,uint64_t*out){if(!out||!projectiles_cohort_valid(original)||!coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return 0;*out=dispatch_revision;return projectiles_cohort_valid(original)&&coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH));}
@@ -507,8 +741,8 @@ int projectiles_dispatch_complete(void){
     if(!operation_live(&op))return 0;if(*(void**)(e->object+0x14)!=e->resource){record_failure(&op,5,actor_at(e->birth.owner,e->birth.owner_generation),NULL,state->id,e->object,0,UINT32_MAX);if(!operation_live(&op))return 0;failed=1;continue;}
     if(!correct(&op,state,e))return 0;
    }
-   for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i){if(!operation_live(&op))return 0;if(!tracked[i].birth.id)continue;unsigned j=0;while(j<frame->projectile_count&&frame->projectiles[j].id!=tracked[i].birth.id)++j;if(j<frame->projectile_count)continue;
-    uint32_t id=tracked[i].birth.id,instance=instance_serial[i];char*object=tracked[i].object;void*resource=tracked[i].resource;RemoveCall c={0};c.op=op;c.manager=*(void**)(manager+0x38);c.object=object;
+   for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i){uint32_t id=tracked[i].birth.id;if(!id)continue;if(!operation_live(&op))return 0;if(frame_has_projectile(frame,id))continue;
+    uint32_t instance=instance_serial[i];char*object=tracked[i].object;void*resource=tracked[i].resource;RemoveCall c={0};c.op=op;c.manager=*(void**)(manager+0x38);c.object=object;
     if(valid(object,0x210)){if(!operation_live(&op))return 0;if(*(void**)(object+0x14)==resource)remove_observed(&c,1);}if(!operation_live(&op))return 0;if(tracked[i].birth.id==id&&instance_serial[i]==instance)memset(tracked+i,0,sizeof tracked[i]);
    }
   }
@@ -517,7 +751,7 @@ int projectiles_dispatch_complete(void){
 int projectiles_finish(void){
  ProjectileOperation op=operation_capture();if(op.kind!=PROJECTILE_KEYED||!operation_live(&op)||!dispatch_quiet(&op)||!coherent_frame_valid(&op.frame.cohort,COHERENT_PHASE_BIT(COHERENT_FINISH)))return 0;SyncFrame*frame=current;
  if(is_host){
-  for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i){if(!operation_live(&op))return 0;Tracked*e=tracked+i;if(!e->birth.id)continue;
+  for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i){Tracked*e=tracked+i;if(!e->birth.id)continue;if(!operation_live(&op))return 0;
    if(!valid(e->object,0x210)){if(!operation_live(&op))return 0;memset(e,0,sizeof *e);continue;}if(!operation_live(&op))return 0;if(*(void**)(e->object+0x14)!=e->resource){memset(e,0,sizeof *e);continue;}
    if(frame->projectile_count==SYNC_MAX_PROJECTILES){failed=1;break;}if(!capture(&op,&frame->projectiles[frame->projectile_count],e))return 0;if(!operation_live(&op))return 0;++frame->projectile_count;
   }
@@ -557,6 +791,19 @@ static int patch_call(uintptr_t address,uintptr_t target,void *hook) {
     FlushInstructionCache(GetCurrentProcess(),p,5); VirtualProtect(p,5,old,&old);
     return 1;
 }
+static int install_shot_center(void) {
+    static const unsigned char expected[]={0x8b,0x7d,0x0c,0x81,0xc7,0x28,0x0f,0x00,0x00};
+    unsigned char *site=(void*)0x85ae6a;
+    if (!valid(site,sizeof expected) || memcmp(site,expected,sizeof expected)) return 0;
+    DWORD protection;
+    if (!VirtualProtect(site,sizeof expected,PAGE_EXECUTE_READWRITE,&protection)) return 0;
+    int32_t relative=(int32_t)((uintptr_t)shot_center_hook-(uintptr_t)site-5);
+    site[0]=0xe9;
+    memcpy(site+1,&relative,sizeof relative);
+    memset(site+5,0x90,sizeof expected-5);
+    FlushInstructionCache(GetCurrentProcess(),site,sizeof expected);
+    return VirtualProtect(site,sizeof expected,protection,&protection)!=0;
+}
 int projectiles_install(void) {
     InterlockedExchange(&projectile_hooks_installed,0);
 #ifdef CLONEWARS_CONSTRUCTOR_OBSERVER
@@ -564,9 +811,13 @@ int projectiles_install(void) {
 #endif
     const uintptr_t sites[]={0x85b33f,0x85ba1f,0x85be70,0x8643a1};
     if (!patch_call(0x44e4c0,0x869060,create_hook)) return 0;
+    if (!patch_call(ACTOR_FOLLOWUP_SITE,SECONDARY_ALLOCATOR,create_secondary_hook) ||
+        !patch_call(PROJECTILE_CHILD_SITE,SECONDARY_ALLOCATOR,create_secondary_hook)) return 0;
     for (unsigned i=0;i<4;++i) if (!patch_call(sites[i],0x846460,remove_hook)) return 0;
     const uintptr_t fire_sites[]={0x45a98f,0x45aa31,0x45aab5,0x884b4c};
     for (unsigned i=0;i<4;++i) if (!patch_call(fire_sites[i],0x879710,fire_hook)) return 0;
+    if (!install_shot_center()) return 0;
+    if (!patch_call(0x85aa90,shot_motion_original,shot_motion_hook)) return 0;
     combat_observer_removal_ready();
 #ifdef CLONEWARS_CONSTRUCTOR_OBSERVER
     constructor_hooks_ready=1;

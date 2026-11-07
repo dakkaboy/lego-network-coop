@@ -78,13 +78,22 @@ static int core_patch_call(uintptr_t address,uintptr_t original,void*replacement
  int32_t relative=(int32_t)((uintptr_t)replacement-address-5);memcpy(p+1,&relative,4);
  int ok=FlushInstructionCache(GetCurrentProcess(),p,5);DWORD ignored;if(!VirtualProtect(p,5,old,&ignored))ok=0;return ok;
 }
+typedef void (__attribute__((thiscall)) *NativePauseRequest)(void *, int32_t, uint32_t);
+static void __attribute__((thiscall)) pause_request_hook(void *menu, int32_t player_index,
+                                                          uint32_t play_sound) {
+    // The caller still frees the request. Opening the menu mutates local simulation state.
+    if (lan_status()!=LAN_CONNECTED)
+        ((NativePauseRequest)0x8a4780)(menu,player_index,play_sound);
+}
 static int core_install_base(void){
  if(core_base_install_state)return core_base_install_state>0;core_base_install_state=-1;
- const uintptr_t sites[]={0x889fa0,0x8889ba,0x58f4c6,0x58f5e7,0x5e2a15,0x634a95,0x755347,0x9c53fd,0x9c33bf,0x9c53f7};
- const uintptr_t originals[]={0x889640,0x887ac0,0x57b340,0x57b340,0x57b340,0x57b340,0x57b340,0x9ab020,0x9ab020,0x8b0f90};
- void*hooks[]={tick_hook,world_hook,device_refresh,device_refresh,device_refresh,device_refresh,device_refresh,actor_prepare_normal,actor_prepare_alternate,actor_ai_normal_hook};
- for(unsigned i=0;i<10;++i){unsigned char*p=(unsigned char*)sites[i];if(!valid(p,5)||p[0]!=0xe8||sites[i]+5+*(int32_t*)(p+1)!=originals[i])return 0;}
- for(unsigned i=0;i<10;++i)if(!core_patch_call(sites[i],originals[i],hooks[i]))return 0;
+ const uintptr_t sites[]={0x889fa0,0x8889ba,0x58f4c6,0x58f5e7,0x5e2a15,0x634a95,0x755347,0x9c53fd,0x9c33bf,0x9c53f7,0x7adc6e};
+ const uintptr_t originals[]={0x889640,0x887ac0,0x57b340,0x57b340,0x57b340,0x57b340,0x57b340,0x9ab020,0x9ab020,0x8b0f90,0x8a4780};
+ void*hooks[]={tick_hook,world_hook,device_refresh,device_refresh,device_refresh,device_refresh,device_refresh,actor_prepare_normal,actor_prepare_alternate,actor_ai_normal_hook,pause_request_hook};
+ const unsigned count=sizeof sites/sizeof sites[0];
+ for(unsigned i=0;i<count;++i){unsigned char*p=(unsigned char*)sites[i];if(!valid(p,5)||p[0]!=0xe8||sites[i]+5+*(int32_t*)(p+1)!=originals[i])return 0;}
+ for(unsigned i=0;i<count;++i)if(!core_patch_call(sites[i],originals[i],hooks[i]))return 0;
+ if(!native_tick_install())return 0;
  InterlockedExchange(&clonewars_input_prep_installed,7);core_base_install_state=1;return 1;
 }
 static int core_mapping_source_valid(const void*p,uint32_t n){return game_sync_main_boundary_valid(p,n,NULL);}
@@ -109,7 +118,7 @@ static int core_install_safe(void*engine,const NativeOwnerInput*input,void*user)
   if(!entities_install())return 0;core_module_install_mask|=(1u<<CORE_NPC)|(1u<<CORE_WORLD_VARS);
   if(!tags_install())return 0;core_module_install_mask|=1u<<CORE_TAG;
   if(!projectiles_install())return 0;core_module_install_mask|=1u<<CORE_PROJECTILES;
-  if(!spawn_observer_install()||!combat_observer_install()||!collision_observer_install())return 0;core_module_install_mask|=1u<<CORE_GEOMETRY;
+  if(!spawn_observer_install()||!combat_observer_install()||!collision_observer_install()||!geometry_ready())return 0;core_module_install_mask|=1u<<CORE_GEOMETRY;
   if(!cadence_install())return 0;core_module_install_mask|=1u<<CORE_CADENCE;
   if(!reaction_install())return 0;core_module_install_mask|=1u<<CORE_REACTION;
   if(!rts_spawn_timers_install())return 0;
@@ -265,6 +274,7 @@ static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,v
 
  }
  if(!core_live())return CORE_SPAN_SKIP;
+ if(!native_tick_begin(&working,core.host,&core.token)||!core_live())return CORE_SPAN_SKIP;
  uint32_t actual_plan;
  /* Native TEST has already run. Compare gates after prep using its SAVED ZF/EAX;
     optional and main execution are observed later, not inferred from this snapshot. */
@@ -304,6 +314,7 @@ static void core_finish(NativeOwnerScope*owner,unsigned nonce,void*unused){
  (void)unused;if(owner!=core.owner||nonce!=core.owner_nonce||!core_live())return;
  uint32_t callback_release_token=core.release;
  action_dispatch_close();running=0;
+ if(!native_tick_finish()){if(core_live()&&!fault)fault=22;return;}
  if(!core_finish_order_verified||!core_drain_dispatch()){core_reject_atomic(29,NULL);return;}
  if(!rts_spawn_timers_finish(&working)){if(!fault)fault=21;return;}
  if(!core.host){
@@ -402,7 +413,8 @@ static void core_end(NativeOwnerScope*owner,unsigned nonce,NativeOwnerExit why,u
   while(prep_gate_depth){const PrepGate*g=&prep_gates[prep_gate_depth-1];if(!core_token_same(&g->cohort,&core.token))break;--prep_gate_depth;}
   if(!core.published&&core.session==lan_session_serial()&&core.token.epoch==interval.epoch){InterlockedOr(&core_reject_bits,0x40000000);InterlockedExchange(&deferred_assignment_restore,1);coherent_frame_cancel_atomic(0x40000000);}
   if(aborted||why==OWNER_UNWIND||core.token.release!=coherent_frame_release()||release_changed(core.release)||InterlockedCompareExchange(&core_reject_bits,0,0)){coherent_frame_cancel_atomic(1u);InterlockedExchange(&deferred_assignment_restore,1);}
-  for(unsigned i=0;i<CORE_COHORT_COUNT;++i)if(core.bound_mask&(1u<<i))core_bindings[i].abort_metadata(&core.token);
+   native_tick_cancel(&core.token);
+   for(unsigned i=0;i<CORE_COHORT_COUNT;++i)if(core.bound_mask&(1u<<i))core_bindings[i].abort_metadata(&core.token);
   coherent_frame_close(&core.token);
  }
  if(core.depth_accounted&&outer_depth)--outer_depth;

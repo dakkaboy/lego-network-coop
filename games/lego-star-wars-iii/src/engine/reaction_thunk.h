@@ -25,3 +25,29 @@
     "movl 0x50(%esp),%edi\n\t" \
     "cmpl $-1,%edi\n\t" \
     "jmp *_reaction_resume\n\t"
+
+#define REACTION_DAMAGE_DRAW_ASM \
+    "pushfl\n\t" \
+    "pushal\n\t" \
+    "movl %esp,%eax\n\t" \
+    "subl $544,%esp\n\t" \
+    "andl $-16,%esp\n\t" \
+    "movl %eax,512(%esp)\n\t" \
+    "fxsave (%esp)\n\t" \
+    "fninit\n\t" \
+    "movl $0x1f80,516(%esp)\n\t" \
+    "ldmxcsr 516(%esp)\n\t" \
+    "subl $8,%esp\n\t" \
+    "pushl 28(%eax)\n\t" \
+    "pushl 4(%eax)\n\t" \
+    "cld\n\t" \
+    "call _reaction_damage_draw\n\t" \
+    "addl $16,%esp\n\t" \
+    "movl 512(%esp),%edx\n\t" \
+    "movl %eax,104(%edx)\n\t" \
+    "fxrstor (%esp)\n\t" \
+    "movl 512(%esp),%esp\n\t" \
+    "popal\n\t" \
+    "popfl\n\t" \
+    "fildl 0x44(%esp)\n\t" \
+    "jmp *_reaction_damage_draw_resume\n\t"

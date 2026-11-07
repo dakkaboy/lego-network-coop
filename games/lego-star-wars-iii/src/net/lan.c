@@ -29,7 +29,7 @@ static const unsigned char hello[] = {
 
 struct Request { int host; LONG generation; char address[64]; };
 
-struct PeerState { uint32_t epoch; int32_t level, ready; SyncInput input; SyncLoading loading; uint32_t auto_skip,ack; };
+struct PeerState { uint32_t epoch; int32_t level, ready; SyncInput input; SyncLoading loading; uint32_t auto_skip,ack,native_entry; };
 struct Header { uint32_t magic, kind, size; };
 static INIT_ONCE queue_once = INIT_ONCE_STATIC_INIT;
 static CRITICAL_SECTION queue_lock,session_worker_lock;
@@ -65,9 +65,11 @@ static void publish_epoch_locked(uint32_t epoch) {
 void lan_publish_epoch(uint32_t epoch) {
     lock_queue();publish_epoch_locked(epoch);LeaveCriticalSection(&queue_lock);
 }
-void lan_publish_transition(uint32_t epoch,int level) {
-    if(level< -1||level>=4096)return;
-    lock_queue();publish_epoch_locked(epoch);
+void lan_publish_transition(uint32_t epoch,int level,uint32_t native_entry) {
+    if(level< -1||level>=4096||native_entry>1)return;
+    lock_queue();
+    if(local_state.epoch!=epoch||local_state.level!=level)local_state.native_entry=native_entry;
+    publish_epoch_locked(epoch);
     local_state.level=level;InterlockedExchange(&local_level,level);
     LeaveCriticalSection(&queue_lock);
 }
@@ -91,7 +93,7 @@ uint32_t lan_epoch(void) {
     lock_queue(); uint32_t value=local_state.epoch; LeaveCriticalSection(&queue_lock); return value;
 }
 LanTransition lan_remote_transition(void) {
-    lock_queue();LanTransition result={peer_state.epoch,peer_state.level};LeaveCriticalSection(&queue_lock);return result;
+    lock_queue();LanTransition result={peer_state.epoch,peer_state.level,peer_state.native_entry};LeaveCriticalSection(&queue_lock);return result;
 }
 uint32_t lan_remote_epoch(void) {
     lock_queue(); uint32_t value=peer_state.epoch; LeaveCriticalSection(&queue_lock); return value;
@@ -193,6 +195,7 @@ static int session_status(LONG ticket,LONG next,LONG error){
     LeaveCriticalSection(&queue_lock);return ok;
 }
 static int session_peer(LONG ticket,const struct PeerState *value){
+    if(value->native_entry>1)return 0;
     lock_queue();int ok=active(ticket);
     if(ok){struct PeerState peer=*value;if(peer.epoch==peer_state.epoch&&peer.epoch==local_state.epoch)peer.input.pressed|=peer_state.input.pressed;peer_state=peer;InterlockedExchange(&remote_level,peer.level);}
     LeaveCriticalSection(&queue_lock);return ok;
@@ -298,7 +301,7 @@ static int exchange_packets(SOCKET socket, LONG ticket,int is_host) {
         if (header.kind == 1) {
             struct PeerState peer;
             if (!transfer(socket,(unsigned char *)&peer,sizeof(peer),0,ticket)) { success=0; break; }
-            if (peer.level < -1 || peer.level >= 4096 || (peer.ready != 0 && peer.ready != 1) ||
+            if (peer.level < -1 || peer.level >= 4096 || peer.native_entry>1 || (peer.ready != 0 && peer.ready != 1) ||
                 peer.loading.level < -1 || peer.loading.level >= 4096 || peer.loading.ready>1 ||
                 peer.loading.skip>1 || peer.loading.active>1 || peer.auto_skip>1 ||
                 !isfinite(peer.loading.elapsed) || peer.loading.elapsed<0 || peer.loading.elapsed>86400) {

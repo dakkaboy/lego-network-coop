@@ -17,14 +17,14 @@
 #include "../debug/intent_frame_observer.h"
 #include "../debug/intent_scope_observer.h"
 #endif
-_Static_assert(SYNC_LAYOUT_VERSION==34,"actual layout34");
+_Static_assert(SYNC_LAYOUT_VERSION==42,"actual layout42");
 _Static_assert(sizeof(SyncModelInputContext)==124,"context");
 _Static_assert(sizeof(SyncModelInput)==188,"request");
 _Static_assert(offsetof(SyncModelInput,input_mode)==40,"mode");
 _Static_assert(offsetof(SyncModelInput,context)==56,"context offset");
-_Static_assert(offsetof(SyncFrame,actors)==192,"header");
-_Static_assert(offsetof(SyncFrame,model_inputs)==1795840,"model input offset");
-_Static_assert(sizeof(SyncFrame)==2748928,"capacity");
+_Static_assert(offsetof(SyncFrame,actors)==208,"header");
+_Static_assert(offsetof(SyncFrame,model_inputs)==2137872,"model input offset");
+_Static_assert(sizeof(SyncFrame)==3317008,"capacity");
 typedef struct ModelInputOutcome {uint32_t committed,sequence,ordinal,slot,generation,valid,reason,actor_local,controller_local,clock,qpc[2];uint32_t actor_heading,controller_heading,magnitude,direction[2],previous_heading,previous_magnitude,last_heading,last_magnitude;uint32_t action,substate,clip,timer,life_54,flags_50,hero_role;float position[3];} ModelInputOutcome;
 typedef struct ProjectionRecord {
  uint32_t committed,id,epoch,sequence,ordinal,slot,generation,thread,clock,qpc[2],actor_local,controller_local,provider_local,native_frame;
@@ -58,6 +58,7 @@ static uint32_t initialized_serial;
 static DWORD active_thread;
 static uint32_t last_epoch,first_actor,first_controller,first_local_generation;
 __attribute__((used)) static volatile uintptr_t model_input_resume=0x9bf6b0,request_mode_cmp_resume=0x9bf6d9,request_mode_mov_resume=0x9bf909,request_mode_join_resume=0x9bfa2a,request_priority_resume=0x9bf921;
+__attribute__((used)) static volatile uintptr_t request_visibility_continue=0x9bf9ed,request_visibility_skip=0x9bfa25;
 #ifdef CLONEWARS_INTENT_OBSERVER
 __attribute__((used)) static volatile uintptr_t intent_scope_model_resume=0x9bf44d;
 #endif
@@ -70,6 +71,7 @@ __declspec(dllexport) volatile uint32_t clonewars_model_input_authority=0;
 __declspec(dllexport) volatile uint32_t clonewars_model_input_authority=1;
 #endif
 __declspec(dllexport) volatile uint32_t clonewars_model_input_debug[16],clonewars_model_input_failure[16],clonewars_model_input_first_correction[8];
+__declspec(dllexport) volatile uint32_t clonewars_model_visibility_debug[4];
 __declspec(dllexport) volatile SyncModelInput clonewars_model_input_failed_host,clonewars_model_input_failed_local,clonewars_model_input_corrected_host,clonewars_model_input_corrected_local,clonewars_model_input_effective;
 __declspec(dllexport) volatile ModelInputOutcome clonewars_model_input_first_outcome;
 __declspec(dllexport) volatile uint32_t clonewars_model_input_context_encoding=1;
@@ -131,11 +133,24 @@ __attribute__((used,noinline)) void request_mode_source_checkpoint(uint32_t *sav
  else{entry=model_input_journal_peek(&journal);SyncActor reference={0};if(entry){reference.slot=entry->slot;reference.generation=entry->generation;reference.spawn_tag=entry->spawn_tag;reference.spawn_source=entry->spawn_source;reference.character=entry->character;memcpy(reference.spawn_position,entry->origin,12);}void *resolved=entry?entities_resolve_reference(&reference):NULL;if(!op_live(&op)||scope!=s)return;local.slot=entry?entry->slot:UINT32_MAX;local.generation=entities_observed_generation(actor);raw_local=local;
   if(entry&&entry->context.actor_4c_mask!=raw_local.context.actor_4c_mask){failed(&op,actor,entry,&raw_local,9);return;}
   if(entry&&!model_context_canonicalize(entry,&raw_local.context,&local.context,&canonicalized_fields)){failed(&op,actor,entry,&raw_local,4);return;}
-  if(entry) local.context.actor_76=entry->context.actor_76;
+  if(entry) {
+   local.context.actor_76=entry->context.actor_76;
+   if(!local.context.actor_4c_mask) {
+    local.context.cf4_raw=entry->context.cf4_raw;
+    local.context.model_42=entry->context.model_42;
+   }
+  }
   if(!model_input_journal_validate(&journal,entry,entry&&resolved==actor,&local)){failed(&op,actor,entry,&raw_local,(unsigned)journal.failed);return;}++clonewars_model_input_debug[1];scope->ordinal=journal.cursor-1;}
  if(!op_live(&op)||scope!=s)return;
  uint32_t generation=entities_observed_generation(actor);if(!op_live(&op)||scope!=s)return;scope->controller=controller;scope->provider=provider;scope->generation=generation;scope->epoch=journal.frame->epoch;scope->sequence=journal.frame->sequence;scope->native_frame=saved[2];scope->source=1;scope->request=*entry;scope->local_mode=local.input_mode;scope->raw_source_context=raw_local.context;scope->canonicalized_fields=canonicalized_fields;
- if(!journal.host){int corrected=memcmp(&local.input_x,&entry->input_x,12)!=0;memcpy(x,&entry->input_x,4);memcpy(z,&entry->input_z,4);clonewars_model_input_debug[2]+=corrected;
+ if(!journal.host){
+  if(!entry->context.actor_4c_mask && raw_local.context.cf4_raw!=entry->context.cf4_raw){
+   // The native motion branch reads this visibility timer after the request.
+   memcpy((unsigned char *)actor+0xcf4,&entry->context.cf4_raw,4);
+   ++clonewars_model_visibility_debug[0];clonewars_model_visibility_debug[2]=entry->native_clock;
+   clonewars_model_visibility_debug[3]=entry->slot;
+  }
+  int corrected=memcmp(&local.input_x,&entry->input_x,12)!=0;memcpy(x,&entry->input_x,4);memcpy(z,&entry->input_z,4);clonewars_model_input_debug[2]+=corrected;
   if(corrected&&InterlockedCompareExchange((volatile LONG *)clonewars_model_input_first_correction,-1,0)==0){memcpy((void *)&clonewars_model_input_corrected_host,entry,sizeof(*entry));memcpy((void *)&clonewars_model_input_corrected_local,&raw_local,sizeof(raw_local));SyncModelInput effective=local;effective.input_x=entry->input_x;effective.input_z=entry->input_z;effective.input_mode=entry->input_mode;memcpy((void *)&clonewars_model_input_effective,&effective,sizeof(effective));first_actor=(uint32_t)(uintptr_t)actor;first_controller=(uint32_t)(uintptr_t)controller;first_local_generation=scope->generation;LARGE_INTEGER q;QueryPerformanceCounter(&q);uint32_t v[]={journal.frame->epoch,journal.frame->sequence,scope->ordinal,entry->slot,entry->generation,local.native_clock,q.LowPart,(uint32_t)q.HighPart};memcpy((void *)(clonewars_model_input_first_correction+1),v+1,sizeof(v)-4);MemoryBarrier();clonewars_model_input_first_correction[0]=v[0];}
  }
  clonewars_model_input_debug[7]=journal.frame->sequence;clonewars_model_input_debug[8]=journal.host?journal.frame->model_input_count:journal.cursor;clonewars_model_input_debug[9]=entry->slot;clonewars_model_input_debug[10]=entry->generation;
@@ -161,6 +176,19 @@ __attribute__((used,noinline)) int request_priority_checkpoint(uint32_t *saved,u
  return 1;
 }
 __attribute__((used,noinline)) int request_mode_mov_checkpoint(uint32_t *saved,uint32_t *mode){return consumer(saved,mode,1);}
+__attribute__((used,noinline)) int request_visibility_checkpoint(uint32_t *saved,uint32_t *visibility) {
+ ModelInputFrameLease op;
+ RequestScope *s=qualified_scope(&op);
+ if(!s || journal.host || journal.failed || !s->source || !s->mov_seen || s->request.context.actor_4c_mask)
+  return 0;
+ unsigned char *actor=(unsigned char *)(uintptr_t)saved[4],*model=(unsigned char *)(uintptr_t)saved[7];
+ void *controller=*(void **)((char *)saved+64);
+ if(!scope_valid(&op,s,actor,controller,saved[2]) || *(void **)(actor+8)!=model || !valid(model,0x43))
+  return 0;
+ *visibility=s->request.context.model_42;
+ clonewars_model_visibility_debug[1]+=(model[0x42]!=0)!=(*visibility!=0);
+ return 1;
+}
 _Static_assert(offsetof(ProjectionRecord,raw_source_context)==320,"raw diagnostic context offset");
 _Static_assert(offsetof(ProjectionRecord,canonicalized_fields)==444,"canonicalization mask offset");
 _Static_assert(sizeof(ProjectionRecord)==448,"projection record");
@@ -207,25 +235,26 @@ __attribute__((naked,used)) static void source_thunk(void){__asm__ volatile(MODE
 __attribute__((naked,used)) static void cmp_thunk(void){__asm__ volatile(REQUEST_MODE_CMP_THUNK_ASM);}
 __attribute__((naked,used)) static void mov_thunk(void){__asm__ volatile(REQUEST_MODE_MOV_THUNK_ASM);}
 __attribute__((naked,used)) static void priority_thunk(void){__asm__ volatile(REQUEST_PRIORITY_THUNK_ASM);}
+__attribute__((naked,used)) static void visibility_thunk(void){__asm__ volatile(REQUEST_VISIBILITY_THUNK_ASM);}
 __attribute__((naked,used)) static void join_thunk(void){__asm__ volatile(REQUEST_MODE_JOIN_THUNK_ASM);}
 int model_input_install(void){
  if(clonewars_model_input_installed==31)return 1;
 #if defined(MODEL_INPUT_TEST) && !defined(MODEL_INPUT_TEST_INSTALL)
  clonewars_model_input_installed=31;return 1;
 #else
- unsigned char *sites[]={(void *)0x9bf280,(void *)0x9bf6aa,(void *)0x9bf6d2,(void *)0x9bf903,(void *)0x9bfa25,(void *)0x9bf91c
+ unsigned char *sites[]={(void *)0x9bf280,(void *)0x9bf6aa,(void *)0x9bf6d2,(void *)0x9bf903,(void *)0x9bfa25,(void *)0x9bf91c,(void *)0x9bf9e7
 #ifdef CLONEWARS_INTENT_OBSERVER
  ,(void *)0x9bf443
 #endif
- };unsigned sizes[]={6,6,7,6,5,5
+ };unsigned sizes[]={6,6,7,6,5,5,6
 #ifdef CLONEWARS_INTENT_OBSERVER
  ,10
 #endif
- };const unsigned char prefixes[][10]={{0x55,0x8b,0xec,0x83,0xe4,0xf0},{0xd9,0xc0,0xd9,0x44,0x24,0x20},{0x83,0xb8,0xb0,0,0,0,1},{0x8b,0x80,0xb0,0,0,0},{0x8b,0x43,8,0x85,0xc0},{0x66,0x83,0x7b,0x76,0x00}
+ };const unsigned char prefixes[][10]={{0x55,0x8b,0xec,0x83,0xe4,0xf0},{0xd9,0xc0,0xd9,0x44,0x24,0x20},{0x83,0xb8,0xb0,0,0,0,1},{0x8b,0x80,0xb0,0,0,0},{0x8b,0x43,8,0x85,0xc0},{0x66,0x83,0x7b,0x76,0x00},{0x80,0x78,0x42,0x00,0x75,0x38}
 #ifdef CLONEWARS_INTENT_OBSERVER
  ,{0xf7,0x83,0x7c,0x0c,0,0,0,0,0x80,0}
 #endif
- };uintptr_t targets[]={(uintptr_t)producer_hook,(uintptr_t)source_thunk,(uintptr_t)cmp_thunk,(uintptr_t)mov_thunk,(uintptr_t)join_thunk,(uintptr_t)priority_thunk
+ };uintptr_t targets[]={(uintptr_t)producer_hook,(uintptr_t)source_thunk,(uintptr_t)cmp_thunk,(uintptr_t)mov_thunk,(uintptr_t)join_thunk,(uintptr_t)priority_thunk,(uintptr_t)visibility_thunk
 #ifdef CLONEWARS_INTENT_OBSERVER
  ,(uintptr_t)model_witness_thunk
 #endif

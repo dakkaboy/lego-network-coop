@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "geometry_sync.h"
+#include "physics_input_sync.h"
 #include "entity_sync.h"
 #include "game_sync.h"
 #include "../engine/module_cohort_binding.h"
@@ -21,7 +22,7 @@ static int op_live(const GeometryFrameLease *op){return module_binding_live(&bin
 int geometry_bind_cohort(const CoherentFrameToken *original){return module_binding_bind(&binding,original);}
 int geometry_frame_lease_get(GeometryFrameLease*out){return module_binding_get(&binding,out);}
 int geometry_frame_cancelled(const GeometryFrameLease*op){return module_binding_cancelled(&binding,op);}
-int geometry_abort_frame(const GeometryFrameLease*op){if(!module_binding_detach(&binding,op))return 0;active=0;cancelled=1;memset(&journal,0,sizeof(journal));return 1;}
+int geometry_abort_frame(const GeometryFrameLease*op){if(!module_binding_detach(&binding,op))return 0;active=0;cancelled=1;physics_input_cancel();memset(&journal,0,sizeof(journal));return 1;}
 
 static uint32_t last_epoch;
 __declspec(dllexport) volatile LONG clonewars_geometry_installed;
@@ -43,15 +44,15 @@ static int fail(const GeometryFrameLease *op,const SyncCollider *entry,void *act
     }
     if(!op_live(op))return 0;++clonewars_geometry_debug[5];game_sync_native_fault(15);return 0;
 }
-void geometry_manager_ready(void) { InterlockedExchange(&clonewars_geometry_installed,1); }
+void geometry_manager_ready(void) { InterlockedExchange(&clonewars_geometry_installed,physics_input_install()?1:-1); }
 int geometry_ready(void) { return clonewars_geometry_installed==1; }
-void geometry_cancel(void) { if(binding.bound||!binding.lease.cohort.thread||binding.lease.cohort.thread!=GetCurrentThreadId())return;active=0;cancelled=1;memset(&journal,0,sizeof(journal)); }
+void geometry_cancel(void) { if(binding.bound||!binding.lease.cohort.thread||binding.lease.cohort.thread!=GetCurrentThreadId())return;active=0;cancelled=1;physics_input_cancel();memset(&journal,0,sizeof(journal)); }
 int geometry_begin(SyncFrame *frame,int host) {
     if(!module_binding_begin(&binding,frame))return 0;
     GeometryFrameLease op=binding.lease;if(!module_binding_live(&binding,&op))return 0;
     cancelled=0;
     if (last_epoch!=op.cohort.epoch) { memset((void *)clonewars_geometry_failure,0,sizeof(clonewars_geometry_failure));last_epoch=op.cohort.epoch; }
-    geometry_journal_begin(&journal,frame,host);active=1;return op_live(&op);
+    geometry_journal_begin(&journal,frame,host);active=1;return op_live(&op)&&physics_input_begin(frame,host);
 }
 int geometry_phase(uint32_t mode) {
     if (!active) return binding.bound?0:1;
@@ -112,6 +113,7 @@ int geometry_phase(uint32_t mode) {
 int geometry_finish(void) {
     GeometryFrameLease op;if(!geometry_frame_lease_get(&op)||!op_live(&op)||!active)return 0;
     if (cancelled) return 0;
+    if (!physics_input_finish()) return 0;
     active=0;++clonewars_geometry_debug[9];
     if (!geometry_journal_finish(&journal)) { ++clonewars_geometry_debug[10];if (!journal.failed) return fail(&op,NULL,NULL,0,0,0,7);return 0; }return 1;
 }

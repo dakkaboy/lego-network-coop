@@ -10,7 +10,15 @@ enum ConstructorCapability {CONSTRUCTOR_CAP_NONE,CONSTRUCTOR_CAP_FRAME,CONSTRUCT
 #define CONSTRUCTOR_DESCRIPTOR_WORDS 40
 typedef struct ConstructorLease {uint32_t serial,nonce,frame_local,epoch,sequence,frame_valid;} ConstructorLease;
 typedef struct ConstructorCall {ConstructorLease lease;const SyncShot *birth;void *manager,*owner;const float *origin,*transform;const char *weapon;uint32_t flags;void *target;uint32_t kind,caller;CoherentFrameToken cohort;RootControlLease control;ProjectileSessionContext control_session;uint64_t reset_generation;uint32_t capability;} ConstructorCall;
-typedef struct ConstructorInput {ConstructorLease lease;uint32_t kind,caller,manager_local,owner_local,target_local,birth_known;SyncShot birth;uint32_t origin[3],transform[16],flags,weapon,input_valid,origin_local,transform_local,weapon_local;} ConstructorInput;
+typedef struct ConstructorBirth {
+ uint32_t id;
+ int32_t owner,weapon;
+ uint32_t owner_generation,flags;
+ float origin[3],transform[16];
+ uint32_t phase,clock,rng_game,rng_engine;
+ float delta;
+} ConstructorBirth;
+typedef struct ConstructorInput {ConstructorLease lease;uint32_t kind,caller,manager_local,owner_local,target_local,birth_known;ConstructorBirth birth;uint32_t origin[3],transform[16],flags,weapon,input_valid,origin_local,transform_local,weapon_local;} ConstructorInput;
 typedef struct ConstructorRecord {
  uint32_t committed,id,version,thread,qpc_before[2],qpc_after[2],before[4],after[4];
  ConstructorInput input;

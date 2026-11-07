@@ -5,6 +5,7 @@
 #include "constructor_observer.h"
 #include "constructor_observer_thunk.h"
 #include "../sync/entity_sync.h"
+_Static_assert(sizeof(ConstructorBirth)==offsetof(SyncShot,has_launch_center),"constructor birth prefix");
 _Static_assert(sizeof(ConstructorInput)==264,"constructor input");
 _Static_assert(sizeof(ConstructorRecord)==1232,"constructor record");
 __declspec(dllexport) volatile LONG clonewars_constructor_observer_enabled,clonewars_constructor_observer_count;
@@ -35,7 +36,7 @@ __attribute__((used,noinline)) void constructor_begin_impl(ConstructorScope *s,c
  if(!scope_context_valid(s,&c->lease)){++clonewars_constructor_observer_debug[0];return;}
  ConstructorRecord *r=&s->record;memset(r,0,sizeof(*r));r->version=1;r->thread=GetCurrentThreadId();timestamp(r->qpc_before);context(r->before);
  ConstructorInput *in=&r->input;in->lease=c->lease;in->kind=c->kind;in->caller=c->caller;in->manager_local=(uint32_t)(uintptr_t)c->manager;in->owner_local=(uint32_t)(uintptr_t)c->owner;in->target_local=(uint32_t)(uintptr_t)c->target;in->flags=c->flags;in->origin_local=(uint32_t)(uintptr_t)c->origin;in->transform_local=(uint32_t)(uintptr_t)c->transform;in->weapon_local=(uint32_t)(uintptr_t)c->weapon;
- if(s->capability!=CONSTRUCTOR_CAP_CONTROL&&readable(c->birth,sizeof(SyncShot))){in->birth=*c->birth;in->birth_known=1;}
+ if(s->capability!=CONSTRUCTOR_CAP_CONTROL&&readable(c->birth,sizeof(SyncShot))){memcpy(&in->birth,c->birth,sizeof(in->birth));in->birth_known=1;}
  if(readable(c->origin,12)){memcpy(in->origin,c->origin,12);in->input_valid|=1;}
  if(readable(c->transform,64)){memcpy(in->transform,c->transform,64);in->input_valid|=2;}
  if(readable(c->weapon,1)){in->weapon=(uint32_t)(int32_t)*c->weapon;in->input_valid|=4;}
