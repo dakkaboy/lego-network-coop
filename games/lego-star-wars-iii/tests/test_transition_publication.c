@@ -30,5 +30,22 @@ int main(void) {
     assert(!session_peer(2,&remote));
     accepted=lan_remote_transition();
     assert(accepted.epoch==3 && accepted.level==8 && accepted.native_entry==1);
+
+    lan_publish_transition(4,12,1);
+    remote=(struct PeerState){.epoch=3,.level=8,.ready=1};
+    assert(session_peer(1,&remote));
+    assert(!lan_peer_ready());
+    remote.epoch=4;remote.level=12;remote.ready=0;
+    assert(session_peer(1,&remote));
+    assert(!lan_peer_ready());
+    remote.ready=1;
+    assert(session_peer(1,&remote));
+    assert(lan_peer_ready());
+    remote.ready=0;
+    assert(session_peer(1,&remote));
+    assert(!lan_peer_ready());
+    remote.epoch=5;remote.level=13;remote.ready=1;
+    assert(session_peer(1,&remote));
+    assert(!lan_peer_ready());
     return 0;
 }
