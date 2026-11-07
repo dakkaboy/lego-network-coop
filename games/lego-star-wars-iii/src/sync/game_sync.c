@@ -9,6 +9,7 @@
 #include "../render/overlay.h"
 #include "../render/network_window.h"
 #include "game_sync.h"
+#include "../engine/rigid_body_binding.h"
 #include "coherent_core_draft.h"
 #include "../engine/core_main_boundary.h"
 #include "../engine/user_mapping_install.h"
@@ -558,12 +559,18 @@ static int collect_actors(SyncFrame *frame) {
         memcpy(a->animation.clips,p+0xefa,10);
         a->animation.reserved=0;
         a->body=(SyncActorBody){0};
+        a->rigid_body=(SyncRigidBody){0};
         char *body=actor_physics_body(p);
         if (body) {
             a->body.active=1;
             memcpy(a->body.position,body+0x70,sizeof(a->body.position));
             memcpy(a->body.velocity,body+0xb0,sizeof(a->body.velocity));
             memcpy(&a->body.floor_height,body+0xe8,sizeof(a->body.floor_height));
+        }
+        NativeRigidBodyBinding physical;
+        if (native_actor_rigid_body(p,&physical)) {
+            a->rigid_body.active=1;
+            memcpy(a->rigid_body.transform,(char *)physical.body+0x40,sizeof(a->rigid_body.transform));
         }
     }
     return entities_collect_dormant_party(frame) && sync_frame_valid(frame,sync_frame_size(frame));
@@ -619,6 +626,15 @@ static int correct_actors_impl(const SyncFrame *frame,const CoherentFrameToken*o
         *(uint16_t *)(p+0x6c)=a->heading;
         *(uint16_t *)(p+0xf0c)=a->render_heading;
         if (!restore_actor_body(p,&a->body,original,allocation)) return 0;
+        if (a->rigid_body.active) {
+            NativeRigidBodyBinding physical;
+            if (!native_actor_rigid_body(p,&physical)) return 0;
+            if (memcmp((char *)physical.body+0x40,a->rigid_body.transform,sizeof(a->rigid_body.transform))) {
+                native_rigid_body_transform(physical.body,a->rigid_body.transform);
+                if (!core_live() || !coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH)) ||
+                    !entities_allocation_live(p,allocation) || !native_actor_rigid_body_same(p,&physical)) return 0;
+            }
+        }
         if(!core_live()||!coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return 0;
         if(!entities_allocation_live(p,allocation)||entities_actor(a->slot,a->generation)!=p||*(void**)(p+0x6cc)!=controller_before)return 0;
         memcpy(p+0x24,a->position,12);

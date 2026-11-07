@@ -33,6 +33,7 @@ add_library(clonewars-camera SHARED
     src/engine/model_producer_seh.c
     src/engine/native_owner.c
     src/engine/owner_seh.c
+    src/engine/rigid_body_binding.cpp
     src/engine/span_engine.c
     src/engine/span_installer.c
     src/engine/tag_lexical_seh.c

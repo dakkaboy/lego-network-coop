@@ -9,7 +9,8 @@
 #include "sync/shot_context.h"
 #include "sync/physics_input_sync.h"
 #include "sync/native_tick_sync.h"
-_Static_assert(sizeof(SyncActor)==200,"Actor wire layout changed");
+_Static_assert(sizeof(SyncActor)==272,"Actor wire layout changed");
+_Static_assert(offsetof(SyncActor,rigid_body)==196,"Native rigid body wire offset changed");
 _Static_assert(offsetof(SyncActor,party_slot)==102,"Party slot must use defined padding");
 int main(void) {
     SyncFrame *input=calloc(1,sizeof(*input)),*output=calloc(1,sizeof(*output));
@@ -17,9 +18,12 @@ int main(void) {
     assert(input && output && wire);
     input->epoch=7; input->sequence=1; input->level=6; input->delta=1.0f/60;
     input->engine_delta=.017f; input->world_calls=1; input->tick_calls=1;
-    input->physics_choice_count=2;
+    input->physics_choice_count=3;
     input->physics_choices[0]=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_AXIS_SPIN,.site=0x7425c3,.flags=0x40000091,.model=65535,.clock=1550,.name_hash={123,456},.rng=1744529096};
     input->physics_choices[1]=input->physics_choices[0];input->physics_choices[1].rng=111477372;
+    input->physics_choices[2]=input->physics_choices[0];
+    input->physics_choices[2].kind=SYNC_PHYSICS_BREAKUP_LAUNCH;
+    input->physics_choices[2].site=0x905f38;input->physics_choices[2].flags=0x40000000;
     input->geometry_calls=1;input->geometry_count=2;
     input->tick_gate_count=2;
     input->tick_gates[0]=(SyncTickGate){.site=0x8888cd,.clock=14313,.value=1};
@@ -54,6 +58,7 @@ int main(void) {
     input->actors[1].animation.clips[2]=-1;
     input->actors[1].position[1]=1;
     input->actors[1].body=(SyncActorBody){.active=1,.position={1,.078638f,-3},.velocity={.1f,-.25f,.2f,0},.floor_height=.080519f};
+    input->actors[1].rigid_body=(SyncRigidBody){.active=1,.transform={0,0,1,0,0,1,0,0,-1,0,0,0,12,3,-5,1}};
     input->actors[1].previous_position[1]=.5f;
     input->actors[1].render_position[1]=2;
     input->actors[1].previous_render_position[1]=1.5f;
@@ -84,7 +89,7 @@ int main(void) {
     input->projectiles[0].id=41; input->projectiles[1].id=42;
     input->projectiles[1].velocity[2]=6.75f;
     input->projectiles[1].cast_origin[2]=-4.75f;
-    input->fire_task_gate_count=3;
+    input->fire_task_gate_count=6;
     input->fire_task_gates[0]=(SyncFireTaskGate){
         .slot=5,.generation=17,.character=321,.origin={1,2,3},
         .flags=SYNC_FIRE_TASK_QUEUES_SHOT,.action=92,.value=1,
@@ -98,6 +103,13 @@ int main(void) {
     input->fire_task_gates[2].action=0;
     input->fire_task_gates[2].value=-3;
     input->fire_task_gates[2].state=(SyncFireTaskState){0};
+    input->fire_task_gates[3]=input->fire_task_gates[2];
+    input->fire_task_gates[3].kind=SYNC_ACTOR_BREAKUP_VISIBILITY;
+    input->fire_task_gates[3].value=1;
+    input->fire_task_gates[4]=input->fire_task_gates[3];
+    input->fire_task_gates[4].kind=SYNC_ACTOR_DEATH_BREAKUP;
+    input->fire_task_gates[5]=input->fire_task_gates[3];
+    input->fire_task_gates[5].kind=SYNC_ACTOR_FALL_VISIBILITY;
     input->rts_team_timer_count=2;
     input->rts_team_timers[0]=(SyncRtsTeamTimers){.slot=1,.remaining={0,0,3.5831935f}};
     input->rts_team_timers[1]=(SyncRtsTeamTimers){.slot=3,.remaining={1.25f,0,0}};
@@ -126,7 +138,7 @@ int main(void) {
     assert(output->actors[1].spawn_source.producer==0xf29a3889 && output->actors[1].spawn_source.serial==17);
     assert(output->inputs[1].aim_x==13 && output->inputs[1].aim_y==219 && output->shots[0].owner_generation==8);
     assert(memcmp(&output->actors[1].body,&input->actors[1].body,sizeof(SyncActorBody))==0);
-    assert(output->physics_choice_count==2 && memcmp(output->physics_choices,input->physics_choices,2*sizeof(SyncPhysicsChoice))==0);
+    assert(output->physics_choice_count==3 && memcmp(output->physics_choices,input->physics_choices,3*sizeof(SyncPhysicsChoice))==0);
     assert(output->tick_gate_count==2 && !memcmp(output->tick_gates,input->tick_gates,2*sizeof(SyncTickGate)));
     input->tick_gates[1].site=0x8889ea;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
@@ -147,7 +159,10 @@ int main(void) {
     input->physics_choice_reserved=1;
     assert(!sync_frame_valid(input,sync_frame_size(input)));input->physics_choice_reserved=0;
     input->physics_choice_count=SYNC_MAX_PHYSICS_CHOICES+1;
-    assert(sync_frame_size(input)==0);input->physics_choice_count=2;
+    assert(sync_frame_size(input)==0);input->physics_choice_count=3;
+    input->physics_choices[2].site=0x905f39;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->physics_choices[2].site=0x905f38;
     assert(output->shots[0].id==42 && output->shots[0].origin[0]==12.25f);
     assert(output->shots[0].has_launch_center==1);
     assert(memcmp(output->shots[0].launch_center,input->shots[0].launch_center,
@@ -160,6 +175,7 @@ int main(void) {
     assert(shot_native_match(&output->shots[2],-1,0,7,SYNC_SHOT_PROJECTILE_CHILD,2));
     assert(!shot_native_match(&output->shots[2],-1,0,7,SYNC_SHOT_PROJECTILE_CHILD,1));
     assert(output->projectiles[1].velocity[2]==6.75f && output->projectiles[1].cast_origin[2]==-4.75f);
+    assert(!memcmp(&output->actors[1].rigid_body,&input->actors[1].rigid_body,sizeof(SyncRigidBody)));
     assert(output->reaction_count==4 && output->reactions[2].kind==SYNC_REACTION_DAMAGE_DRAW &&
         output->reactions[2].damage_draw==27742);
     input->reactions[2].damage_draw=65536;
@@ -172,7 +188,10 @@ int main(void) {
     input->reactions[3].range.reach=NAN;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->reactions[3].range.reach=.1f;
-    assert(output->fire_task_gate_count==3 && output->fire_task_gates[0].value==1 && output->fire_task_gates[1].value==0);
+    assert(output->fire_task_gate_count==6 && output->fire_task_gates[0].value==1 && output->fire_task_gates[1].value==0);
+    assert(output->fire_task_gates[5].kind==SYNC_ACTOR_FALL_VISIBILITY && output->fire_task_gates[5].value==1);
+    assert(output->fire_task_gates[4].kind==SYNC_ACTOR_DEATH_BREAKUP && output->fire_task_gates[4].value==1);
+    assert(output->fire_task_gates[3].kind==SYNC_ACTOR_BREAKUP_VISIBILITY && output->fire_task_gates[3].value==1);
     assert(output->fire_task_gates[2].kind==SYNC_FIRE_ATTACK_SUPPORT && output->fire_task_gates[2].value==-3);
     assert(output->fire_task_gates[1].generation==17 && output->fire_task_gates[1].origin[2]==3);
     assert(!memcmp(&output->fire_task_gates[0].state,&input->fire_task_gates[0].state,sizeof(SyncFireTaskState)));
@@ -233,6 +252,24 @@ int main(void) {
     input->fire_task_gates[2].state.repeat=1;
     assert(!sync_frame_valid(input,sync_frame_size(input)));
     input->fire_task_gates[2].state.repeat=0;
+    input->fire_task_gates[3].value=2;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[3].value=0;
+    assert(sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[3].flags=1;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[3].flags=0;
+    input->fire_task_gates[3].state.repeat=1;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[3].state.repeat=0;
+    input->fire_task_gates[4].value=2;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[4].value=0;
+    assert(sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[5].value=2;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[5].value=0;
+    assert(sync_frame_valid(input,sync_frame_size(input)));
     assert(!sync_frame_decode(output,wire,bytes-1));
     wire[bytes-1]^=1; assert(!sync_frame_decode(output,wire,bytes)); wire[bytes-1]^=1;
     input->tags[0].parent=123; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->tags[0].parent=0;
@@ -250,6 +287,14 @@ int main(void) {
     assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].body.floor_height=.080519f;
     input->actors[0].body.floor_height=.1f;
     assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[0].body.floor_height=0;
+    input->actors[1].rigid_body.active=0;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].rigid_body.active=1;
+    input->actors[1].rigid_body.reserved=1;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].rigid_body.reserved=0;
+    input->actors[1].rigid_body.transform[6]=NAN;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].rigid_body.transform[6]=0;
+    input->actors[0].rigid_body.transform[12]=1;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[0].rigid_body.transform[12]=0;
     input->projectiles[0].position[0]=INFINITY;
     assert(!sync_frame_encode(input,wire,sizeof(*input))); input->projectiles[0].position[0]=0;
     input->projectiles[1].cast_origin[0]=INFINITY;

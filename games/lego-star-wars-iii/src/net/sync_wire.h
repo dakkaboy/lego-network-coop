@@ -12,8 +12,8 @@
 #define SYNC_MAX_SPAWN_TIMER_CHOICES (SYNC_MAX_SPAWN_TIMERS + SYNC_MAX_RTS_TEAMS * 4)
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
-#define SYNC_LAYOUT_VERSION 42
-#define SYNC_WIRE_VERSION 52
+#define SYNC_LAYOUT_VERSION 43
+#define SYNC_WIRE_VERSION 57
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -113,6 +113,11 @@ typedef struct SyncActorBody {
     float floor_height;
 } SyncActorBody;
 
+typedef struct SyncRigidBody {
+    uint32_t active,reserved;
+    float transform[16];
+} SyncRigidBody;
+
 typedef struct SyncActor {
     uint32_t slot;
     uint32_t generation,spawn_tag;
@@ -135,6 +140,7 @@ typedef struct SyncActor {
     SyncAnimation animation;
     SyncSpawnSource spawn_source;
     SyncActorBody body;
+    SyncRigidBody rigid_body;
 } SyncActor;
 
 enum SyncVariableScope {
@@ -224,7 +230,10 @@ typedef struct SyncSpawnTimer {
 } SyncSpawnTimer;
 enum SyncFireGateKind {
     SYNC_FIRE_TASK_VISIBILITY,
-    SYNC_FIRE_ATTACK_SUPPORT
+    SYNC_FIRE_ATTACK_SUPPORT,
+    SYNC_ACTOR_BREAKUP_VISIBILITY,
+    SYNC_ACTOR_DEATH_BREAKUP,
+    SYNC_ACTOR_FALL_VISIBILITY
 };
 typedef struct SyncFireTaskState {
     uint32_t repeat;
@@ -254,7 +263,7 @@ typedef struct SyncSpawnTimerChoice {
     float remaining;
 } SyncSpawnTimerChoice;
 
-enum SyncPhysicsChoiceKind { SYNC_PHYSICS_AXIS_SPIN=1, SYNC_PHYSICS_ROTATION_SPIN=2 };
+enum SyncPhysicsChoiceKind { SYNC_PHYSICS_AXIS_SPIN=1, SYNC_PHYSICS_ROTATION_SPIN=2, SYNC_PHYSICS_BREAKUP_LAUNCH=3 };
 typedef struct SyncPhysicsChoice {
     uint32_t kind,site,flags,model,clock;
     uint32_t name_hash[2],recipe[6],rng;

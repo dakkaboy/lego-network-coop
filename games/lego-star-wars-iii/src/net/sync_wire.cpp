@@ -90,6 +90,12 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
             if (gate.flags || gate.action || gate.value<INT8_MIN || gate.value>INT8_MAX) return 0;
             { const SyncFireTaskState empty={}; if (memcmp(&gate.state,&empty,sizeof(empty))) return 0; }
             break;
+        case SYNC_ACTOR_BREAKUP_VISIBILITY:
+        case SYNC_ACTOR_DEATH_BREAKUP:
+        case SYNC_ACTOR_FALL_VISIBILITY:
+            if (gate.flags || gate.action || gate.value<0 || gate.value>1) return 0;
+            { const SyncFireTaskState empty={}; if (memcmp(&gate.state,&empty,sizeof(empty))) return 0; }
+            break;
         default: return 0;
         }
         for (float coordinate : gate.origin) if (!isfinite(coordinate)) return 0;
@@ -104,6 +110,9 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
         if (actor->slot >= 4096 || actor->character < -1 || actor->character >= 4096 || !actor->generation || actor->player < -1 || actor->player > 1) return 0;
         if (actor->has_wallet>1 || !spawn_source_valid(actor->spawn_source)) return 0;
         if (actor->body.active>1) return 0;
+        if (actor->rigid_body.active>1 || actor->rigid_body.reserved) return 0;
+        for (float value : actor->rigid_body.transform)
+            if (!isfinite(value) || (!actor->rigid_body.active && value!=0)) return 0;
         if (!isfinite(actor->body.floor_height) || (!actor->body.active && actor->body.floor_height!=0)) return 0;
         for (float value : actor->body.position)
             if (!isfinite(value) || (!actor->body.active && value!=0)) return 0;
