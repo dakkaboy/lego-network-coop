@@ -23,7 +23,7 @@ int main(void) {
     input->geometry_calls=1;input->geometry_count=2;
     input->tick_gate_count=2;
     input->tick_gates[0]=(SyncTickGate){.site=0x8888cd,.clock=14313,.value=1};
-    input->tick_gates[1]=(SyncTickGate){.site=0x8889ea,.clock=14313,.value=0};
+    input->tick_gates[1]=(SyncTickGate){.site=0x8888cd,.clock=14314,.value=0};
     input->geometry[0]=(SyncCollider){.manager_ordinal=1,.slot=0,.generation=12,.character=360,.bounds={-1,-1,-1,1,1,1},.extents={.5f,1}};
     input->geometry[1]=input->geometry[0];input->geometry[1].slot=5;input->geometry[1].generation=17;input->geometry[1].character=321;
     input->cadence_count=1;
@@ -128,6 +128,9 @@ int main(void) {
     assert(memcmp(&output->actors[1].body,&input->actors[1].body,sizeof(SyncActorBody))==0);
     assert(output->physics_choice_count==2 && memcmp(output->physics_choices,input->physics_choices,2*sizeof(SyncPhysicsChoice))==0);
     assert(output->tick_gate_count==2 && !memcmp(output->tick_gates,input->tick_gates,2*sizeof(SyncTickGate)));
+    input->tick_gates[1].site=0x8889ea;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->tick_gates[1].site=0x8888cd;
     input->tick_gates[0].site++;
     assert(!sync_frame_valid(input,sync_frame_size(input)));input->tick_gates[0].site--;
     input->tick_gates[0].value=256;

@@ -66,10 +66,9 @@ extern "C" uint32_t __cdecl native_tick_gate(uint32_t site) {
 }
 
 extern "C" {
-__attribute__((used)) static volatile uintptr_t first_resume=0x8888d4,second_resume=0x8889f1;
+__attribute__((used)) static volatile uintptr_t first_resume=0x8888d4;
 // The saved x87 stack is restored before the original FSTP between CMP and JNE.
 __attribute__((naked)) void native_tick_first(void) {__asm__ volatile(NATIVE_TICK_GATE_ASM(0x8888cd,first_resume));}
-__attribute__((naked)) void native_tick_second(void) {__asm__ volatile(NATIVE_TICK_GATE_ASM(0x8889ea,second_resume));}
 }
 int native_tick_begin(SyncFrame *next,int authority,const CoherentFrameToken *original) {
     if (!next || !original || original->frame!=next || !world_vars_cohort_valid(original,COHERENT_PHASE_BIT(COHERENT_PREPARE))) return 0;
@@ -90,11 +89,12 @@ void native_tick_cancel(const CoherentFrameToken *original) {
     if (original && same(token,*original)) {active=false;frame=nullptr;}
 }
 int native_tick_install(void) {
-    const uintptr_t sites[]={0x8888cd,0x8889ea};
-    void *hooks[]={reinterpret_cast<void *>(native_tick_first),reinterpret_cast<void *>(native_tick_second)};
+    const uintptr_t sites[]={0x8888cd};
+    void *hooks[]={reinterpret_cast<void *>(native_tick_first)};
     const unsigned char bytes[]={0x80,0x3d,0x61,0xc1,0xfb,0,0};
     for (const auto site:sites) if (std::memcmp(reinterpret_cast<void *>(site),bytes,sizeof(bytes))) return 0;
-    for (unsigned i=0;i<2;++i) {
+    // 8889EA only controls the local preload indicator timer; its outer guard is asynchronous.
+    for (unsigned i=0;i<sizeof(sites)/sizeof(*sites);++i) {
         auto *p=reinterpret_cast<unsigned char *>(sites[i]);DWORD old;
         if (!VirtualProtect(p,7,PAGE_EXECUTE_READWRITE,&old)) return 0;
         const auto relative=static_cast<int32_t>(reinterpret_cast<uintptr_t>(hooks[i])-sites[i]-5);
