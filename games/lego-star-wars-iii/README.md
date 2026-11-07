@@ -4,7 +4,7 @@
 
 Network co-op for two Windows PCs. One player hosts, the other joins by IP, and each player has their own camera and the original HUD.
 
-0.0.5 fixes client party loading between mission sections and improves synchronization of physical debris, projectile launches and collision bodies. The Ambush A cave route into B was tested, followed by entry and short play in Ambush B, Geonosian Arena and Defenders of the Peace with two instances on one PC. Full mission completion and two-PC play remain unverified.
+0.0.5 fixes client loading between mission sections and improves synchronization of character movement, projectiles and debris.
 
 - [Download 0.0.5](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.5)
 - [Nexus Mods](https://www.nexusmods.com/legostarwars3theclonewars/mods/28)
