@@ -114,8 +114,10 @@ int main(void) {
     assert(output->actors[1].animation.current==100 && output->actors[1].animation.frames[3]==19.5f);
     assert(output->actors[1].animation.clips[2]==-1 && output->variables[0].value==1);
     assert(memcmp(output->variables,input->variables,3*sizeof(SyncVariable))==0);
+    assert(output->variable_count==3);
     input->variables[2].scope=0x6677280;
     assert(!sync_frame_valid(input,sync_frame_size(input)));
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->variables[2].scope=SYNC_VARIABLE_AREA_DECLARATION;
     assert(output->actors[1].position[1]==1 && output->actors[1].previous_position[1]==.5f);
     assert(output->actors[1].render_position[1]==2 && output->actors[1].previous_render_position[1]==1.5f);

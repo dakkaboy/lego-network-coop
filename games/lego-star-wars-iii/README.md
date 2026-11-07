@@ -4,9 +4,9 @@
 
 Network co-op for two Windows PCs. One player hosts, the other joins by IP, and each player has their own camera and the original HUD.
 
-0.0.2 fixes broken geometry on the client and reduces simulation overhead. Ambush was tested through destruction of the gold coral with two game instances on one PC.
+0.0.4 fixes a sync failure at the start of Defenders of the Peace. Mission entry was tested in Defenders of the Peace, Blue Shadow Virus A–D, and Ambush A–B with two game instances on one PC.
 
-- [Download 0.0.2](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.2)
+- [Download 0.0.4](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.4)
 - [Nexus Mods](https://www.nexusmods.com/legostarwars3theclonewars/mods/28)
 
 ## Build
@@ -17,7 +17,7 @@ From an x86 Visual Studio Developer PowerShell with CMake, Ninja and LLVM on `PA
 ./build-camera.ps1
 ```
 
-The x86 build writes `d3d9.dll` and `clonewars-camera.dll` to `build/`. The proxy loads the mod, which owns the camera, game hooks and network session. Both players need the same build. The current source uses wire protocol 31.
+The x86 build writes `d3d9.dll` and `clonewars-camera.dll` to `build/`. The proxy loads the mod, which owns the camera, game hooks and network session. Both players need the same build.
 
 ## Run
 
