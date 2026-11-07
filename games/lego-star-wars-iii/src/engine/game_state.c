@@ -17,6 +17,7 @@ static uint32_t profile_hash;
 static uint32_t profile_epoch;
 static uint32_t received_profile_epoch;
 static int force_requested,force_loading_seen;
+static uint32_t requested_native_entry=1;
 static volatile LONG tick_requested=-1;
 static int tick_seen_gameplay,initial_request_completed;
 static uint32_t request_serial=1,accepted_serial;
@@ -61,7 +62,7 @@ int game_actor_count(void) {
 
 void game_request_level(int level) {
     if (level >= 0 && level < 4096) {
-        if (InterlockedCompareExchange(&requested,0,0)!=level){next_request_serial();accepted_serial=0;force_requested=force_loading_seen=0;lan_publish_ready(0);}
+        if (InterlockedCompareExchange(&requested,0,0)!=level){next_request_serial();accepted_serial=0;force_requested=force_loading_seen=0;requested_native_entry=1;lan_publish_ready(0);}
         InterlockedExchange(&requested,level);
     }
 }
@@ -69,11 +70,13 @@ void game_request_reload(int level) {
     if(level<0||level>=4096)return;
     next_request_serial();accepted_serial=0;
     force_requested=1;force_loading_seen=0;last_requested=-1;
+    requested_native_entry=1;
     InterlockedExchange(&requested,level);lan_publish_ready(0);
 }
 void game_cancel_level_request(void) {
     if(InterlockedCompareExchange(&requested,0,0)<0 && InterlockedCompareExchange(&tick_requested,0,0)<0 && !force_requested)return;
     next_request_serial();accepted_serial=0;force_requested=force_loading_seen=0;last_requested=-1;
+    requested_native_entry=1;
     InterlockedExchange(&requested,-1);InterlockedExchange(&tick_requested,-1);
 }
 int game_network_target_level(void) {
@@ -89,7 +92,7 @@ static void commit_target(int level,uint32_t serial,int transitioning) {
     if(serial&&(serial!=request_serial||InterlockedCompareExchange(&requested,0,0)!=level))return;
     committed_level=level;if(serial)accepted_serial=serial;
     game_sync_poll_epoch(level,transitioning);
-    lan_publish_transition(game_sync_epoch(),level);
+    lan_publish_transition(game_sync_epoch(),level,game_sync_transition_entry());
 }
 static void host_publication(int current,int playing,int pending) {
     int desired=InterlockedCompareExchange(&requested,0,0);
@@ -102,7 +105,7 @@ static void host_publication(int current,int playing,int pending) {
     if(playing&&game_native_profile_ready()&&game_network_level_valid(current)){commit_target(current,0,0);return;}
     if(pending<0&&is_native_titles(current)){
         committed_level=-1;accepted_serial=0;game_sync_poll_epoch(-1,0);
-        lan_publish_transition(0,-1);lan_publish_ready(0);
+        lan_publish_transition(0,-1,0);lan_publish_ready(0);
     }
 }
 
@@ -171,10 +174,22 @@ static void capture_transition_context(volatile uint32_t *out,int desired) {
     };
     for (unsigned i=0;i<20;++i) out[i]=values[i];
 }
+static void accept_native_transition(int desired,uint32_t serial) {
+    if (serial!=request_serial || InterlockedCompareExchange(&requested,0,0)!=desired) return;
+    commit_target(desired,serial,1);
+    if (force_requested) force_loading_seen=1;
+    InterlockedExchange(&load_status,1);
+}
 static void native_transition(int desired,int stage) {
     if (desired<0 || InterlockedCompareExchange(&requested,0,0)!=desired || !game_native_profile_ready()) return;
     if(lan_status()==LAN_CONNECTED&&!lan_is_host()&&!game_network_profile_ready())return;
     uint32_t serial=request_serial;
+    int pending=*(int *)0xe6e61c;
+    if (pending>=0) {
+        // The stock trigger can already have queued the destination on this peer.
+        if (pending==desired) accept_native_transition(desired,serial);
+        return;
+    }
     char *root = *(char **)0xfb2e60;
     char *catalog = *(char **)0xfb8404;
     unsigned int count = *(unsigned int *)0xfb8410;
@@ -198,16 +213,25 @@ static void native_transition(int desired,int stage) {
     if (stage) ++clonewars_transition_debug[2];
     capture_transition_context(clonewars_transition_context,desired);
     for (unsigned i=40;i<60;++i) clonewars_transition_context[i]=UINT32_MAX;
-    typedef void (__attribute__((cdecl)) *EnterMission)(void *,int,int,int);
-    ((EnterMission)0x8bd740)(definition,-1,-1,0);
+    if (!requested_native_entry) {
+        // A section exit preserves the party; 8BD740 marks a fresh mission and discards that path.
+        typedef unsigned char (__attribute__((thiscall)) *QueueSection)(void *,int,int);
+        ((QueueSection)0x9097e0)((void *)0xe6e618,desired,0);
+    } else {
+        typedef void (__attribute__((cdecl)) *EnterMission)(void *,int,int,int);
+        ((EnterMission)0x8bd740)(definition,-1,-1,0);
+    }
     int accepted=*(int *)0xe6e61c==desired;
     capture_transition_context(clonewars_transition_context+20,desired);
     if(serial!=request_serial||InterlockedCompareExchange(&requested,0,0)!=desired)return;
-    if (accepted){++clonewars_transition_debug[3];commit_target(desired,serial,1);}
-    if (accepted && force_requested) force_loading_seen=1;
+    if (accepted) {
+        ++clonewars_transition_debug[3];
+        accept_native_transition(desired,serial);
+    } else {
+        InterlockedExchange(&load_status,1);
+    }
     last_requested = desired;
     last_attempt = GetTickCount();
-    InterlockedExchange(&load_status,1);
 }
 void game_native_tick(void) {
     char *root=*(char **)0xfb2e60;
@@ -219,6 +243,26 @@ void game_native_tick(void) {
     int desired=(int)InterlockedExchange(&tick_requested,-1);
     clonewars_transition_debug[9]=UINT32_MAX;
     if (desired>=0) native_transition(desired,1);
+}
+
+static void poll_client_transition(int current,int playing) {
+    const int previous=game_network_target_level();
+    const int changed=game_sync_poll_epoch(-1,0);
+    const int destination=game_network_target_level();
+    if (destination<0) { game_cancel_level_request();return; }
+    // Native triggers can arrive before the host publication. The previous target must not pull them back.
+    if (!changed) return;
+    if (destination!=current) {
+        game_request_level(destination);
+        if (previous>=0 && !force_requested) requested_native_entry=game_sync_transition_entry();
+        return;
+    }
+    if (playing && (previous<0 || destination==previous)) {
+        game_request_reload(destination);
+        return;
+    }
+    // A new section already loaded natively needs the new epoch, not a second allocation of its world.
+    game_cancel_level_request();
 }
 
 void game_poll(void) {
@@ -237,11 +281,7 @@ void game_poll(void) {
         if (lan_is_host()) {
             host_publication(current,playing,pending_level);
         } else {
-            int changed=game_sync_poll_epoch(-1,0);
-            int destination=game_network_target_level();
-            if(destination<0){game_cancel_level_request();}
-            else if (changed && destination==current && playing) game_request_reload(destination);
-            else if (destination >= 0 && destination != current) game_request_level(destination);
+            poll_client_transition(current,playing);
         }
     } else {game_sync_poll_epoch(-1,0);committed_level=-1;accepted_serial=0;}
     poll_profile();
@@ -268,7 +308,7 @@ void game_poll(void) {
         }
         return;
     }
-    if (force_requested && (pending_level>=0 || !playing)) force_loading_seen=1;
+    if (force_requested && pending_level==desired) force_loading_seen=1;
     if (current == desired && pending_level<0 && playing && (!force_requested || force_loading_seen)) {
         commit_target(desired,request_serial,0);
         InterlockedExchange(&requested,-1);

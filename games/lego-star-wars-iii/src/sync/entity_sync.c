@@ -44,11 +44,6 @@ static int valid(const void *p,SIZE_T size) {
            !(m.Protect&(PAGE_GUARD|PAGE_NOACCESS)) &&
            (uintptr_t)p+size<=(uintptr_t)m.BaseAddress+m.RegionSize;
 }
-static int local_player(int slot) {
-    void *actor=pool+slot*0x1440;
-    for (int player=0;player<2;++player) if (ENTITY_PLAYER(player)==actor) return player;
-    return -1;
-}
 static uint32_t generation(void) { if (!++birth_counter) ++birth_counter; return birth_counter; }
 void entities_reset_bindings(void) {
     memset(bindings,0,sizeof(bindings)); memset(known,0,sizeof(known)); memset(assigned,0,sizeof(assigned));
@@ -257,12 +252,12 @@ int entities_bind(const SyncFrame *frame) {
     entities_update(); int count=game_actor_count();
     unsigned char claimed[SYNC_MAX_ACTORS]={0};
     uint32_t wanted[SYNC_MAX_ACTORS]={0};
-    int wanted_player[SYNC_MAX_ACTORS]; memset(wanted_player,0xff,sizeof(wanted_player));
-    for (unsigned i=0;i<frame->actor_count;++i) { retire(frame->actors+i); wanted[frame->actors[i].slot]=frame->actors[i].generation; wanted_player[frame->actors[i].slot]=frame->actors[i].player; }
+    for (unsigned i=0;i<frame->actor_count;++i) { retire(frame->actors+i); wanted[frame->actors[i].slot]=frame->actors[i].generation; }
+    // PREPARE sees post-tag roles before in-tick Tag replay; that handoff does not retire an allocation.
     for (int slot=0;slot<SYNC_MAX_ACTORS;++slot) {
         Binding *b=bindings+slot;
         if (!b->remote_generation || wanted[slot]!=b->remote_generation || b->local_slot<0 || b->local_slot>=count ||
-            local[b->local_slot].key.generation!=b->local_generation || local_player(b->local_slot)!=wanted_player[slot] ||
+            local[b->local_slot].key.generation!=b->local_generation ||
             (*(uint32_t *)(pool+b->local_slot*0x1440+0x50)&3)!=3) {
             memset(b,0,sizeof(*b)); b->local_slot=-1;
         } else claimed[b->local_slot]=1;

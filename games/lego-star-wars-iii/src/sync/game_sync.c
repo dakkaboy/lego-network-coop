@@ -39,6 +39,7 @@
 #include "../debug/spawn_observer.h"
 #include "../debug/combat_observer.h"
 #include "global_step.h"
+#include "native_tick_sync.h"
 #include "../debug/shooter_observer.h"
 #include "npc_input.h"
 #include "cadence_sync.h"
@@ -85,6 +86,7 @@ static int initialized_level=-1;
 __declspec(dllexport) volatile uint32_t clonewars_sync_debug[20];
 __declspec(dllexport) volatile LONG clonewars_input_override[4];
 __declspec(dllexport) volatile uint32_t clonewars_actor_debug[8];
+__declspec(dllexport) volatile uint32_t clonewars_actor_pose_corrections;
 __declspec(dllexport) volatile LONG clonewars_input_prep_installed;
 __declspec(dllexport) volatile uint32_t clonewars_input_prep_failure[8];
 __declspec(dllexport) volatile uint32_t clonewars_epoch_debug[8];
@@ -208,7 +210,8 @@ static void release_remote(void) {
 
 }
 
-static void prepare_epoch(uint32_t epoch,int level) {
+static uint32_t transition_native_entry;
+static void prepare_epoch(uint32_t epoch,int level,uint32_t native_entry) {
     release_remote();projectiles_reset();tags_reset();entities_reset_bindings();
     running=fault=0; sequence=expected=0;
     memset((void *)clonewars_npc_input_failure,0,sizeof(clonewars_npc_input_failure));
@@ -216,11 +219,12 @@ static void prepare_epoch(uint32_t epoch,int level) {
     previous_local_held=0;
     input_buffer_reset(&local_buffer); sampled_for_flow=0;
     interval=(SyncEpochCursor){.epoch=epoch,.level=level,.active=1};
-    lan_publish_transition(epoch,level);
+    transition_native_entry=native_entry;
+    lan_publish_transition(epoch,level,native_entry);
 }
 static void suspend_epoch_publication(void) {
     uint32_t previous=interval.epoch;
-    prepare_epoch(0,-1);interval.epoch=previous;interval.active=0;
+    prepare_epoch(0,-1,0);interval.epoch=previous;interval.active=0;
 }
 int game_sync_poll_epoch(int target,int transitioning) {
     if(!core_main_lifecycle_allowed())return 0;
@@ -245,7 +249,7 @@ int game_sync_poll_epoch(int target,int transitioning) {
         if (!interval.active || interval.level!=target || (interval_started && transitioning)) {
             if(interval.epoch==UINT32_MAX){InterlockedOr(&core_reject_bits,0x10000000);coherent_frame_cancel_atomic(0x10000000);return 0;}
             uint32_t epoch=interval.epoch+1;
-            prepare_epoch(epoch,target);
+            prepare_epoch(epoch,target,*(uint32_t *)0xfc16b0!=0);
             return 1;
         }
     } else {
@@ -253,13 +257,14 @@ int game_sync_poll_epoch(int target,int transitioning) {
         uint32_t epoch=remote.epoch;int level=remote.level;
         if(!epoch){if(interval.active){suspend_epoch_publication();return 1;}return 0;}
         if (epoch>interval.epoch && game_network_level_valid(level)) {
-            prepare_epoch(epoch,level);
+            prepare_epoch(epoch,level,remote.native_entry);
             return 1;
         }
     }
     return 0;
 }
 uint32_t game_sync_epoch(void) { return interval.active ? interval.epoch : 0; }
+uint32_t game_sync_transition_entry(void) { return transition_native_entry; }
 int game_sync_epoch_level(void) { return interval.level; }
 static SyncInput read_input(void) {
     SyncInput input={0,0,128,128,128,128};
@@ -311,22 +316,37 @@ static int core_input_same(int slot,char*p,char*c,uint32_t allocation,uint32_t r
     return core_live()&&!release_changed(release)&&assignment==assignment_lease_serial&&
         player(slot)==p&&controller(slot)==c&&entities_allocation_live(p,allocation);
 }
+__declspec(dllexport) volatile uint32_t clonewars_input_assignment_failure[16];
+static int input_assignment_failed(int reason,int slot,char *actor,char *controller,uint32_t allocation) {
+    if (InterlockedCompareExchange((volatile LONG *)clonewars_input_assignment_failure,-1,0)==0) {
+        const uint32_t state[]={working.epoch,working.sequence,(uint32_t)reason,(uint32_t)slot,
+            (uint32_t)(uintptr_t)actor,(uint32_t)(uintptr_t)controller,allocation,
+            valid(controller,4)?*(uint32_t *)controller:0,
+            (uint32_t)(uintptr_t)changed_actor[slot],(uint32_t)(uintptr_t)changed_controller[slot],changed_generation[slot],
+            (uint32_t)(uintptr_t)saved_device[slot],*(uint32_t *)(0xeb1a70+slot*8),
+            (uint32_t)(uintptr_t)remote_device[0],(uint32_t)(uintptr_t)remote_device[1],coherent_frame_release()};
+        memcpy((void *)(clonewars_input_assignment_failure+1),state+1,sizeof(state)-4);
+        MemoryBarrier();clonewars_input_assignment_failure[0]=state[0];
+    }
+    return 0;
+}
 static int write_input(int slot, const SyncInput *input) {
     if(!core_live())return 0;
     char *c=controller(slot), *p=player(slot);
-    if (!c || !p) return 0;
+    if (!c || !p) return input_assignment_failed(1,slot,p,c,0);
     uint32_t allocation=entities_local_generation(p);
-    if (!allocation) return 0;
+    if (!allocation) return input_assignment_failed(2,slot,p,c,allocation);
     unsigned char *joined=(unsigned char *)(0xfb484d+slot*0x20);
     *joined=1;
-    if(slot==1 && *(int*)0xeb1a78<0)return 0;
+    if(slot==1 && *(int*)0xeb1a78<0)return input_assignment_failed(3,slot,p,c,allocation);
     if (changed_controller[slot]!=c || changed_actor[slot]!=p || changed_generation[slot]!=allocation) {
         int native_source_known=entities_allocation_live(changed_actor[slot],changed_generation[slot]) && valid(changed_controller[slot],4);
         void *native_device=saved_device[slot];
         release_assignment(slot);
         unsigned char *source=*(unsigned char **)c;
         if (source==remote_device[0] || source==remote_device[1]) {
-            if (source!=remote_device[slot] || !native_source_known) return 0;
+            if (source!=remote_device[slot] || !native_source_known)
+                return input_assignment_failed(source!=remote_device[slot]?4:5,slot,p,c,allocation);
             source=native_device;
         }
         memset(remote_device[slot],0,sizeof(remote_device[slot]));
@@ -502,6 +522,13 @@ static void actor_prepare_normal(void *actor) {
     actor_prepare_common(actor,0,blocked);
 }
 static void actor_prepare_alternate(void *actor) { actor_prepare_common(actor,1,0); }
+static char *actor_physics_body(const char *actor) {
+    if (!*(const uint8_t *)0xe66e7a) return NULL;
+    char *model=*(char **)(actor+8);
+    if (!valid(model,0x3c)) return NULL;
+    char *body=*(char **)(model+0x38);
+    return valid(body,0xec) ? body : NULL;
+}
 static int collect_actors(SyncFrame *frame) {
     entities_update();
     char *base=*(char **)0xfb2f60;
@@ -530,9 +557,43 @@ static int collect_actors(SyncFrame *frame) {
         a->animation.flags=*(uint16_t *)(p+0xef8);
         memcpy(a->animation.clips,p+0xefa,10);
         a->animation.reserved=0;
+        a->body=(SyncActorBody){0};
+        char *body=actor_physics_body(p);
+        if (body) {
+            a->body.active=1;
+            memcpy(a->body.position,body+0x70,sizeof(a->body.position));
+            memcpy(a->body.velocity,body+0xb0,sizeof(a->body.velocity));
+            memcpy(&a->body.floor_height,body+0xe8,sizeof(a->body.floor_height));
+        }
     }
     return entities_collect_dormant_party(frame) && sync_frame_valid(frame,sync_frame_size(frame));
 }
+typedef void (__thiscall *NativeBodyPosition)(void *, const float *);
+typedef void (__thiscall *NativeBodyVelocity)(void *, const float *);
+static const NativeBodyPosition native_body_position=(NativeBodyPosition)0xa294c0;
+static const NativeBodyVelocity native_body_velocity=(NativeBodyVelocity)0xa08380;
+
+static int restore_actor_body(char *actor,const SyncActorBody *state,
+                              const CoherentFrameToken *original,uint32_t allocation) {
+    if (!state->active) return 1;
+    char *body=actor_physics_body(actor);
+    if (!body) return 0;
+    if (memcmp(body+0x70,state->position,sizeof(state->position))) {
+        // The character teleport override clears its support and floor cache; the native base move preserves them.
+        const float destination[4]={state->position[0],state->position[1],state->position[2],1.0f};
+        native_body_position(body,destination);
+        if (!core_live() || !coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH)) ||
+            !entities_allocation_live(actor,allocation)) return 0;
+        if (actor_physics_body(actor)!=body) return 0;
+        ++clonewars_actor_pose_corrections;
+    }
+    if (memcmp(body+0xb0,state->velocity,sizeof(state->velocity)))
+        native_body_velocity(body,state->velocity);
+    // A083E0 derives visible height from this independent solver cache, not the body origin.
+    memcpy(body+0xe8,&state->floor_height,sizeof(state->floor_height));
+    return 1;
+}
+
 static int correct_actors_impl(const SyncFrame *frame,const CoherentFrameToken*original) {
     if(!core_live()||!coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return 0;
     if (!entities_bind(frame)) return 0;
@@ -555,11 +616,15 @@ static int correct_actors_impl(const SyncFrame *frame,const CoherentFrameToken*o
         uint32_t allocation=entities_local_generation(p);
         if(!allocation||!entities_allocation_live(p,allocation))return 0;
         void*controller_before=*(void**)(p+0x6cc);
-        memcpy(p+0x24,a->position,12); memcpy(p+0xf28,a->render_position,12);
-        memcpy(p+0x30,a->previous_position,12); memcpy(p+0xf40,a->previous_render_position,12);
-        memcpy(p+0xf10,a->velocity,12);
         *(uint16_t *)(p+0x6c)=a->heading;
         *(uint16_t *)(p+0xf0c)=a->render_heading;
+        if (!restore_actor_body(p,&a->body,original,allocation)) return 0;
+        if(!core_live()||!coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return 0;
+        if(!entities_allocation_live(p,allocation)||entities_actor(a->slot,a->generation)!=p||*(void**)(p+0x6cc)!=controller_before)return 0;
+        memcpy(p+0x24,a->position,12);
+        memcpy(p+0xf28,a->render_position,12);
+        memcpy(p+0x30,a->previous_position,12); memcpy(p+0xf40,a->previous_render_position,12);
+        memcpy(p+0xf10,a->velocity,12);
         *(int8_t *)(p+0xdde)=a->health; *(uint8_t *)(p+0xddd)=a->max_health;
         uint64_t *wallet=*(uint64_t **)(p+0x5b0);
         if (a->has_wallet && valid(wallet,8)) *wallet=a->wallet;

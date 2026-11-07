@@ -61,6 +61,8 @@ add_library(clonewars-camera SHARED
     src/sync/model_input_journal.c
     src/sync/model_input_sync.c
     src/sync/npc_input.c
+    src/sync/native_tick_sync.cpp
+    src/sync/physics_input_sync.cpp
     src/sync/projectile_sync.c
     src/sync/reaction_journal.c
     src/sync/reaction_sync.c

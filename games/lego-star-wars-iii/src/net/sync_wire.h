@@ -3,15 +3,17 @@
 #define SYNC_MAX_ACTORS 4096
 #define SYNC_MAX_VARIABLES 1024
 #define SYNC_MAX_SHOTS 128
+#define SYNC_MAX_PHYSICS_CHOICES 1024
+#define SYNC_MAX_TICK_GATES 64
 #define SYNC_MAX_PROJECTILES 512
 #define SYNC_MAX_TAGS 16
 #define SYNC_MAX_SPAWN_TIMERS 192
 #define SYNC_MAX_RTS_TEAMS 8
-#define SYNC_MAX_RTS_TIMER_CHOICES 32
+#define SYNC_MAX_SPAWN_TIMER_CHOICES (SYNC_MAX_SPAWN_TIMERS + SYNC_MAX_RTS_TEAMS * 4)
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
-#define SYNC_LAYOUT_VERSION 34
-#define SYNC_WIRE_VERSION 35
+#define SYNC_LAYOUT_VERSION 42
+#define SYNC_WIRE_VERSION 51
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -53,6 +55,17 @@ typedef struct SyncAnimation {
     uint16_t reserved;
 } SyncAnimation;
 
+typedef struct SyncProjectileSeed {
+    float cast_origin[3];
+    float age, expires_at, cast_countdown;
+} SyncProjectileSeed;
+
+enum SyncShotSource {
+    SYNC_SHOT_WEAPON,
+    SYNC_SHOT_ACTOR_FOLLOWUP,
+    SYNC_SHOT_PROJECTILE_CHILD
+};
+
 typedef struct SyncShot {
     uint32_t id;
     int32_t owner,weapon;
@@ -61,6 +74,14 @@ typedef struct SyncShot {
     float origin[3],transform[16];
     uint32_t phase,clock,rng_game,rng_engine;
     float delta;
+    uint32_t has_launch_center;
+    float launch_center[3];
+    uint32_t has_projectile_seed;
+    SyncProjectileSeed projectile_seed;
+    uint8_t source, depth;
+    uint16_t reserved;
+    uint32_t has_launch_motion;
+    float launch_motion[3];
 } SyncShot;
 
 typedef struct SyncProjectile {
@@ -69,6 +90,7 @@ typedef struct SyncProjectile {
     float position[3],previous[3],velocity[3],direction[3],previous_direction[3];
     float flight[14];
     uint32_t flags[3];
+    float cast_origin[3];
 } SyncProjectile;
 
 typedef struct SyncTag {
@@ -84,6 +106,12 @@ typedef struct SyncTag {
 typedef struct SyncSpawnSource {
     uint32_t producer,serial;
 } SyncSpawnSource;
+
+typedef struct SyncActorBody {
+    uint32_t active;
+    float position[3],velocity[4];
+    float floor_height;
+} SyncActorBody;
 
 typedef struct SyncActor {
     uint32_t slot;
@@ -106,7 +134,14 @@ typedef struct SyncActor {
     uint32_t has_wallet;
     SyncAnimation animation;
     SyncSpawnSource spawn_source;
+    SyncActorBody body;
 } SyncActor;
+
+enum SyncVariableScope {
+    SYNC_VARIABLE_GLOBAL,
+    SYNC_VARIABLE_AREA,
+    SYNC_VARIABLE_AREA_DECLARATION
+};
 
 typedef struct SyncVariable {
     char name[32];
@@ -137,14 +172,30 @@ typedef struct SyncCollider {
     SyncSpawnSource spawn_source;
 } SyncCollider;
 
+enum SyncReactionKind { SYNC_REACTION_CLIP, SYNC_REACTION_DAMAGE_DRAW, SYNC_REACTION_ITEM_RANGE };
+typedef struct SyncItemRange {
+    uint32_t target_slot,target_generation;
+    uint16_t heading,reverse;
+    int16_t animation;
+    uint16_t reserved;
+    float actor_position[3],target_position[3];
+    float actor_radius,target_radius,reach;
+} SyncItemRange;
 typedef struct SyncReactionChoice {
     uint32_t slot,generation,spawn_tag;
     int32_t character;
     float origin[3];
-    int32_t old_action,clip;
-    uint32_t source_id;
-    uint32_t arena_attacker_slot,arena_attacker_generation;
+    int32_t old_action;
+    uint32_t kind;
     SyncSpawnSource spawn_source;
+    union {
+        struct {
+            union { int32_t clip; uint32_t damage_draw; };
+            uint32_t source_id;
+            uint32_t arena_attacker_slot,arena_attacker_generation;
+        };
+        SyncItemRange range;
+    };
 } SyncReactionChoice;
 
 typedef struct SyncModelInputContext {
@@ -171,23 +222,45 @@ typedef struct SyncSpawnTimer {
     uint32_t id,type;
     float remaining;
 } SyncSpawnTimer;
+enum SyncFireGateKind {
+    SYNC_FIRE_TASK_VISIBILITY,
+    SYNC_FIRE_ATTACK_SUPPORT
+};
+typedef struct SyncFireTaskState {
+    uint32_t repeat;
+    float timers[4],target[3],delta;
+} SyncFireTaskState;
+
 typedef struct SyncFireTaskGate {
     uint32_t slot,generation,spawn_tag;
     int32_t character;
     float origin[3];
     uint16_t flags,action;
-    uint32_t allowed;
+    int32_t value;
+    uint32_t kind;
     SyncSpawnSource spawn_source;
+    SyncFireTaskState state;
 } SyncFireTaskGate;
 typedef struct SyncRtsTeamTimers {
     uint32_t slot;
     float remaining[3];
 } SyncRtsTeamTimers;
-typedef struct SyncRtsTimerChoice {
-    uint32_t slot,index;
+enum SyncSpawnTimerChoiceKind {
+    SYNC_SPAWN_TIMER_RTS,
+    SYNC_SPAWN_TIMER_MODULE
+};
+typedef struct SyncSpawnTimerChoice {
+    uint32_t kind,owner,selector,serial;
     float remaining;
-} SyncRtsTimerChoice;
+} SyncSpawnTimerChoice;
 
+enum SyncPhysicsChoiceKind { SYNC_PHYSICS_AXIS_SPIN=1, SYNC_PHYSICS_ROTATION_SPIN=2 };
+typedef struct SyncPhysicsChoice {
+    uint32_t kind,site,flags,model,clock;
+    uint32_t name_hash[2],recipe[6],rng;
+} SyncPhysicsChoice;
+
+typedef struct SyncTickGate { uint32_t site,clock,value; } SyncTickGate;
 typedef struct SyncFrame {
     uint32_t epoch;
     uint32_t sequence;
@@ -215,7 +288,9 @@ typedef struct SyncFrame {
     uint32_t spawn_timer_count;
     uint32_t spawn_timer_reserved;
     uint32_t fire_task_gate_count,fire_task_gate_reserved;
-    uint32_t rts_team_timer_count,rts_timer_choice_count;
+    uint32_t rts_team_timer_count,spawn_timer_choice_count;
+    uint32_t physics_choice_count,physics_choice_reserved;
+    uint32_t tick_gate_count,tick_gate_reserved;
     uint16_t dormant_party[8]; /* Zero for no dormant member, otherwise character + 1. */
     SyncActor actors[SYNC_MAX_ACTORS];
     SyncVariable variables[SYNC_MAX_VARIABLES];
@@ -230,7 +305,9 @@ typedef struct SyncFrame {
     SyncSpawnTimer spawn_timers[SYNC_MAX_SPAWN_TIMERS];
     SyncFireTaskGate fire_task_gates[SYNC_MAX_ACTORS];
     SyncRtsTeamTimers rts_team_timers[SYNC_MAX_RTS_TEAMS];
-    SyncRtsTimerChoice rts_timer_choices[SYNC_MAX_RTS_TIMER_CHOICES];
+    SyncSpawnTimerChoice spawn_timer_choices[SYNC_MAX_SPAWN_TIMER_CHOICES];
+    SyncPhysicsChoice physics_choices[SYNC_MAX_PHYSICS_CHOICES];
+    SyncTickGate tick_gates[SYNC_MAX_TICK_GATES];
 } SyncFrame;
 #ifdef __cplusplus
 extern "C" {

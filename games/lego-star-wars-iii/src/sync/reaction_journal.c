@@ -16,7 +16,7 @@ int reaction_journal_apply(ReactionJournal *journal,const SyncReactionChoice *en
     if (!owner_matches) { journal->failed=2;return 0; }
     if (entry->old_action!=old_action) { journal->failed=3;return 0; }
     if (entry->source_id!=source_id) { journal->failed=4;return 0; }
-    if (!reaction_entry_valid(entry) || entry->clip==REACTION_ARENA_NO_CLIP || !available) { journal->failed=5;return 0; }
+    if (!reaction_entry_valid(entry) || entry->kind!=SYNC_REACTION_CLIP || entry->clip==REACTION_ARENA_NO_CLIP || !available) { journal->failed=5;return 0; }
     *clip=(uint32_t)entry->clip;++journal->cursor;return 1;
 }
 int reaction_journal_finish(const ReactionJournal *journal) { return !journal->failed && (journal->host || journal->cursor==journal->frame->reaction_count); }

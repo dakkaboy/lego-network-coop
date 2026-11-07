@@ -66,6 +66,33 @@ int main(void) {
     assert(entities_actor(3,103)==entity_test_players[3]);
     frame->sequence=2;
     assert(entities_bind(frame) && entities_party_matches(frame));
+
+    char *from=entity_test_players[0],*to=entity_test_players[2];
+    frame->actors[0].player=-1;
+    frame->actors[0].party_slot=2;
+    frame->actors[2].player=0;
+    frame->actors[2].party_slot=0;
+    assert(entities_bind(frame));
+    assert(!entities_party_matches(frame));
+    assert(entities_actor(0,100)==from && entities_actor(2,102)==to);
+    assert(entities_slot(from)==0 && entities_generation(from)==100);
+    assert(entities_slot(to)==2 && entities_generation(to)==102);
+    entity_test_players[0]=to;
+    entity_test_players[2]=from;
+    from[0x55]=2;
+    to[0x55]=0;
+    assert(entities_bind(frame) && entities_party_matches(frame));
+    assert(entities_actor(0,100)==from && entities_actor(2,102)==to);
+    frame->actors[0].player=0;
+    frame->actors[0].party_slot=0;
+    frame->actors[2].player=-1;
+    frame->actors[2].party_slot=2;
+    assert(entities_bind(frame) && !entities_party_matches(frame));
+    entity_test_players[0]=from;
+    entity_test_players[2]=to;
+    from[0x55]=0;
+    to[0x55]=2;
+    assert(entities_bind(frame) && entities_party_matches(frame));
     entities_reset_bindings();
     assert(!entities_bind(frame));
 
@@ -103,6 +130,11 @@ int main(void) {
     ++frame->actor_count;
     assert(entities_collect_dormant_party(frame) && frame->dormant_party[3]==0);
     assert(entities_bind(frame) && entities_party_matches(frame));
+
+    const int16_t replacement_character=200;
+    memcpy(entity_test_players[0]+0xdc0,&replacement_character,sizeof(replacement_character));
+    assert(!entities_bind(frame));
+    assert(!entities_actor(0,100));
 
     free(frame);
     free(entity_test_pool);

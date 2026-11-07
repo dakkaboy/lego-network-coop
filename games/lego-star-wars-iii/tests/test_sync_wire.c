@@ -6,7 +6,10 @@
 #include <math.h>
 #include <stdio.h>
 #include "net/sync_wire.h"
-_Static_assert(sizeof(SyncActor)==160,"Actor wire layout changed");
+#include "sync/shot_context.h"
+#include "sync/physics_input_sync.h"
+#include "sync/native_tick_sync.h"
+_Static_assert(sizeof(SyncActor)==200,"Actor wire layout changed");
 _Static_assert(offsetof(SyncActor,party_slot)==102,"Party slot must use defined padding");
 int main(void) {
     SyncFrame *input=calloc(1,sizeof(*input)),*output=calloc(1,sizeof(*output));
@@ -14,18 +17,31 @@ int main(void) {
     assert(input && output && wire);
     input->epoch=7; input->sequence=1; input->level=6; input->delta=1.0f/60;
     input->engine_delta=.017f; input->world_calls=1; input->tick_calls=1;
+    input->physics_choice_count=2;
+    input->physics_choices[0]=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_AXIS_SPIN,.site=0x7425c3,.flags=0x40000091,.model=65535,.clock=1550,.name_hash={123,456},.rng=1744529096};
+    input->physics_choices[1]=input->physics_choices[0];input->physics_choices[1].rng=111477372;
     input->geometry_calls=1;input->geometry_count=2;
+    input->tick_gate_count=2;
+    input->tick_gates[0]=(SyncTickGate){.site=0x8888cd,.clock=14313,.value=1};
+    input->tick_gates[1]=(SyncTickGate){.site=0x8889ea,.clock=14313,.value=0};
     input->geometry[0]=(SyncCollider){.manager_ordinal=1,.slot=0,.generation=12,.character=360,.bounds={-1,-1,-1,1,1,1},.extents={.5f,1}};
     input->geometry[1]=input->geometry[0];input->geometry[1].slot=5;input->geometry[1].generation=17;input->geometry[1].character=321;
     input->cadence_count=1;
     input->cadence[0]=(SyncCadence){.slot=5,.generation=17,.character=321,.period=8,.phase=5,.elapsed=.05f};
-    input->reaction_count=2;
+    input->reaction_count=4;
     input->reactions[0]=(SyncReactionChoice){.slot=6,.generation=26,.spawn_tag=123,.character=321,.old_action=-1,.clip=975,.source_id=667};
     input->reactions[1]=input->reactions[0];input->reactions[1].old_action=20;input->reactions[1].clip=-1;
+    input->reactions[2]=input->reactions[0];
+    input->reactions[2].kind=SYNC_REACTION_DAMAGE_DRAW;
+    input->reactions[2].damage_draw=27742;
+    input->reactions[3]=(SyncReactionChoice){.slot=1,.generation=13,.character=152,.old_action=102,
+        .kind=SYNC_REACTION_ITEM_RANGE,.range={.target_slot=6,.target_generation=26,.heading=8108,
+        .animation=921,.actor_position={4,-.25f,-3},.target_position={4.2f,-.25f,-2.8f},
+        .actor_radius=.1f,.target_radius=.1f,.reach=.1f}};
     input->actor_input_count=2;
     input->actor_inputs[0]=(SyncActorInput){.slot=15,.generation=27,.spawn_tag=123,.character=321,.pressed=0x8000};
     input->actor_inputs[1]=input->actor_inputs[0]; input->actor_inputs[1].pressed=0;
-    input->actor_count=2; input->variable_count=1; input->shot_count=1; input->projectile_count=2;
+    input->actor_count=2; input->variable_count=3; input->shot_count=3; input->projectile_count=2;
     input->actors[0].party_slot=0; input->actors[1].party_slot=1;
     input->rng_game_after=123; input->rng_engine_after=456;
     input->tag_count=1; input->tags[0]=(SyncTag){.id=1,.from=0,.to=1,.from_generation=7,.to_generation=8,.phase=1,.delta=.016f};
@@ -37,6 +53,7 @@ int main(void) {
     input->actors[1].animation.frames[3]=19.5f;
     input->actors[1].animation.clips[2]=-1;
     input->actors[1].position[1]=1;
+    input->actors[1].body=(SyncActorBody){.active=1,.position={1,.078638f,-3},.velocity={.1f,-.25f,.2f,0},.floor_height=.080519f};
     input->actors[1].previous_position[1]=.5f;
     input->actors[1].render_position[1]=2;
     input->actors[1].previous_render_position[1]=1.5f;
@@ -44,23 +61,49 @@ int main(void) {
     input->actors[1].render_heading=1234;
     input->combat_ready=1;
     strcpy(input->variables[0].name,"QuestDoor"); input->variables[0].value=1;
+    input->variables[1]=input->variables[0];
+    input->variables[1].scope=SYNC_VARIABLE_AREA;
+    input->variables[1].value=2;
+    input->variables[2]=input->variables[0];
+    input->variables[2].scope=SYNC_VARIABLE_AREA_DECLARATION;
+    input->variables[2].value=3;
     input->shots[0].phase=1; input->shots[0].clock=77; input->shots[0].rng_game=123; input->shots[0].rng_engine=456; input->shots[0].delta=.015f;
     input->shots[0].id=42; input->shots[0].owner=1; input->shots[0].owner_generation=8; input->shots[0].weapon=7;
     input->shots[0].origin[0]=12.25f; input->shots[0].transform[15]=1;
+    input->shots[0].has_launch_center=1;
+    input->shots[0].launch_center[0]=12.125f;
+    input->shots[0].launch_center[1]=.125f;
+    input->shots[0].launch_center[2]=-3.5f;
+    input->shots[0].has_projectile_seed=1;
+    input->shots[0].projectile_seed=(SyncProjectileSeed){
+        .cast_origin={12.5f,1.25f,-3.5f},.age=.015f,.expires_at=2,.cast_countdown=.03f
+    };
+    input->shots[1]=(SyncShot){.id=43,.owner=1,.owner_generation=8,.weapon=7,.source=SYNC_SHOT_ACTOR_FOLLOWUP,
+        .has_launch_motion=1,.launch_motion={0.25f,-0.5f,0.75f}};
+    input->shots[2]=(SyncShot){.id=44,.owner=-1,.weapon=7,.source=SYNC_SHOT_PROJECTILE_CHILD,.depth=2};
     input->projectiles[0].id=41; input->projectiles[1].id=42;
     input->projectiles[1].velocity[2]=6.75f;
-    input->fire_task_gate_count=2;
+    input->projectiles[1].cast_origin[2]=-4.75f;
+    input->fire_task_gate_count=3;
     input->fire_task_gates[0]=(SyncFireTaskGate){
         .slot=5,.generation=17,.character=321,.origin={1,2,3},
-        .flags=SYNC_FIRE_TASK_QUEUES_SHOT,.action=92,.allowed=1
+        .flags=SYNC_FIRE_TASK_QUEUES_SHOT,.action=92,.value=1,
+        .state={.repeat=2,.timers={.5f,-.01f,.2f,.1f},.target={-1,2,3},.delta=.017f}
     };
     input->fire_task_gates[1]=input->fire_task_gates[0];
-    input->fire_task_gates[1].allowed=0;
+    input->fire_task_gates[1].value=0;
+    input->fire_task_gates[2]=input->fire_task_gates[0];
+    input->fire_task_gates[2].kind=SYNC_FIRE_ATTACK_SUPPORT;
+    input->fire_task_gates[2].flags=0;
+    input->fire_task_gates[2].action=0;
+    input->fire_task_gates[2].value=-3;
+    input->fire_task_gates[2].state=(SyncFireTaskState){0};
     input->rts_team_timer_count=2;
     input->rts_team_timers[0]=(SyncRtsTeamTimers){.slot=1,.remaining={0,0,3.5831935f}};
     input->rts_team_timers[1]=(SyncRtsTeamTimers){.slot=3,.remaining={1.25f,0,0}};
-    input->rts_timer_choice_count=1;
-    input->rts_timer_choices[0]=(SyncRtsTimerChoice){.slot=1,.index=2,.remaining=3.25f};
+    input->spawn_timer_choice_count=2;
+    input->spawn_timer_choices[0]=(SyncSpawnTimerChoice){.kind=SYNC_SPAWN_TIMER_RTS,.owner=1,.selector=2,.remaining=3.25f};
+    input->spawn_timer_choices[1]=(SyncSpawnTimerChoice){.kind=SYNC_SPAWN_TIMER_MODULE,.owner=39,.selector=14,.serial=7,.remaining=-0.25f};
     input->dormant_party[4]=332;
     uint32_t bytes=sync_frame_encode(input,wire,sizeof(*input));
     assert(bytes && bytes<sizeof(*input));
@@ -70,20 +113,69 @@ int main(void) {
     assert(output->tag_count==1 && output->tags[0].id==1 && output->tags[0].to_generation==8 && output->tags[0].phase==1);
     assert(output->actors[1].animation.current==100 && output->actors[1].animation.frames[3]==19.5f);
     assert(output->actors[1].animation.clips[2]==-1 && output->variables[0].value==1);
+    assert(memcmp(output->variables,input->variables,3*sizeof(SyncVariable))==0);
+    input->variables[2].scope=0x6677280;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->variables[2].scope=SYNC_VARIABLE_AREA_DECLARATION;
     assert(output->actors[1].position[1]==1 && output->actors[1].previous_position[1]==.5f);
     assert(output->actors[1].render_position[1]==2 && output->actors[1].previous_render_position[1]==1.5f);
     assert(output->actors[1].velocity[1]==3 && output->actors[1].render_heading==1234 && output->combat_ready==1);
     assert(output->actors[1].generation==8 && output->actors[1].spawn_tag==0x5c5cff && output->actors[1].spawn_position[2]==3.5f);
     assert(output->actors[1].spawn_source.producer==0xf29a3889 && output->actors[1].spawn_source.serial==17);
     assert(output->inputs[1].aim_x==13 && output->inputs[1].aim_y==219 && output->shots[0].owner_generation==8);
+    assert(memcmp(&output->actors[1].body,&input->actors[1].body,sizeof(SyncActorBody))==0);
+    assert(output->physics_choice_count==2 && memcmp(output->physics_choices,input->physics_choices,2*sizeof(SyncPhysicsChoice))==0);
+    assert(output->tick_gate_count==2 && !memcmp(output->tick_gates,input->tick_gates,2*sizeof(SyncTickGate)));
+    input->tick_gates[0].site++;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));input->tick_gates[0].site--;
+    input->tick_gates[0].value=256;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));input->tick_gates[0].value=1;
+    input->tick_gate_reserved=1;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));input->tick_gate_reserved=0;
+    input->tick_gate_count=SYNC_MAX_TICK_GATES+1;
+    assert(!sync_frame_size(input));input->tick_gate_count=2;
+    assert(physics_choice_same_source(input->physics_choices,input->physics_choices+1));
+    input->physics_choices[1].name_hash[1]^=1;
+    assert(!physics_choice_same_source(input->physics_choices,input->physics_choices+1));input->physics_choices[1].name_hash[1]^=1;
+    input->physics_choices[0].flags=0x40000000;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));input->physics_choices[0].flags=0x40000091;
+    input->physics_choice_reserved=1;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));input->physics_choice_reserved=0;
+    input->physics_choice_count=SYNC_MAX_PHYSICS_CHOICES+1;
+    assert(sync_frame_size(input)==0);input->physics_choice_count=2;
     assert(output->shots[0].id==42 && output->shots[0].origin[0]==12.25f);
-    assert(output->projectiles[1].velocity[2]==6.75f);
-    assert(output->fire_task_gate_count==2 && output->fire_task_gates[0].allowed==1 && output->fire_task_gates[1].allowed==0);
+    assert(output->shots[0].has_launch_center==1);
+    assert(memcmp(output->shots[0].launch_center,input->shots[0].launch_center,
+                  sizeof(input->shots[0].launch_center))==0);
+    assert(output->shots[0].has_projectile_seed==1);
+    assert(memcmp(&output->shots[0].projectile_seed,&input->shots[0].projectile_seed,sizeof(SyncProjectileSeed))==0);
+    assert(shot_native_match(&output->shots[1],1,8,7,SYNC_SHOT_ACTOR_FOLLOWUP,0));
+    assert(output->shots[1].has_launch_motion==1 && output->shots[1].launch_motion[1]==-0.5f);
+    assert(!shot_native_match(&output->shots[1],1,8,7,SYNC_SHOT_WEAPON,0));
+    assert(shot_native_match(&output->shots[2],-1,0,7,SYNC_SHOT_PROJECTILE_CHILD,2));
+    assert(!shot_native_match(&output->shots[2],-1,0,7,SYNC_SHOT_PROJECTILE_CHILD,1));
+    assert(output->projectiles[1].velocity[2]==6.75f && output->projectiles[1].cast_origin[2]==-4.75f);
+    assert(output->reaction_count==4 && output->reactions[2].kind==SYNC_REACTION_DAMAGE_DRAW &&
+        output->reactions[2].damage_draw==27742);
+    input->reactions[2].damage_draw=65536;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->reactions[2].damage_draw=27742;
+    assert(!memcmp(&output->reactions[3].range,&input->reactions[3].range,sizeof(SyncItemRange)));
+    input->reactions[3].range.target_generation=0;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->reactions[3].range.target_generation=26;
+    input->reactions[3].range.reach=NAN;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->reactions[3].range.reach=.1f;
+    assert(output->fire_task_gate_count==3 && output->fire_task_gates[0].value==1 && output->fire_task_gates[1].value==0);
+    assert(output->fire_task_gates[2].kind==SYNC_FIRE_ATTACK_SUPPORT && output->fire_task_gates[2].value==-3);
     assert(output->fire_task_gates[1].generation==17 && output->fire_task_gates[1].origin[2]==3);
+    assert(!memcmp(&output->fire_task_gates[0].state,&input->fire_task_gates[0].state,sizeof(SyncFireTaskState)));
     assert(output->rts_team_timer_count==2 && output->rts_team_timers[0].slot==1);
     assert(output->rts_team_timers[0].remaining[2]==3.5831935f && output->rts_team_timers[1].remaining[0]==1.25f);
-    assert(output->rts_timer_choice_count==1 && output->rts_timer_choices[0].index==2 &&
-        output->rts_timer_choices[0].remaining==3.25f);
+    assert(output->spawn_timer_choice_count==2 && output->spawn_timer_choices[0].selector==2 &&
+        output->spawn_timer_choices[0].remaining==3.25f);
+    assert(!memcmp(&output->spawn_timer_choices[1],&input->spawn_timer_choices[1],sizeof(SyncSpawnTimerChoice)));
     assert(output->dormant_party[4]==332);
     input->actors[1].spawn_source.producer=0;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
@@ -94,12 +186,15 @@ int main(void) {
     input->dormant_party[0]=1;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->dormant_party[0]=0;
-    input->rts_timer_choices[0].index=3;
+    input->spawn_timer_choices[0].selector=3;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
-    input->rts_timer_choices[0].index=2;
-    input->rts_timer_choices[0].remaining=4.01f;
+    input->spawn_timer_choices[0].selector=2;
+    input->spawn_timer_choices[0].remaining=4.01f;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
-    input->rts_timer_choices[0].remaining=3.25f;
+    input->spawn_timer_choices[0].remaining=3.25f;
+    input->spawn_timer_choices[1].owner=0;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->spawn_timer_choices[1].owner=39;
     input->rts_team_timers[1].slot=1;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->rts_team_timers[1].slot=3;
@@ -109,12 +204,30 @@ int main(void) {
     input->sequence=2;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->sequence=1;
-    input->fire_task_gates[0].allowed=2;
+    input->fire_task_gates[0].value=2;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
-    input->fire_task_gates[0].allowed=1;
+    input->fire_task_gates[0].value=1;
     input->fire_task_gates[0].flags=0;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->fire_task_gates[0].flags=SYNC_FIRE_TASK_QUEUES_SHOT;
+    input->fire_task_gates[2].value=128;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[2].value=-3;
+    input->fire_task_gates[2].kind=99;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[2].kind=SYNC_FIRE_ATTACK_SUPPORT;
+    input->fire_task_gates[0].state.repeat=256;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[0].state.repeat=2;
+    input->fire_task_gates[0].state.delta=NAN;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[0].state.delta=.017f;
+    input->fire_task_gates[0].state.timers[1]=INFINITY;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[0].state.timers[1]=-.01f;
+    input->fire_task_gates[2].state.repeat=1;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[2].state.repeat=0;
     assert(!sync_frame_decode(output,wire,bytes-1));
     wire[bytes-1]^=1; assert(!sync_frame_decode(output,wire,bytes)); wire[bytes-1]^=1;
     input->tags[0].parent=123; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->tags[0].parent=0;
@@ -124,8 +237,22 @@ int main(void) {
     input->sequence=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->sequence=1;
     input->actors[1].animation.frames[0]=NAN;
     assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].animation.frames[0]=0;
+    input->actors[1].body.active=0;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].body.active=1;
+    input->actors[1].body.velocity[1]=INFINITY;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].body.velocity[1]=-.25f;
+    input->actors[1].body.floor_height=NAN;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].body.floor_height=.080519f;
+    input->actors[0].body.floor_height=.1f;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[0].body.floor_height=0;
     input->projectiles[0].position[0]=INFINITY;
     assert(!sync_frame_encode(input,wire,sizeof(*input))); input->projectiles[0].position[0]=0;
+    input->projectiles[1].cast_origin[0]=INFINITY;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->projectiles[1].cast_origin[0]=0;
+    input->shots[0].projectile_seed.expires_at=NAN;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[0].projectile_seed.expires_at=2;
+    input->shots[0].has_projectile_seed=0;
+    assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[0].has_projectile_seed=1;
     assert(output->engine_delta==.017f && output->world_calls==1 && output->tick_calls==1);
     assert(output->actor_input_count==2 && output->actor_inputs[0].pressed==0x8000 && output->actor_inputs[1].pressed==0);
     input->actor_inputs[0].generation=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->actor_inputs[0].generation=27;
@@ -140,7 +267,7 @@ int main(void) {
     input->cadence[0].phase=256;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence[0].phase=5;
     input->cadence[0].elapsed=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence[0].elapsed=.05f;
     input->cadence_reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence_reserved=0;
-    assert(output->reaction_count==2 && output->reactions[0].clip==975 && output->reactions[0].source_id==667 && output->reactions[1].clip==-1 && output->reactions[1].old_action==20);
+    assert(output->reaction_count==4 && output->reactions[0].clip==975 && output->reactions[0].source_id==667 && output->reactions[1].clip==-1 && output->reactions[1].old_action==20);
     input->reaction_reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reaction_reserved=0;
     input->reactions[0].clip=4096;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[0].clip=975;
     input->reactions[0].generation=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[0].generation=26;
@@ -149,7 +276,12 @@ int main(void) {
     input->engine_delta=NAN; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->engine_delta=.017f;
     input->shots[0].phase=2; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[0].phase=1;
     input->shots[0].delta=INFINITY; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[0].delta=.015f;
-    input->shot_count=SYNC_MAX_SHOTS+1; assert(!sync_frame_size(input)); input->shot_count=1;
+    input->shots[0].has_launch_center=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[0].has_launch_center=1;
+    input->shots[0].launch_center[1]=NAN; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[0].launch_center[1]=.125f;
+    input->shots[2].depth=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[2].depth=2;
+    input->shots[1].phase=1; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[1].phase=0;
+    input->shots[1].has_launch_motion=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[1].has_launch_motion=1;
+    input->shot_count=SYNC_MAX_SHOTS+1; assert(!sync_frame_size(input)); input->shot_count=3;
     input->projectile_count=SYNC_MAX_PROJECTILES+1; assert(!sync_frame_size(input));
     memset(input,0,sizeof(*input));
     input->epoch=7; input->sequence=2; input->level=12; input->delta=1.0f/60;

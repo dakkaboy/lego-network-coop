@@ -51,8 +51,7 @@ static int readable(const void *p,SIZE_T size) {
 static char *global_registry(char *manager) {
     return readable(manager,0x4c) ? *(char **)(manager+0x48) : NULL;
 }
-static char *area_registry(char *manager) {
-    char *area=*(char **)native_address(0xfb4a20);
+static char *area_registry(char *manager,char *area) {
     int index=readable(manager,0x3c) ? *(int *)(manager+0x38) : -1;
     char *slots_owner=*(char **)native_address(0xe90184);
     int count=readable(slots_owner,0x2c) ? *(int *)(slots_owner+0x28) : 0;
@@ -61,7 +60,7 @@ static char *area_registry(char *manager) {
     if (!readable(handle,4) || !readable(*handle,(SIZE_T)(index+1)*4)) return NULL;
     return (char *)(*handle)[index];
 }
-static int collect_registry(const CoherentFrameToken *token,SyncFrame *frame,char *registry) {
+static int collect_registry(const CoherentFrameToken *token,SyncFrame *frame,char *registry,const char *area) {
     if(!live(token,frame))return 0;
     if (!registry) return 1;
     if (!readable(registry,0x64)) return 0;
@@ -73,7 +72,10 @@ static int collect_registry(const CoherentFrameToken *token,SyncFrame *frame,cha
         if (++visited>expected+1 || !readable(node,0x4c) || frame->variable_count==SYNC_MAX_VARIABLES) return 0;
         uint32_t scope=*(uint32_t *)(node+0x34);
         float value=*(float *)(node+0x38);
-        if (scope>1 || !isfinite(value) || !node[0x14]) return 0;
+        // Native declarations use the area's address as a distinct lookup key.
+        if (area && scope==(uintptr_t)area) scope=SYNC_VARIABLE_AREA_DECLARATION;
+        else if (scope>SYNC_VARIABLE_AREA) return 0;
+        if (!isfinite(value) || !node[0x14]) return 0;
         SyncVariable *variable=&frame->variables[frame->variable_count++];
         memset(variable->name,0,32);
         const char *end=memchr(node+0x14,0,32);
@@ -92,9 +94,11 @@ int world_vars_collect(SyncFrame *frame) {
     CoherentFrameToken token=binding;
     if(!bound || !live(&token,frame))return 0;
     char *manager=*(char **)native_address(0xe901cc);
-    char *global=global_registry(manager),*area=area_registry(manager);
+    char *area=*(char **)native_address(0xfb4a20);
+    char *global=global_registry(manager),*local=area_registry(manager,area);
     frame->variable_count=0;
-    if (!collect_registry(&token,frame,global) || (area!=global && !collect_registry(&token,frame,area)) || !live(&token,frame)) return 0;
+    if (!collect_registry(&token,frame,global,NULL) ||
+        (local!=global && !collect_registry(&token,frame,local,area)) || !live(&token,frame)) return 0;
     qsort(frame->variables,frame->variable_count,sizeof(SyncVariable),compare_variables);
     return live(&token,frame);
 }
@@ -134,8 +138,11 @@ int world_vars_apply(const SyncFrame *frame) {
         if(!live(&token,frame))return 0;
         const SyncVariable *variable=&frame->variables[i];
         char name[33]; memcpy(name,variable->name,32); name[32]=0;
-        if(variable->scope>1)return 0;
-        LookupContext call={token,manager,area,name,(int)variable->scope};
+        if(variable->scope>SYNC_VARIABLE_AREA_DECLARATION ||
+           (variable->scope!=SYNC_VARIABLE_GLOBAL && !area)) return 0;
+        int native_scope=variable->scope==SYNC_VARIABLE_AREA_DECLARATION
+            ? (int)(uintptr_t)area : (int)variable->scope;
+        LookupContext call={token,manager,area,name,native_scope};
         char *node=constructor_lexical_seh(&call,lookup_invoke,lookup_abort);
         if(!live(&token,frame))return 0;
         if(*(char **)native_address(0xe901cc)!=manager || *(char **)native_address(0xfb4a20)!=area){coherent_frame_cancel_atomic(0x20000u);return 0;}

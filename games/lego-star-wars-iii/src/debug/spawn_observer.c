@@ -20,6 +20,8 @@ static Spawn original_spawn;
 typedef uint32_t (__attribute__((thiscall)) *Produce)(void *,uint32_t,uint32_t);
 typedef void (__attribute__((thiscall)) *ProduceChild)(void *,uint32_t,uint32_t,uint32_t);
 typedef unsigned char (__attribute__((thiscall)) *ProduceGroupMember)(void *,uint32_t);
+typedef void (__attribute__((thiscall)) *ProduceScriptPair)(void *,void *);
+typedef void *(__attribute__((thiscall)) *AttachGun)(void *,void *,void *,uint32_t);
 typedef void (*ProduceMount)(void *);
 typedef uint32_t (__attribute__((thiscall)) *ProduceCrew)(void *,void *);
 typedef void *(__attribute__((thiscall)) *ConstructOrder)(void *,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t);
@@ -39,7 +41,7 @@ __declspec(dllexport) volatile ProducerObservation clonewars_producer_observer[P
 static __thread uint32_t active_observation;
 static __thread uint32_t active_producer,active_transaction;
 static __thread int flow_active;
-static __thread SyncSpawnSource child_source;
+static __thread SyncSpawnSource child_source,script_pair_source;
 static __thread void *mount_rider;
 static __thread void *group_birth;
 static __thread SyncSpawnSource order_source;
@@ -61,14 +63,55 @@ static int read_local(uint32_t address,void *out,unsigned size) {
 static uint32_t word(uint32_t address) {
     uint32_t value=0; read_local(address,&value,sizeof(value)); return value;
 }
-static SyncSpawnSource producer_source(uint32_t producer) {
-    uint32_t registry_entry[5], serial;
+static uint32_t registered_producer(uint32_t producer) {
+    uint32_t registry_entry[4];
     const uint32_t entry=word(producer+0x68);
     if (!read_local(entry,registry_entry,sizeof registry_entry) ||
         registry_entry[0]!=word(producer+8) || registry_entry[1]!=word(producer+0x6c) ||
-        registry_entry[2]!=producer || registry_entry[3]!=4 ||
-        !read_local(producer+0x374,&serial,sizeof serial)) return (SyncSpawnSource){0};
-    return (SyncSpawnSource){registry_entry[0],serial};
+        registry_entry[2]!=producer || registry_entry[3]!=4) return 0;
+    return registry_entry[0];
+}
+static SyncSpawnSource producer_source(uint32_t producer) {
+    const uint32_t id=registered_producer(producer);
+    uint32_t serial;
+    if (!id || !read_local(producer+0x374,&serial,sizeof serial)) return (SyncSpawnSource){0};
+    return (SyncSpawnSource){id,serial};
+}
+static SyncSpawnSource script_pair_identity(uint32_t producer) {
+    uint32_t member;
+    if (word(producer)!=0xae3c44 || !read_local(producer+0x98,&member,sizeof member) || member>=4)
+        return (SyncSpawnSource){0};
+    const uint32_t id=registered_producer(producer);
+    return id ? (SyncSpawnSource){id,member} : (SyncSpawnSource){0};
+}
+static void __attribute__((fastcall)) script_pair_hook(void *producer,void *unused,void *descriptor) {
+    (void)unused;
+    const SyncSpawnSource previous=script_pair_source;
+    script_pair_source=script_pair_identity((uint32_t)(uintptr_t)producer);
+    __try {
+        ((ProduceScriptPair)0x4e6330)(producer,descriptor);
+    } __finally {
+        script_pair_source=previous;
+    }
+}
+static EntitySpawnIdentity gun_identity(const void *owner,uint32_t socket) {
+    EntitySpawnIdentity identity={0};
+    if (!owner || socket<9 || socket>11) return identity;
+    const SyncSpawnSource parent=entities_spawn_source(owner,&identity.site);
+    // Keep all existing parent source bits and reserve a separate namespace for its guns.
+    if (!parent.producer || (identity.site&UINT32_C(0x20000000)) || parent.serial>UINT32_MAX/4)
+        return (EntitySpawnIdentity){0};
+    identity.site|=UINT32_C(0x20000000);
+    identity.source=(SyncSpawnSource){parent.producer,parent.serial*4+(socket-9)};
+    return identity;
+}
+static void *__attribute__((fastcall)) attach_gun_hook(void *mount,void *unused,void *producer,void *gun,uint32_t socket) {
+    (void)unused;
+    const void *owner=(void *)(uintptr_t)word((uint32_t)(uintptr_t)producer+0x514);
+    const EntitySpawnIdentity identity=gun_identity(owner,socket);
+    void *result=((AttachGun)0x41af10)(mount,producer,gun,socket);
+    if (result && identity.source.producer) entities_note_spawn_source(gun,identity.site,identity.source);
+    return result;
 }
 static EntitySpawnIdentity spawn_identity(uint32_t caller,uint32_t party) {
     EntitySpawnIdentity identity={.site=caller-0x400000};
@@ -78,6 +121,9 @@ static EntitySpawnIdentity spawn_identity(uint32_t caller,uint32_t party) {
         identity.site|=branch;
     } else if (caller==0x5501f4 || caller==0x550729) {
         identity.source=order_source;
+    } else if (caller==0x4e63bd || caller==0x4e644f) {
+        // The caller identifies which actor the native script creates in this record.
+        identity.source=script_pair_source;
     } else if (caller==0x4e2788 || caller==0x4e2a80 || caller==0x4e2aed || caller==0x4e2b57) {
         identity.source=child_source;
     } else if (party<8) {
@@ -291,17 +337,32 @@ static void *install_entry(uintptr_t address,const unsigned char *prefix,unsigne
     VirtualProtect(entry,size,protection,&protection);
     return bridge;
 }
+static int install_producer_call(unsigned char *site,const unsigned char expected[5],const void *hook) {
+    if (memcmp(site,expected,5)) return 0;
+    DWORD protection,ignored;
+    if (!VirtualProtect(site,5,PAGE_EXECUTE_READWRITE,&protection)) return 0;
+    const int32_t displacement=(int32_t)((uintptr_t)hook-(uintptr_t)site-5);
+    memcpy(site+1,&displacement,sizeof displacement);
+    const int flushed=FlushInstructionCache(GetCurrentProcess(),site,5);
+    const int restored=VirtualProtect(site,5,protection,&ignored);
+    return flushed && restored;
+}
 static int producer_install(void) {
     static const unsigned char high_prefix[]={0x55,0x8b,0xec,0x83,0xe4,0xf0};
     static const unsigned char child_prefix[]={0x83,0xec,0x60,0xa1,0xbc,0xd2,0xe8,0x00};
     static const unsigned char group_prefix[]={0x55,0x8b,0xec,0x83,0xe4,0xf0};
     static const unsigned char mount_prefix[]={0x56,0x8b,0x35,0x20,0x4a,0xfb,0x00};
     static const unsigned char crew_prefix[]={0x6a,0xff,0x68,0x5c,0xd8,0xa9,0x00};
+    static const unsigned char script_pair_call[]={0xe8,0x74,0xfd,0xff,0xff};
+    static const unsigned char attach_gun_call[]={0xe8,0x9a,0x58,0xfd,0xff};
+    unsigned char *pair_site=(unsigned char *)0x4e65b7,*gun_site=(unsigned char *)0x445671;
     const uintptr_t entries[]={0x4fd8f0,0x4e2730};
     const unsigned sizes[]={sizeof(high_prefix),sizeof(child_prefix)};
     const unsigned char *prefixes[]={high_prefix,child_prefix};
     void *hooks[]={(void *)produce_hook,(void *)produce_child_hook};
-    if (memcmp((void *)entries[0],high_prefix,sizeof(high_prefix)) ||
+    if (memcmp(pair_site,script_pair_call,sizeof script_pair_call) ||
+        memcmp(gun_site,attach_gun_call,sizeof attach_gun_call) ||
+        memcmp((void *)entries[0],high_prefix,sizeof(high_prefix)) ||
         memcmp((void *)entries[1],child_prefix,sizeof(child_prefix)) ||
         memcmp((void *)0x4cb710,group_prefix,sizeof group_prefix) ||
         memcmp((void *)0x4df470,mount_prefix,sizeof mount_prefix) ||
@@ -319,7 +380,9 @@ static int producer_install(void) {
     original_crew=(ProduceCrew)install_entry(0x47e1a0,crew_prefix,sizeof crew_prefix,(void *)crew_hook);
     original_order_constructor=(ConstructOrder)install_entry(0x556d60,group_prefix,sizeof group_prefix,(void *)order_constructor_hook);
     original_order_spawn=(ProduceOrder)install_entry(0x550df0,group_prefix,sizeof group_prefix,(void *)order_spawn_hook);
-    return original_group_member && original_mount && original_crew && original_order_constructor && original_order_spawn;
+    if (!original_group_member || !original_mount || !original_crew || !original_order_constructor || !original_order_spawn) return 0;
+    return install_producer_call(pair_site,script_pair_call,script_pair_hook) &&
+        install_producer_call(gun_site,attach_gun_call,attach_gun_hook);
 }
 #endif
 int spawn_observer_install(void) {

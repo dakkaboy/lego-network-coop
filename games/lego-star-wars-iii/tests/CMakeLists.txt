@@ -13,7 +13,7 @@ target_compile_options(clonewars-network-test-core PRIVATE -fms-extensions)
 target_compile_definitions(clonewars-network-test-core PUBLIC CLONEWARS_LAN_PORT=32521)
 target_link_libraries(clonewars-network-test-core PUBLIC ws2_32)
 
-foreach(check input_buffer epoch_state sync_wire lan_version)
+foreach(check input_buffer epoch_state sync_wire lan_version transition_publication)
     add_executable(test_${check} test_${check}.c)
     target_link_libraries(test_${check} PRIVATE clonewars-network-test-core)
     add_test(NAME clonewars-${check} COMMAND test_${check})
