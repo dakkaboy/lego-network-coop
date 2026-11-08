@@ -12,8 +12,8 @@
 #define SYNC_MAX_SPAWN_TIMER_CHOICES (SYNC_MAX_SPAWN_TIMERS + SYNC_MAX_RTS_TEAMS * 4)
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
-#define SYNC_LAYOUT_VERSION 43
-#define SYNC_WIRE_VERSION 57
+#define SYNC_LAYOUT_VERSION 47
+#define SYNC_WIRE_VERSION 95
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -39,6 +39,22 @@ typedef struct SyncLoading {
     uint32_t ready,skip,active;
     float elapsed;
 } SyncLoading;
+typedef struct SyncPreloadInput {
+    uint32_t epoch;
+    int32_t level;
+    uint32_t serial,root_phase;
+    uint32_t clock,rng_game,rng_engine,rng_effects;
+    float delta,engine_delta;
+    uint32_t engine_mode;
+} SyncPreloadInput;
+typedef struct SyncPreloadReceipt {
+    uint32_t serial,world_calls,end_phase;
+} SyncPreloadReceipt;
+typedef struct SyncWorldReady {
+    uint32_t epoch;
+    int32_t level;
+    uint32_t root_phase,completed_serial;
+} SyncWorldReady;
 typedef struct SyncInput {
     uint32_t held;
     uint32_t pressed;
@@ -93,6 +109,16 @@ typedef struct SyncProjectile {
     float cast_origin[3];
 } SyncProjectile;
 
+typedef struct SyncSpawnSource {
+    uint32_t producer,serial;
+} SyncSpawnSource;
+
+typedef struct SyncTagIdentity {
+    int32_t character;
+    uint32_t spawn_tag;
+    SyncSpawnSource spawn_source;
+} SyncTagIdentity;
+
 typedef struct SyncTag {
     uint32_t id,parent;
     int32_t from,to;
@@ -101,11 +127,8 @@ typedef struct SyncTag {
     uint32_t clock,rng_game,rng_engine;
     float delta;
     uint32_t phase;
+    SyncTagIdentity from_identity,to_identity;
 } SyncTag;
-
-typedef struct SyncSpawnSource {
-    uint32_t producer,serial;
-} SyncSpawnSource;
 
 typedef struct SyncActorBody {
     uint32_t active;
@@ -233,12 +256,72 @@ enum SyncFireGateKind {
     SYNC_FIRE_ATTACK_SUPPORT,
     SYNC_ACTOR_BREAKUP_VISIBILITY,
     SYNC_ACTOR_DEATH_BREAKUP,
-    SYNC_ACTOR_FALL_VISIBILITY
+    SYNC_ACTOR_FALL_VISIBILITY,
+    SYNC_ACTOR_AIM_TASK,
+    SYNC_ACTOR_RTS_COMPETITOR,
+    SYNC_ACTOR_FORCE_VISIBILITY,
+    SYNC_ACTOR_AIM_BASE,
+    SYNC_ACTOR_FORCE_GEOMETRY,
+    SYNC_ACTOR_SPELLIT_QUERY,
+    SYNC_ACTOR_CHARACTER_MOTION,
+    SYNC_ACTOR_SPELLIT_NODE,
+    SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY
 };
 typedef struct SyncFireTaskState {
     uint32_t repeat;
     float timers[4],target[3],delta;
 } SyncFireTaskState;
+typedef struct SyncAimTaskState {
+    uint32_t target_slot,target_generation,rng_engine,clock;
+    float remaining,minimum,maximum;
+    uint32_t task_class,reserved;
+} SyncAimTaskState;
+
+typedef struct SyncAimBaseState {
+    uint32_t rng_engine,rng_game,clock,task_class,callback_class;
+    float elapsed,remaining,delta;
+    uint32_t reserved;
+} SyncAimBaseState;
+
+typedef struct SyncForceQueryState {
+    uint32_t caster_slot,caster_generation,mode,clock,reserved[5];
+} SyncForceQueryState;
+
+typedef struct SyncForceGeometryState {
+    uint32_t caster_slot,caster_generation,mode,clock;
+    float caster_position[3],candidate_position[3];
+    uint32_t reserved;
+} SyncForceGeometryState;
+
+typedef struct SyncSpellItQueryState {
+    uint32_t clock,manager_class,caller_site,heading;
+    float position[3],limit;
+    uint32_t reserved;
+} SyncSpellItQueryState;
+
+typedef struct SyncRtsCompetitorState {
+    uint32_t rng_game,rng_engine,clock,competitor_class;
+    float delta,timers[12];
+} SyncRtsCompetitorState;
+
+typedef struct SyncCharacterMotionState {
+    uint32_t clock,body_class;
+    float velocity[4];
+    uint32_t rest_counter;
+} SyncCharacterMotionState;
+
+typedef struct SyncSpellItNodeState {
+    uint32_t clock,gizmo_class,receiver_class,resource_name[4];
+    uint32_t poi_ordinal,poi_count,poi_name,component_class,node_ordinal,gizmo_ordinal;
+    float position[3];
+    uint32_t reserved;
+} SyncSpellItNodeState;
+
+enum { SYNC_SCRIPT_SHOOT_MAX_ARGUMENTS=256 };
+typedef struct SyncScriptShootState {
+    uint32_t clock,model_class,brain_class,state_class,brain_admission,state_flags;
+    uint32_t argument_count,initialize,caller_rva,argument_hash[4],reserved;
+} SyncScriptShootState;
 
 typedef struct SyncFireTaskGate {
     uint32_t slot,generation,spawn_tag;
@@ -248,7 +331,7 @@ typedef struct SyncFireTaskGate {
     int32_t value;
     uint32_t kind;
     SyncSpawnSource spawn_source;
-    SyncFireTaskState state;
+    union { uint8_t storage[sizeof(SyncRtsCompetitorState)]; SyncFireTaskState state; SyncAimTaskState aim; SyncRtsCompetitorState competitor; SyncForceQueryState force; SyncAimBaseState aim_base; SyncForceGeometryState force_geometry; SyncSpellItQueryState spellit; SyncCharacterMotionState character_motion; SyncSpellItNodeState spellit_node; SyncScriptShootState script_shoot; };
 } SyncFireTaskGate;
 typedef struct SyncRtsTeamTimers {
     uint32_t slot;
@@ -263,13 +346,41 @@ typedef struct SyncSpawnTimerChoice {
     float remaining;
 } SyncSpawnTimerChoice;
 
-enum SyncPhysicsChoiceKind { SYNC_PHYSICS_AXIS_SPIN=1, SYNC_PHYSICS_ROTATION_SPIN=2, SYNC_PHYSICS_BREAKUP_LAUNCH=3 };
+enum SyncPhysicsChoiceKind {
+    SYNC_PHYSICS_AXIS_SPIN=1, SYNC_PHYSICS_ROTATION_SPIN=2, SYNC_PHYSICS_BREAKUP_LAUNCH=3,
+    SYNC_PHYSICS_SPELLIT_SEED=4, SYNC_PHYSICS_SPELLIT_ENTITY=5, SYNC_PHYSICS_SPELLIT_ENABLED=6,
+    SYNC_PHYSICS_MODULE_SEED=7
+};
+typedef struct SyncPhysicsWorldInput {
+    uint32_t clock,value;
+    uint32_t source_name[4],gizmo_class,gizmo_ordinal;
+    uint32_t resource_name[4],poi_name[4],poi_ordinal,poi_count,receiver_class,piece_ordinal;
+} SyncPhysicsWorldInput;
+typedef struct SyncPhysicsModuleInput {
+    uint32_t clock,value,module_id,module_type,module_generation,module_class;
+    uint32_t burst_min,burst_max,channel_count;
+    int32_t weapon;
+    float intervals[3];
+    uint32_t reserved[7];
+} SyncPhysicsModuleInput;
 typedef struct SyncPhysicsChoice {
-    uint32_t kind,site,flags,model,clock;
-    uint32_t name_hash[2],recipe[6],rng;
+    uint32_t kind,site;
+    union {
+        struct {
+            uint32_t flags,model,clock;
+            uint32_t name_hash[2],recipe[6],rng;
+        };
+        SyncPhysicsWorldInput world;
+        SyncPhysicsModuleInput module;
+    };
 } SyncPhysicsChoice;
 
 typedef struct SyncTickGate { uint32_t site,clock,value; } SyncTickGate;
+typedef struct SyncProjectileRetireRequest {
+    uint32_t id,flags;
+    int32_t effects;
+    uint32_t caller;
+} SyncProjectileRetireRequest;
 typedef struct SyncFrame {
     uint32_t epoch;
     uint32_t sequence;
@@ -298,7 +409,7 @@ typedef struct SyncFrame {
     uint32_t spawn_timer_reserved;
     uint32_t fire_task_gate_count,fire_task_gate_reserved;
     uint32_t rts_team_timer_count,spawn_timer_choice_count;
-    uint32_t physics_choice_count,physics_choice_reserved;
+    uint32_t physics_choice_count,projectile_retire_count;
     uint32_t tick_gate_count,tick_gate_reserved;
     uint16_t dormant_party[8]; /* Zero for no dormant member, otherwise character + 1. */
     SyncActor actors[SYNC_MAX_ACTORS];
@@ -317,6 +428,7 @@ typedef struct SyncFrame {
     SyncSpawnTimerChoice spawn_timer_choices[SYNC_MAX_SPAWN_TIMER_CHOICES];
     SyncPhysicsChoice physics_choices[SYNC_MAX_PHYSICS_CHOICES];
     SyncTickGate tick_gates[SYNC_MAX_TICK_GATES];
+    SyncProjectileRetireRequest projectile_retires[SYNC_MAX_PROJECTILES];
 } SyncFrame;
 #ifdef __cplusplus
 extern "C" {

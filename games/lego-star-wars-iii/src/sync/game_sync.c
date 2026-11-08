@@ -10,10 +10,12 @@
 #include "../render/network_window.h"
 #include "game_sync.h"
 #include "../engine/rigid_body_binding.h"
+#include "preload_state.h"
 #include "coherent_core_draft.h"
 #include "../engine/core_main_boundary.h"
 #include "../engine/user_mapping_install.h"
 #include "../engine/user_mapping_session.h"
+#include "../engine/input_device_source.h"
 #include "../engine/constructor_lexical_seh.h"
 #ifdef CLONEWARS_CONSTRUCTOR_OBSERVER
 #include "../debug/constructor_observer.h"
@@ -46,6 +48,7 @@
 #include "cadence_sync.h"
 #include "../debug/collision_observer.h"
 #include "geometry_sync.h"
+#include "object_progress_sync.h"
 #include "reaction_sync.h"
 #include "../debug/remote_input_trace.h"
 #include "../debug/decision_observer.h"
@@ -73,6 +76,8 @@ static int core_live(void);
 static int core_capture_dispatch(CoherentFrameToken*);
 static int core_dispatch_authority(void);
 static void core_note_initialized_level(int);
+static void core_note_world_complete(void);
+static int core_preload_tick(void *flow);
 static DWORD core_tick_thread;
 static DWORD core_window_thread;
 static volatile LONG deferred_assignment_restore,core_reject_bits;
@@ -86,6 +91,7 @@ static int neutral_background_input;
 static int initialized_level=-1;
 __declspec(dllexport) volatile uint32_t clonewars_sync_debug[20];
 __declspec(dllexport) volatile LONG clonewars_input_override[4];
+__declspec(dllexport) volatile LONG clonewars_input_override_aim=0x8080;
 __declspec(dllexport) volatile uint32_t clonewars_actor_debug[8];
 __declspec(dllexport) volatile uint32_t clonewars_actor_pose_corrections;
 __declspec(dllexport) volatile LONG clonewars_input_prep_installed;
@@ -99,6 +105,7 @@ static __thread unsigned prep_gate_depth;
 static unsigned char remote_device[2][0x200];
 static char *changed_controller[2];
 static void *saved_device[2];
+static uint32_t saved_device_session[2];
 static char *changed_actor[2];
 static uint32_t saved_human[2],changed_generation[2];
 
@@ -283,6 +290,8 @@ static SyncInput read_input(void) {
         input.pressed=(uint32_t)InterlockedExchange(&clonewars_input_override[1],0) | (input.held&~previous_local_held);
         uint32_t axes=(uint32_t)clonewars_input_override[2];
         input.analog_x=(uint8_t)axes; input.analog_y=(uint8_t)(axes>>8);
+        uint32_t aim=(uint32_t)InterlockedCompareExchange(&clonewars_input_override_aim,0,0);
+        input.aim_x=(uint8_t)aim; input.aim_y=(uint8_t)(aim>>8);
         if (input.analog_x<43) input.held|=*(uint32_t *)0xe64124;
         if (input.analog_x>212) input.held|=*(uint32_t *)0xe64128;
         if (input.analog_y<43) input.held|=*(uint32_t *)0xe6411c;
@@ -341,18 +350,17 @@ static int write_input(int slot, const SyncInput *input) {
     *joined=1;
     if(slot==1 && *(int*)0xeb1a78<0)return input_assignment_failed(3,slot,p,c,allocation);
     if (changed_controller[slot]!=c || changed_actor[slot]!=p || changed_generation[slot]!=allocation) {
-        int native_source_known=entities_allocation_live(changed_actor[slot],changed_generation[slot]) && valid(changed_controller[slot],4);
-        void *native_device=saved_device[slot];
+        const NativeInputDeviceSource original={saved_device[slot],saved_device_session[slot]};
+        const uint32_t source_session=lan_session_serial();
         release_assignment(slot);
-        unsigned char *source=*(unsigned char **)c;
-        if (source==remote_device[0] || source==remote_device[1]) {
-            if (source!=remote_device[slot] || !native_source_known)
-                return input_assignment_failed(source!=remote_device[slot]?4:5,slot,p,c,allocation);
-            source=native_device;
-        }
+        void *source=NULL;
+        // Native section loading can retain the controller after retiring its actor allocation.
+        int source_error=native_input_device_source(*(void **)c,remote_device[slot],remote_device[1-slot],original,source_session,&source);
+        if (source_error) return input_assignment_failed(source_error,slot,p,c,allocation);
+        if (!core_live() || lan_session_serial()!=source_session) return 0;
         memset(remote_device[slot],0,sizeof(remote_device[slot]));
         if (valid(source,0xb0)) memcpy(remote_device[slot],source,0xb0);
-        saved_device[slot]=source; changed_controller[slot]=c;
+        saved_device[slot]=source;saved_device_session[slot]=source_session; changed_controller[slot]=c;
         changed_actor[slot]=p; changed_generation[slot]=allocation; saved_human[slot]=*(uint32_t *)(p+0x50)&0x200;++assignment_lease_serial;
     }
     *(void **)c=remote_device[slot];
@@ -531,9 +539,12 @@ static char *actor_physics_body(const char *actor) {
     return valid(body,0xec) ? body : NULL;
 }
 static int collect_actors(SyncFrame *frame) {
+    unsigned raw_count=*(unsigned *)0xfb2e3c;
+    if (raw_count>SYNC_MAX_ACTORS) return 0;
     entities_update();
     char *base=*(char **)0xfb2f60;
-    int count=game_actor_count(); frame->actor_count=0;
+    int count=(int)raw_count; frame->actor_count=0;
+    if (!count) return 1;
     if (!valid(base,(SIZE_T)count*0x1440)) return 0;
     for (int slot=0;slot<count;++slot) {
         char *p=base+slot*0x1440;
@@ -669,6 +680,16 @@ static void __cdecl dispatch_abort(void*raw){DispatchLexical*c=raw;if(c->bound&&
 static void world_hook_impl(void *area,void *output,DispatchLexical*context) {
     if (running && core_live()) {
         int first_world=global_step_world(&global_step);
+        if (game_native_scene_input_capability(working.level,area)==GAME_SCENE_NO_PARTY_INPUT) {
+            for (int slot=0;slot<2;++slot) {
+                if (changed_actor[slot] || changed_controller[slot]) release_assignment(slot);
+                working.inputs[slot]=(SyncInput){0,0,128,128,128,128};
+                latched_input[slot]=working.inputs[slot];
+                pending_actor_pressed[slot]=0;
+            }
+            latched_ready=0;
+            goto native_world;
+        }
         SyncInput remote_raw={0};
         if (first_world && lan_is_host()) {
             working.inputs[0]=sampled_for_flow ? input_buffer_take(&local_buffer) : read_input();
@@ -690,14 +711,17 @@ native_world:
     dispatch_restore(context);
     ((World)0x887ac0)(area,output);
     dispatch_capture(context);
+    core_note_world_complete();
     if(context->bound&&!coherent_frame_valid(&context->token,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return;
+    if(context->bound&&!object_progress_world_complete(area,&context->token))return;
     char *root=*(char **)0xfb2e60;
-    if (valid(root,0x1b7c) && *(int *)(root+0x1b78)==0xe)
+    if (valid(root,0x1b7c) && (*(int *)(root+0x1b78)==0xd || *(int *)(root+0x1b78)==0xe))
         core_note_initialized_level(game_current_level());
 }
 static void tick_hook_impl(void *flow,DispatchLexical*context) {
     if(GetCurrentThreadId()!=core_window_thread){coherent_frame_cancel_atomic(0x10000000);dispatch_restore(context);((Tick)0x889640)(flow);dispatch_capture(context);return;}
     if(!core_tick_thread){core_tick_thread=GetCurrentThreadId();coherent_frame_register_main();tags_observe_controller_handoffs(assignment_lease_version,assignment_lease_remap);}
+    if(!core_preload_tick(flow))return;
     /* This records a real native Tick; no executable installation occurs here. */
 #ifdef CLONEWARS_ACTION_TRANSITION_OBSERVER
     if(!action_main_thread)action_main_thread=GetCurrentThreadId();
@@ -759,4 +783,6 @@ void game_sync_inspect(void) {
     clonewars_sync_debug[19]=working.shot_count;
 }
 
-void game_sync_native_fault(int code) { if (!fault) fault=code; }
+void game_sync_native_fault(int code) {
+ if(!fault){clonewars_sync_first_fault[1]=interval.epoch;clonewars_sync_first_fault[2]=working.sequence;clonewars_sync_first_fault[3]=*(uint32_t*)0xfb4b6c;clonewars_sync_first_fault[4]=core.opened;clonewars_sync_first_fault[5]=running;clonewars_sync_first_fault[6]=(uint32_t)(uintptr_t)__builtin_return_address(0);clonewars_sync_first_fault[7]=(uint32_t)InterlockedIncrement(&core_failure_order);MemoryBarrier();clonewars_sync_first_fault[0]=(uint32_t)code;fault=code;}
+}

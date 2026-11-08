@@ -7,6 +7,8 @@ extern "C" {
 #include "game_sync.h"
 #include "world_vars.h"
 #include "../engine/native_tick_gate_thunk.h"
+#include "../engine/native_world_admission_thunk.h"
+#include "../engine/native_flow_request_thunk.h"
 }
 
 namespace {
@@ -21,11 +23,80 @@ bool same(const CoherentFrameToken &a,const CoherentFrameToken &b) {
 bool live(uint32_t phases) {
     return active && frame && token.frame==frame && world_vars_cohort_valid(&token,phases);
 }
+bool readable(const void *raw,size_t size) {
+    MEMORY_BASIC_INFORMATION memory;
+    const auto address=reinterpret_cast<uintptr_t>(raw);
+    return raw && VirtualQuery(raw,&memory,sizeof memory) && memory.State==MEM_COMMIT &&
+        !(memory.Protect&(PAGE_GUARD|PAGE_NOACCESS)) && address+size>=address &&
+        address+size<=reinterpret_cast<uintptr_t>(memory.BaseAddress)+memory.RegionSize;
+}
+uintptr_t pointer(const void *raw,size_t offset=0) {
+    uintptr_t value;std::memcpy(&value,static_cast<const unsigned char *>(raw)+offset,sizeof value);return value;
+}
+void hash_byte(uint32_t hash[2],unsigned char value) {
+    hash[0]=(hash[0]^value)*16777619u;hash[1]=(hash[1]^value)*0x85ebca6bu;
+}
+bool hash_text(uint32_t hash[2],const char *text) {
+    if (!text) return false;
+    for (unsigned i=0;i<512;++i) {
+        if (!readable(text+i,1)) return false;
+        const auto value=static_cast<unsigned char>(text[i]);hash_byte(hash,value);
+        if (!value) return i!=0;
+    }
+    return false;
+}
+bool descriptor_witness(uint32_t hash[2],const unsigned char *descriptor) {
+    if (!readable(descriptor,0xc0)) return false;
+    int16_t level;uint16_t ordinal;
+    std::memcpy(&level,descriptor+0x10,2);std::memcpy(&ordinal,descriptor+0x16,2);
+    if (level < -1 || level>=4096) return false;
+    if (!hash_text(hash,reinterpret_cast<const char *>(pointer(descriptor,0xc))) ||
+        !hash_text(hash,reinterpret_cast<const char *>(pointer(descriptor,8)))) return false;
+    for (unsigned i=0;i<2;++i) hash_byte(hash,static_cast<uint16_t>(level)>>(8*i));
+    for (unsigned i=0;i<2;++i) hash_byte(hash,ordinal>>(8*i));
+    return true;
+}
+bool clock_witness(void *track,uint32_t hash[2]) {
+    auto *world=*reinterpret_cast<unsigned char **>(0xfb4a20);
+    auto *manager=*reinterpret_cast<unsigned char **>(0xe901f4);
+    auto *tracks=*reinterpret_cast<unsigned char **>(0xfa1c98);
+    if (!readable(world,0x224) || !readable(manager,0x90) || !readable(tracks,0x34) || !readable(track,0xc)) return false;
+    auto *definition=reinterpret_cast<unsigned char *>(pointer(world,0x220));
+    if (!readable(definition,0x96) || *reinterpret_cast<int16_t *>(definition+0x94)!=frame->level) return false;
+    auto *descriptor=reinterpret_cast<unsigned char *>(pointer(manager,0x84));
+    auto *instance=reinterpret_cast<unsigned char *>(pointer(manager,0x88));
+    if (!readable(instance,0x14)) return false;
+    auto *request=reinterpret_cast<unsigned char *>(pointer(instance,0xc));
+    if (!readable(request,0x18) || pointer(request,8)!=reinterpret_cast<uintptr_t>(descriptor)) return false;
+    auto *provider=reinterpret_cast<unsigned char *>(pointer(request,0x14));
+    if (!readable(provider,0xc)) return false;
+    auto *owner=reinterpret_cast<unsigned char *>(pointer(provider));
+    unsigned matches=0;
+    for (unsigned i=0;i<3;++i) matches+=pointer(tracks,0x28+4*i)==reinterpret_cast<uintptr_t>(track);
+    if (matches!=1) return false;
+    uint32_t limit;std::memcpy(&limit,manager+0x30,4);
+    if (!limit || limit>4096) return false;
+    auto *node=reinterpret_cast<unsigned char *>(pointer(manager,0x28));
+    unsigned current_matches=0,owner_matches=0;
+    for (unsigned i=0;node && i<limit;++i) {
+        if (!readable(node,0xc0)) return false;
+        current_matches+=node==descriptor;owner_matches+=node==owner;
+        node=reinterpret_cast<unsigned char *>(pointer(node,4));
+    }
+    if (node || current_matches!=1 || owner_matches!=1) return false;
+    auto *components=reinterpret_cast<unsigned char *>(pointer(owner,0xa0));
+    if (!readable(components,0x24) || !pointer(components,0x20) ||
+        pointer(track,4)!=pointer(components,0x20)) return false;
+    hash[0]=2166136261u;hash[1]=0x9e3779b9u;
+    // A chained scene keeps its first provider; both authored descriptors identify this input.
+    return descriptor_witness(hash,descriptor) && descriptor_witness(hash,owner);
+}
 }
 extern "C" {
 __declspec(dllexport) volatile uint32_t clonewars_native_tick_debug[4];
 __declspec(dllexport) volatile uint32_t clonewars_native_tick_failure[8];
 __declspec(dllexport) volatile uint32_t clonewars_native_tick_correction[6];
+__declspec(dllexport) volatile uint32_t clonewars_native_clock_debug[4],clonewars_native_clock_correction[10];
 }
 namespace {
 void fail(unsigned reason,uint32_t site=0,uint32_t clock=0,const SyncTickGate *expected=nullptr) {
@@ -38,9 +109,47 @@ void fail(unsigned reason,uint32_t site=0,uint32_t clock=0,const SyncTickGate *e
     ++clonewars_native_tick_debug[3];game_sync_native_fault(22);
 }
 }
-extern "C" uint32_t __cdecl native_tick_gate(uint32_t site) {
+extern "C" uint32_t native_tick_clock_input(const uint32_t witness[2],uint32_t sample) {
+    if (!live(COHERENT_PHASE_BIT(COHERENT_DISPATCH)) || failed) return sample;
+    const uint32_t clock=*reinterpret_cast<uint32_t *>(0xfb4b6c);
+    if (!witness || !native_track_time_valid(sample)) {fail(6,0x7b8b08,clock);return sample;}
+    const SyncTickGate source[]={{0x7b8ae1,clock,witness[0]},{0x7b8afd,clock,witness[1]},{0x7b8b08,clock,sample}};
+    if (host) {
+        if (frame->tick_gate_count>SYNC_MAX_TICK_GATES-3) {fail(1,0x7b8b08,clock);return sample;}
+        std::memcpy(frame->tick_gates+frame->tick_gate_count,source,sizeof source);
+        frame->tick_gate_count+=3;clonewars_native_tick_debug[0]+=3;++clonewars_native_clock_debug[0];return sample;
+    }
+    if (cursor>frame->tick_gate_count || frame->tick_gate_count-cursor<3) {fail(5,0x7b8b08,clock);return sample;}
+    const auto *expected=frame->tick_gates+cursor;
+    for (unsigned i=0;i<3;++i) {
+        if (!native_tick_gate_valid(expected+i) || expected[i].site!=source[i].site ||
+            expected[i].clock!=clock || (i<2 && expected[i].value!=source[i].value)) {
+            fail(5,source[i].site,clock,expected+i);return sample;
+        }
+    }
+    const uint32_t result=expected[2].value;cursor+=3;clonewars_native_tick_debug[1]+=3;++clonewars_native_clock_debug[1];
+    if (result!=sample) {
+        ++clonewars_native_clock_debug[2];
+        if (!clonewars_native_clock_correction[0]) {
+            const uint32_t values[]={frame->epoch,frame->sequence,clock,witness[0],witness[1],sample,result,cursor-3,0x7b8b08,0};
+            std::memcpy(const_cast<uint32_t *>(clonewars_native_clock_correction),values,sizeof values);
+        }
+    }
+    return result;
+}
+extern "C" float __attribute__((thiscall,noinline)) native_track_clock(void *track) {
+    using Getter=float (__attribute__((thiscall)) *)(void *);
+    float sample=reinterpret_cast<Getter>(0x6c11d0)(track);
     const DWORD error=GetLastError();
-    const uint32_t local=*reinterpret_cast<uint8_t *>(0xfbc161);
+    if (live(COHERENT_PHASE_BIT(COHERENT_DISPATCH)) && !failed) {
+        uint32_t witness[2],bits;std::memcpy(&bits,&sample,4);
+        if (!clock_witness(track,witness)) {++clonewars_native_clock_debug[3];fail(6,0x7b8b08,*reinterpret_cast<uint32_t *>(0xfb4b6c));}
+        else {bits=native_tick_clock_input(witness,bits);std::memcpy(&sample,&bits,4);}
+    }
+    SetLastError(error);return sample;
+}
+extern "C" uint32_t __cdecl native_tick_decision(uint32_t site,uint32_t local) {
+    const DWORD error=GetLastError();
     uint32_t result=local;
     if (live(COHERENT_PHASE_BIT(COHERENT_DISPATCH)) && !failed) {
         const uint32_t clock=*reinterpret_cast<uint32_t *>(0xfb4b6c);
@@ -65,8 +174,38 @@ extern "C" uint32_t __cdecl native_tick_gate(uint32_t site) {
     SetLastError(error);return result;
 }
 
+extern "C" void __cdecl native_flow_request(unsigned char *flow) {
+    const DWORD error=GetLastError();
+    if (live(COHERENT_PHASE_BIT(COHERENT_DISPATCH)) && !failed) {
+        const auto root=*reinterpret_cast<uintptr_t *>(0xfb2e60);
+        MEMORY_BASIC_INFORMATION memory;
+        const auto address=reinterpret_cast<uintptr_t>(flow);
+        if (!root || address!=root+0x1b44 || !VirtualQuery(flow,&memory,sizeof(memory)) ||
+            memory.State!=MEM_COMMIT || (memory.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
+            address+0x64<address || address+0x64>reinterpret_cast<uintptr_t>(memory.BaseAddress)+memory.RegionSize) {
+            fail(4,0x889edc);SetLastError(error);return;
+        }
+        const uint32_t local=*reinterpret_cast<uint32_t *>(flow+0x60);
+        const SyncTickGate source={0x889edc,*reinterpret_cast<uint32_t *>(0xfb4b6c),local};
+        if (!native_tick_gate_valid(&source)) {fail(4,source.site,source.clock);SetLastError(error);return;}
+        const uint32_t result=native_tick_decision(source.site,local);
+        // This is the pending request. The original consumer still performs the native state transition.
+        if (!host && !failed && live(COHERENT_PHASE_BIT(COHERENT_DISPATCH))) *reinterpret_cast<uint32_t *>(flow+0x60)=result;
+    }
+    SetLastError(error);
+}
+
+extern "C" uint32_t __cdecl native_tick_gate(uint32_t site) {
+    return native_tick_decision(site,*reinterpret_cast<uint8_t *>(0xfbc161));
+}
+
 extern "C" {
-__attribute__((used)) static volatile uintptr_t first_resume=0x8888d4;
+__attribute__((used)) static volatile uintptr_t world_transition=0x7e4800, world_continue=0x57d420;
+__attribute__((used)) static volatile uintptr_t world_exit_resume=0x888892, world_continue_resume=0x88889c;
+__attribute__((naked)) void native_world_exit(void) {__asm__ volatile(NATIVE_WORLD_ADMISSION_ASM(1));}
+__attribute__((naked)) void native_world_continue(void) {__asm__ volatile(NATIVE_WORLD_ADMISSION_ASM(0));}
+__attribute__((used)) static volatile uintptr_t first_resume=0x8888d4,flow_request_resume=0x889ee1;
+__attribute__((naked)) void native_flow_request_input(void) {__asm__ volatile(NATIVE_FLOW_REQUEST_ASM);}
 // The saved x87 stack is restored before the original FSTP between CMP and JNE.
 __attribute__((naked)) void native_tick_first(void) {__asm__ volatile(NATIVE_TICK_GATE_ASM(0x8888cd,first_resume));}
 }
@@ -89,18 +228,19 @@ void native_tick_cancel(const CoherentFrameToken *original) {
     if (original && same(token,*original)) {active=false;frame=nullptr;}
 }
 int native_tick_install(void) {
-    const uintptr_t sites[]={0x8888cd};
-    void *hooks[]={reinterpret_cast<void *>(native_tick_first)};
-    const unsigned char bytes[]={0x80,0x3d,0x61,0xc1,0xfb,0,0};
-    for (const auto site:sites) if (std::memcmp(reinterpret_cast<void *>(site),bytes,sizeof(bytes))) return 0;
+    const uintptr_t sites[]={0x8888cd,0x888889,0x888897,0x889edc,0x7b8b08};
+    void *hooks[]={reinterpret_cast<void *>(native_tick_first),reinterpret_cast<void *>(native_world_exit),reinterpret_cast<void *>(native_world_continue),reinterpret_cast<void *>(native_flow_request_input),reinterpret_cast<void *>(native_track_clock)};
+    const unsigned char bytes[][9]={{0x80,0x3d,0x61,0xc1,0xfb,0,0},{0x6a,0x0f,0x8b,0xcf,0xe8,0x6e,0xbf,0xf5,0xff},{0xe8,0x84,0x4b,0xcf,0xff},{0x8b,0x46,0x60,0x3b,0xc7},{0xe8,0xc3,0x86,0xf0,0xff}};
+    const unsigned sizes[]={7,9,5,5,5};
+    for (unsigned i=0;i<5;++i) if (std::memcmp(reinterpret_cast<void *>(sites[i]),bytes[i],sizes[i])) return 0;
     // 8889EA only controls the local preload indicator timer; its outer guard is asynchronous.
-    for (unsigned i=0;i<sizeof(sites)/sizeof(*sites);++i) {
+    for (unsigned i=0;i<5;++i) {
         auto *p=reinterpret_cast<unsigned char *>(sites[i]);DWORD old;
-        if (!VirtualProtect(p,7,PAGE_EXECUTE_READWRITE,&old)) return 0;
+        if (!VirtualProtect(p,sizes[i],PAGE_EXECUTE_READWRITE,&old)) return 0;
         const auto relative=static_cast<int32_t>(reinterpret_cast<uintptr_t>(hooks[i])-sites[i]-5);
-        p[0]=0xe9;std::memcpy(p+1,&relative,4);p[5]=p[6]=0x90;
-        const bool flushed=FlushInstructionCache(GetCurrentProcess(),p,7)!=0;DWORD ignored;
-        if (!VirtualProtect(p,7,old,&ignored) || !flushed) return 0;
+        p[0]=i==4?0xe8:0xe9;std::memcpy(p+1,&relative,4);std::memset(p+5,0x90,sizes[i]-5);
+        const bool flushed=FlushInstructionCache(GetCurrentProcess(),p,sizes[i])!=0;DWORD ignored;
+        if (!VirtualProtect(p,sizes[i],old,&ignored) || !flushed) return 0;
     }
     return 1;
 }

@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include "tag_sync.h"
 #include "entity_sync.h"
+#include "tag_identity.h"
 #include "game_sync.h"
 #include "../net/lan.h"
 #include "../engine/tag_lexical_seh.h"
@@ -20,6 +21,7 @@ static Transfer original_tag = (Transfer)0x8ae680;
 #define TAG_API __declspec(dllexport)
 #endif
 TAG_API volatile uint32_t clonewars_tag_debug[12];
+TAG_API volatile uint32_t clonewars_tag_identity_debug[18];
 static SyncFrame *current;
 static SyncTag pending[SYNC_MAX_TAGS];
 static unsigned pending_count;
@@ -362,6 +364,26 @@ static int call_original(void *from, void *to, const int32_t *args, const TagGua
     __asm__ volatile("fxrstor %0" ::"m"(c.outgoing));
     return result;
 }
+static int capture_identity(void *actor, uint32_t generation, SyncTagIdentity *identity,
+                            const TagGuard *guard) {
+    if (!guard_valid(guard) || !generation || !lease_live(actor, generation)) return 0;
+    if (!guard_valid(guard)) return 0;
+    SyncActor reference = {0};
+    entities_describe(&reference, actor);
+    if (!guard_valid(guard) || reference.generation != generation || !lease_live(actor, generation)) return 0;
+    if (!guard_valid(guard)) return 0;
+    reference.character = *(int16_t *)((char *)actor + 0xdc0);
+    if (reference.character < 0 || reference.character >= 4096) return 0;
+    *identity = (SyncTagIdentity){reference.character, reference.spawn_tag, reference.spawn_source};
+    return guard_valid(guard);
+}
+static void *resolve_identity(int32_t slot, uint32_t generation, const SyncTagIdentity *identity,
+                              const TagGuard *guard) {
+    SyncActor reference;
+    if (!guard_valid(guard) || !tag_identity_reference(&reference, slot, generation, identity)) return NULL;
+    void *actor = entities_resolve_reference(&reference);
+    return guard_valid(guard) ? actor : NULL;
+}
 static int replay(unsigned index, int preserve_context, TagOutcome *outcome) {
     TagGuard guard;
     if (!frame_guard(&guard))
@@ -382,10 +404,10 @@ static int replay(unsigned index, int preserve_context, TagOutcome *outcome) {
         failed = 1;
         return 0;
     }
-    void *from = entities_resolve_identity(frame, (uint32_t)tag->from, tag->from_generation);
+    void *from = resolve_identity(tag->from, tag->from_generation, &tag->from_identity, &guard);
     if (!guard_valid(&guard))
         return 0;
-    void *to = entities_resolve_identity(frame, (uint32_t)tag->to, tag->to_generation);
+    void *to = resolve_identity(tag->to, tag->to_generation, &tag->to_identity, &guard);
     if (!guard_valid(&guard))
         return 0;
     if (!from || !to || from == to) {
@@ -404,6 +426,10 @@ static int replay(unsigned index, int preserve_context, TagOutcome *outcome) {
     int result = call_original(from, to, tag->arguments, &guard, outcome);
     if (!guard_valid(&guard))
         return 0;
+    if (result == 1) {
+        entities_bind(frame);
+        if (!guard_valid(&guard)) return 0;
+    }
     active_event = parent;
     if (preserve_context)
         clock_write(previous);
@@ -491,11 +517,11 @@ static int tag_hook_impl(void *from, void *to, int a, int b, int c, int d, int e
             if (tag.parent != active_event || (tag.phase && !active_event))
                 break;
             void *expected_from =
-                entities_resolve_identity(borrowed, (uint32_t)tag.from, tag.from_generation);
+                resolve_identity(tag.from, tag.from_generation, &tag.from_identity, &guard);
             if (!guard_valid(&guard))
                 return 0;
             if (expected_from == from) {
-                void *expected_to = entities_resolve_identity(borrowed, (uint32_t)tag.to, tag.to_generation);
+                void *expected_to = resolve_identity(tag.to, tag.to_generation, &tag.to_identity, &guard);
                 if (!guard_valid(&guard))
                     return 0;
                 int different = expected_to && expected_to != to;
@@ -529,12 +555,27 @@ static int tag_hook_impl(void *from, void *to, int a, int b, int c, int d, int e
     tag.to_generation = entities_local_generation(to);
     if (!guard_valid(&guard))
         return call_original(from, to, args, NULL, outcome);
+    if (!capture_identity(from, tag.from_generation, &tag.from_identity, &guard) ||
+        !capture_identity(to, tag.to_generation, &tag.to_identity, &guard)) {
+        if (guard_valid(&guard)) { failed = 4; reject_atomic(21); }
+        return call_original(from, to, args, NULL, outcome);
+    }
     memcpy(tag.arguments, args, sizeof args);
     TagClock context = clock_read();
     tag.clock = context.clock;
     tag.rng_game = context.rng_game;
     tag.rng_engine = context.rng_engine;
     tag.delta = context.delta;
+    if (clonewars_tag_identity_debug[0] != guard.session || clonewars_tag_identity_debug[1] != guard.epoch) {
+        const uint32_t identity_debug[17] = {guard.epoch, frame ? current->sequence : 0, tag.clock,
+            (uint32_t)tag.from, tag.from_generation, (uint32_t)tag.from_identity.character,
+            tag.from_identity.spawn_tag, tag.from_identity.spawn_source.producer, tag.from_identity.spawn_source.serial,
+            (uint32_t)tag.to, tag.to_generation, (uint32_t)tag.to_identity.character,
+            tag.to_identity.spawn_tag, tag.to_identity.spawn_source.producer, tag.to_identity.spawn_source.serial, tag.phase, 1};
+        clonewars_tag_identity_debug[0] = 0;
+        memcpy((void *)(clonewars_tag_identity_debug + 1), identity_debug, sizeof identity_debug);
+        MemoryBarrier();clonewars_tag_identity_debug[0] = guard.session;
+    }
     unsigned count = frame ? current->tag_count : pending_count;
     if (count == SYNC_MAX_TAGS || tag.from < 0 || tag.to < 0 || tag.from == tag.to || !tag.from_generation ||
         !tag.to_generation || next_id == UINT32_MAX) {

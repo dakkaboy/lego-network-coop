@@ -10,5 +10,7 @@ int game_sync_poll_epoch(int target,int transitioning);
 uint32_t game_sync_epoch(void);
 uint32_t game_sync_transition_entry(void);
 int game_sync_epoch_level(void);
+int game_sync_scene_ready(int level);
+int game_sync_scene_initialized(int level);
 
 void game_sync_native_fault(int code);

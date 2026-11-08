@@ -44,6 +44,17 @@ static SyncShot pending[SYNC_MAX_SHOTS];
 static unsigned pending_count;
 typedef struct PendingProvenance {uint32_t epoch;int32_t level;uint32_t release,session;uint64_t generation;uint32_t committed;} PendingProvenance;
 static PendingProvenance pending_provenance[SYNC_MAX_SHOTS];
+enum { PROJECTILE_RENDER_RETIRE_CALLER=0x85ba24 };
+typedef struct PendingRetire {
+    SyncProjectileRetireRequest request;
+    void *object,*resource,*manager;
+    uint32_t instance,source_sequence;
+    PendingProvenance provenance;
+} PendingRetire;
+static PendingRetire retire_pending[SYNC_MAX_PROJECTILES],retire_batch[SYNC_MAX_PROJECTILES];
+static unsigned retire_pending_count,retire_batch_count;
+static int retire_dispatch_done,retire_draining;
+__declspec(dllexport) volatile uint32_t clonewars_projectile_retire_debug[12];
 static uint64_t reset_generation=1;static uint32_t last_session,last_session_epoch,revoked_session,revoked_session_epoch;
 static SpanEngineAdapter*control_adapter;static ProjectileSessionProvider session_provider;static ProjectileRejectAtomic reject_provider;static void*control_user;
 static volatile LONG projectile_hooks_installed;
@@ -162,6 +173,36 @@ static int valid(const void *p,SIZE_T bytes) {
     MEMORY_BASIC_INFORMATION m;
     return p && VirtualQuery(p,&m,sizeof(m)) && m.State==MEM_COMMIT &&
         !(m.Protect&(PAGE_GUARD|PAGE_NOACCESS)) && (uintptr_t)p+bytes<=(uintptr_t)m.BaseAddress+m.RegionSize;
+}
+static void retire_forget(uint32_t id,uint32_t instance){
+    for(unsigned i=0;i<retire_pending_count;++i)if(retire_pending[i].request.id==id&&retire_pending[i].instance==instance)retire_pending[i].request.id=0;
+    if(is_host)for(unsigned i=0;i<retire_batch_count;++i)if(retire_batch[i].request.id==id&&retire_batch[i].instance==instance)retire_batch[i].request.id=0;
+}
+static int retire_manager_live(const void*manager){
+    char*root=*(char**)0xe9019c;
+    return valid(root,0x3c)&&valid(manager,0x28)&&*(void**)(root+0x38)==manager;
+}
+static int retire_reject(const ProjectileOperation*op){
+    ++clonewars_projectile_retire_debug[5];
+    operation_reject(op,PROJECTILE_PENDING_PROVENANCE);return 0;
+}
+static int retire_enqueue(const ProjectileOperation*op,void*manager,void*object,uint32_t flags,int effects,uint32_t caller){
+    if(caller!=PROJECTILE_RENDER_RETIRE_CALLER||op->kind==PROJECTILE_UNKEYED||op->kind==PROJECTILE_BARRIER)return 0;
+    unsigned slot=SYNC_MAX_PROJECTILES;
+    for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(tracked[i].birth.id&&tracked[i].object==object){if(slot!=SYNC_MAX_PROJECTILES){retire_reject(op);return 1;}slot=i;}
+    if(slot==SYNC_MAX_PROJECTILES)return 0;
+    if((op->kind!=PROJECTILE_KEYED&&op->kind!=PROJECTILE_CONTROL)||!operation_live(op)||flags||effects||
+       !instance_serial[slot]||!valid(object,0x210)||*(void**)((char*)object+0x14)!=tracked[slot].resource||!retire_manager_live(manager)||!operation_live(op)){retire_reject(op);return 1;}
+    if(!op->session.host){++clonewars_projectile_retire_debug[1];return 1;}
+    uint32_t id=tracked[slot].birth.id,instance=instance_serial[slot];unsigned free_slot=retire_pending_count;
+    for(unsigned i=0;i<retire_pending_count;++i){PendingRetire*q=retire_pending+i;if(!q->request.id){if(free_slot==retire_pending_count)free_slot=i;continue;}
+        if(q->request.id==id){if(q->instance!=instance||q->object!=object||q->resource!=tracked[slot].resource||q->manager!=manager)retire_reject(op);return 1;}}
+    if(free_slot==SYNC_MAX_PROJECTILES){operation_reject(op,PROJECTILE_PENDING_CAPACITY);return 1;}
+    PendingRetire q={0};q.request=(SyncProjectileRetireRequest){id,flags,effects,caller};q.object=object;q.resource=tracked[slot].resource;q.manager=manager;q.instance=instance;
+    q.source_sequence=op->kind==PROJECTILE_KEYED?op->frame.cohort.sequence:0;
+    q.provenance=(PendingProvenance){.epoch=op->session.epoch,.level=op->session.level,.release=op->kind==PROJECTILE_KEYED?op->frame.cohort.release:op->control.release,.session=op->session.session,.generation=op->reset_generation,.committed=1};
+    if(!operation_live(op)){retire_reject(op);return 1;}retire_pending[free_slot]=q;if(free_slot==retire_pending_count)++retire_pending_count;
+    ++clonewars_projectile_retire_debug[0];return 1;
 }
 typedef struct ShotLaunchScope {
     struct ShotLaunchScope *previous;
@@ -630,7 +671,7 @@ __attribute__((used,noinline)) static void remove_complete_impl(RemoveCall*c,voi
  unsigned char removed=(unsigned char)(uintptr_t)result;
  if(!operation_live(&c->op)){if(c->observing)combat_observer_remove_abort(&c->observation);return;}
  if(c->observing)combat_observer_remove_end(&c->observation,removed);if(!c->hook_commit||!removed||(c->op.kind!=PROJECTILE_KEYED&&c->op.kind!=PROJECTILE_CONTROL)||!operation_live(&c->op))return;
- for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(c->captured_id[i]&&tracked[i].birth.id==c->captured_id[i]&&instance_serial[i]==c->captured_instance[i]&&tracked[i].object==c->object){tracked[i].object=NULL;if(c->op.session.host)memset(tracked+i,0,sizeof(Tracked));dispatch_changed(&c->op);}
+  for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(c->captured_id[i]&&tracked[i].birth.id==c->captured_id[i]&&instance_serial[i]==c->captured_instance[i]&&tracked[i].object==c->object){retire_forget(c->captured_id[i],c->captured_instance[i]);tracked[i].object=NULL;if(c->op.session.host)memset(tracked+i,0,sizeof(Tracked));dispatch_changed(&c->op);}
  for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(c->captured_legacy[i]&&legacy[i]==c->object&&legacy_version[i]==c->captured_legacy[i])legacy_set(&c->op,i,NULL);
 }
 __attribute__((naked)) static void remove_complete(RemoveCall*c,void*result){__asm__ volatile(CONSTRUCTOR_OBSERVER_THUNK_ASM("_remove_complete_impl"));}
@@ -641,6 +682,7 @@ static unsigned char remove_observed(RemoveCall*c,uint32_t reason){
 }
 static unsigned char __attribute__((fastcall)) remove_hook(void *manager,void *unused,void *object,uint32_t flags,int effects){
  (void)unused;RemoveCall c={0};c.op=operation_capture();operation_admit_event(&c.op);c.manager=manager;c.object=object;c.flags=flags;c.effects=effects;c.hook_commit=1;
+  if(retire_enqueue(&c.op,manager,object,flags,effects,(uint32_t)(uintptr_t)__builtin_return_address(0)))return 0;
  if((c.op.kind==PROJECTILE_KEYED||c.op.kind==PROJECTILE_CONTROL)&&operation_live(&c.op))for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(tracked[i].object==object){c.captured_id[i]=tracked[i].birth.id;c.captured_instance[i]=instance_serial[i];}
  if((c.op.kind==PROJECTILE_KEYED||c.op.kind==PROJECTILE_CONTROL)&&operation_live(&c.op))for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(legacy[i]==object)c.captured_legacy[i]=legacy_version[i];
  return remove_observed(&c,0);
@@ -682,6 +724,7 @@ static void projectiles_reset_state(int normalize) {
     memset(tracked,0,sizeof(tracked));
     memset(instance_serial,0,sizeof(instance_serial));memset(creation_count,0,sizeof(creation_count));next_instance_serial=0;
     memset(legacy,0,sizeof(legacy));memset(legacy_version,0,sizeof legacy_version);next_legacy_version=0;
+    memset(retire_pending,0,sizeof retire_pending);memset(retire_batch,0,sizeof retire_batch);retire_pending_count=retire_batch_count=0;retire_dispatch_done=0;
 }
 void projectiles_reset(void){projectiles_reset_state(0);}
 int projectiles_begin(SyncFrame *frame,int host){
@@ -700,7 +743,7 @@ int projectiles_begin(SyncFrame *frame,int host){
   }else{ProjectileFrameLease original=frame_lease;projectiles_reset_state(1);frame_lease=original;frame_associated=1;binding_cancelled=0;level=frame->level;}
  }if(!coherent_frame_valid(&captured,PROJECTILE_COHORT_PHASES))return 0;
  if(control_adapter){ProjectileSessionContext now;if(!session_read(&now)||!session_same(&session,&now)){binding_cancelled=1;ProjectileOperation rejected={.kind=PROJECTILE_KEYED,.frame=frame_lease};operation_reject(&rejected,PROJECTILE_CONTROL_UNAVAILABLE);return 0;}}
- current=frame;is_host=host;frame_lifecycle=lifecycle_serial;frame_started=1;frame_bound=frame_associated=1;ProjectileOperation op=operation_capture();
+ current=frame;is_host=host;frame_lifecycle=lifecycle_serial;frame_started=1;frame_bound=frame_associated=1;retire_dispatch_done=0;ProjectileOperation op=operation_capture();
 #ifdef CLONEWARS_CONSTRUCTOR_OBSERVER
  constructor_thread=GetCurrentThreadId();constructor_open=1;
 #endif
@@ -724,13 +767,73 @@ static int frame_has_projectile(const SyncFrame *frame,uint32_t id){
  }
  return lo<frame->projectile_count&&frame->projectiles[lo].id==id;
 }
+static int retire_resolve(const ProjectileOperation*op,PendingRetire*q){
+    if(!operation_live(op)||!q->request.id||q->request.flags||q->request.effects||q->request.caller!=PROJECTILE_RENDER_RETIRE_CALLER)return 0;
+    unsigned slot=SYNC_MAX_PROJECTILES;
+    for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(tracked[i].birth.id==q->request.id){if(slot!=SYNC_MAX_PROJECTILES)return 0;slot=i;}
+    if(slot==SYNC_MAX_PROJECTILES||!instance_serial[slot]||!valid(tracked[slot].object,0x210)||!tracked[slot].resource||*(void**)(tracked[slot].object+0x14)!=tracked[slot].resource)return 0;
+    for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(i!=slot&&tracked[i].birth.id&&tracked[i].object==tracked[slot].object)return 0;
+    char*root=*(char**)0xe9019c;if(!valid(root,0x3c))return 0;void*manager=*(void**)(root+0x38);if(!retire_manager_live(manager))return 0;
+    if(q->instance){if(q->instance!=instance_serial[slot]||q->object!=tracked[slot].object||q->resource!=tracked[slot].resource||q->manager!=manager)return 0;}
+    else{q->instance=instance_serial[slot];q->object=tracked[slot].object;q->resource=tracked[slot].resource;q->manager=manager;}
+    return operation_live(op);
+}
+typedef struct RetireDrain {ProjectileOperation op;SyncFrame*frame;int result;} RetireDrain;
+static void*__cdecl retire_drain_invoke(void*opaque){
+    RetireDrain*d=opaque;const ProjectileOperation*op=&d->op;SyncFrame*frame=d->frame;
+    if(is_host){
+        if(retire_pending_count>SYNC_MAX_PROJECTILES||frame->projectile_retire_count)return NULL;
+        retire_batch_count=0;unsigned kept=0;
+        for(unsigned i=0;i<retire_pending_count;++i){PendingRetire q=retire_pending[i];if(!q.request.id)continue;
+            if(q.source_sequence==op->frame.cohort.sequence)retire_pending[kept++]=q;
+            else retire_batch[retire_batch_count++]=q;
+        }
+        memset(retire_pending+kept,0,(SYNC_MAX_PROJECTILES-kept)*sizeof(PendingRetire));retire_pending_count=kept;
+        for(unsigned i=0;i<retire_batch_count;++i){PendingRetire*q=retire_batch+i;if(!q->request.id)continue;PendingProvenance*p=&q->provenance;
+            if(!p->committed||p->epoch!=op->frame.cohort.epoch||p->level!=level||p->release!=op->frame.cohort.release||p->session!=op->session.session||p->generation!=reset_generation||
+               (q->source_sequence&&q->source_sequence>=op->frame.cohort.sequence)||!retire_resolve(op,q))return NULL;
+            for(unsigned j=0;j<i;++j)if(retire_batch[j].request.id==q->request.id)return NULL;
+        }
+    }else{
+        if(frame->projectile_retire_count>SYNC_MAX_PROJECTILES||retire_pending_count)return NULL;
+        retire_batch_count=frame->projectile_retire_count;memset(retire_batch,0,sizeof retire_batch);
+        for(unsigned i=0;i<retire_batch_count;++i){PendingRetire*q=retire_batch+i;q->request=frame->projectile_retires[i];
+            for(unsigned j=0;j<i;++j)if(retire_batch[j].request.id==q->request.id)return NULL;
+            if(!retire_resolve(op,q))return NULL;
+        }
+    }
+    for(unsigned i=0;i<retire_batch_count;++i){
+        if(!operation_live(op)||current!=frame)return NULL;
+        PendingRetire q=retire_batch[i];if(!q.request.id)continue;
+        if(!retire_resolve(op,&q))return NULL;
+        RemoveCall c={0};c.op=*op;c.manager=q.manager;c.object=q.object;c.flags=q.request.flags;c.effects=q.request.effects;c.hook_commit=1;
+        for(unsigned j=0;j<SYNC_MAX_PROJECTILES;++j)if(tracked[j].birth.id==q.request.id){c.captured_id[j]=q.request.id;c.captured_instance[j]=q.instance;}
+        if(is_host){if(frame->projectile_retire_count==SYNC_MAX_PROJECTILES)return NULL;frame->projectile_retires[frame->projectile_retire_count++]=q.request;}
+        clonewars_projectile_retire_debug[6]=q.request.id;clonewars_projectile_retire_debug[7]=q.request.caller;
+        unsigned char removed=remove_observed(&c,3);
+        if(!operation_live(op)||current!=frame)return NULL;
+        if(!removed&&!retire_resolve(op,&q))return NULL;
+        ++clonewars_projectile_retire_debug[2];if(!removed)++clonewars_projectile_retire_debug[3];
+    }
+    d->result=1;return NULL;
+}
+static void __cdecl retire_drain_abort(void*opaque){RetireDrain*d=opaque;DWORD error=GetLastError();retire_draining=0;++clonewars_projectile_retire_debug[4];operation_exception(&d->op);SetLastError(error);}
+static int retire_dispatch(const ProjectileOperation*op){
+    if(retire_draining)return retire_reject(op);
+    if(retire_dispatch_done)return operation_live(op);
+    RetireDrain d={.op=*op,.frame=current};retire_draining=1;
+    constructor_lexical_seh(&d,retire_drain_invoke,retire_drain_abort);
+    retire_draining=0;retire_batch_count=0;
+    if(!d.result||!operation_live(op)||current!=d.frame)return retire_reject(op);
+    retire_dispatch_done=1;return 1;
+}
 static int dispatch_quiet(const ProjectileOperation*op){
  if(!operation_live(op)||failed||!dispatch_completed||dispatch_revision!=dispatch_completed_revision)return 0;
  if(!is_host)for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i){uint32_t id=tracked[i].birth.id;if(!id)continue;if(!operation_live(op)||!frame_has_projectile(current,id))return 0;}
  return operation_live(op);
 }
 int projectiles_dispatch_revision(const CoherentFrameToken*original,uint64_t*out){if(!out||!projectiles_cohort_valid(original)||!coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return 0;*out=dispatch_revision;return projectiles_cohort_valid(original)&&coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH));}
-int projectiles_dispatch_pending(void){ProjectileOperation op=operation_capture();if(op.kind!=PROJECTILE_KEYED||!operation_live(&op)||failed||!coherent_frame_valid(&op.frame.cohort,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return -1;return dispatch_quiet(&op)?0:1;}
+int projectiles_dispatch_pending(void){ProjectileOperation op=operation_capture();if(op.kind!=PROJECTILE_KEYED||!operation_live(&op)||failed||!coherent_frame_valid(&op.frame.cohort,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return -1;if(!retire_dispatch(&op))return -1;return dispatch_quiet(&op)?0:1;}
 int projectiles_dispatch_complete(void){
  ProjectileOperation op=operation_capture();if(op.kind!=PROJECTILE_KEYED||!operation_live(&op)||projectiles_dispatch_pending()!=1)return 0;dispatch_completed=0;SyncFrame*frame=current;if(is_host){dispatch_completed_revision=dispatch_revision;dispatch_completed=1;return 1;}
   char*manager=*(char**)0xe9019c;if(!valid(manager,0x3c)){if(operation_live(&op))failed=1;}else{
@@ -821,6 +924,10 @@ int projectiles_install(void) {
     combat_observer_removal_ready();
 #ifdef CLONEWARS_CONSTRUCTOR_OBSERVER
     constructor_hooks_ready=1;
+    if (!constructor_observer_install()) return 0;
+#ifdef CLONEWARS_CONSTRUCTOR_QUERY_OBSERVER
+    if (!constructor_query_install()) return 0;
+#endif
 #endif
     InterlockedExchange(&projectile_hooks_installed,1);return 1;
 }

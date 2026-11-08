@@ -9,6 +9,7 @@ if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang" OR NOT CMAKE_CXX_COMPILER_ID STREQUA
 endif()
 
 option(CLONEWARS_HIT_ENTRY_OBSERVER "Record native hit entries" OFF)
+option(CLONEWARS_CONSTRUCTOR_QUERY_OBSERVER "Record native projectile construction queries" OFF)
 
 add_library(clonewars-camera SHARED
     src/debug/camera_init_observer.c
@@ -34,6 +35,13 @@ add_library(clonewars-camera SHARED
     src/engine/native_owner.c
     src/engine/owner_seh.c
     src/engine/rigid_body_binding.cpp
+    src/engine/native_spellit_source.cpp
+    src/engine/native_roster_source.cpp
+    src/engine/native_hub_source.cpp
+    src/engine/native_authored_poi.cpp
+    src/engine/native_resource_identity.cpp
+    src/engine/native_script_shoot_source.cpp
+    src/engine/script_shoot_dispatch_thunk.cpp
     src/engine/span_engine.c
     src/engine/span_installer.c
     src/engine/tag_lexical_seh.c
@@ -63,6 +71,11 @@ add_library(clonewars-camera SHARED
     src/sync/model_input_sync.c
     src/sync/npc_input.c
     src/sync/native_tick_sync.cpp
+    src/sync/object_progress_sync.cpp
+    src/sync/spellit_input_sync.cpp
+    src/sync/module_rng_input_sync.cpp
+    src/sync/preload_state.cpp
+    src/sync/profile_bootstrap_state.cpp
     src/sync/physics_input_sync.cpp
     src/sync/projectile_sync.c
     src/sync/reaction_journal.c
@@ -88,6 +101,11 @@ if(CLONEWARS_HIT_ENTRY_OBSERVER)
     target_sources(clonewars-camera PRIVATE src/debug/hit_entry_observer.c)
     target_compile_definitions(clonewars-camera PRIVATE CLONEWARS_HIT_ENTRY_OBSERVER)
 endif()
+if(CLONEWARS_CONSTRUCTOR_QUERY_OBSERVER)
+    target_sources(clonewars-camera PRIVATE src/debug/constructor_observer.c src/debug/constructor_query_observer.c)
+    target_compile_definitions(clonewars-camera PRIVATE CLONEWARS_CONSTRUCTOR_OBSERVER CLONEWARS_CONSTRUCTOR_QUERY_OBSERVER CLONEWARS_COHERENT_CONSTRUCTOR_QUERY_REVIEWED)
+endif()
+
 target_link_libraries(clonewars-camera PRIVATE user32 ws2_32 shell32)
 
 add_library(d3d9 SHARED src/engine/proxy.c src/engine/proxy.def)
