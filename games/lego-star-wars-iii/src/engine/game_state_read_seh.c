@@ -6,6 +6,8 @@ unsigned long __cdecl _exception_code(void);
 // Keep native reads in a separate translation unit so x86 Clang emits the SEH registration.
 int game_read_current_level(void);
 int game_read_native_profile_ready(void);
+int game_read_native_profile_storage_ready(void);
+int game_read_native_scene_input_capability(int level,const void *world);
 
 static int memory_read_fault(unsigned long code) {
     return code == 0xc0000005ul || code == 0xc0000006ul;
@@ -24,5 +26,20 @@ int game_native_profile_ready(void) {
         return game_read_native_profile_ready();
     } __except (memory_read_fault(_exception_code())) {
         return 0;
+    }
+}
+
+int game_native_profile_storage_ready(void) {
+    __try {
+        return game_read_native_profile_storage_ready();
+    } __except (memory_read_fault(_exception_code())) {
+        return 0;
+    }
+}
+int game_native_scene_input_capability(int level,const void *world) {
+    __try {
+        return game_read_native_scene_input_capability(level,world);
+    } __except (memory_read_fault(_exception_code())) {
+        return GAME_SCENE_NOT_READY;
     }
 }

@@ -4,8 +4,13 @@
 #include <string.h>
 #include "entity_sync.h"
 #include "entity_match.h"
+#include "tag_identity.h"
 #include "../net/lan.h"
 #include "../engine/game_state.h"
+#include "../engine/native_roster_source.h"
+#include "../engine/native_hub_source.h"
+#include "../engine/native_roster_thunk.h"
+#include "../engine/constructor_lexical_seh.h"
 
 #ifdef ENTITY_SYNC_TEST
 extern char *entity_test_pool,*entity_test_players[8];
@@ -34,10 +39,29 @@ static struct { uint32_t slot,generation; } retired[SYNC_MAX_PROJECTILES];
 static unsigned retired_head;
 static char *(*original_create)(void);
 static __thread EntitySpawnIdentity spawn_context;
+typedef struct RosterSpawnScope {
+    struct RosterSpawnScope *previous;
+    NativeRosterSource source;
+    NativeHubSource hub;
+    char *created;
+    uint32_t generation, allocations;
+    int qualified,kind;
+} RosterSpawnScope;
+typedef struct RosterPending {
+    NativeRosterSource source;
+    char *actor;
+    uint32_t generation;
+    int active;
+} RosterPending;
+static __thread RosterSpawnScope *roster_scope;
+static RosterPending roster_pending[NATIVE_SAVED_ROSTER_CAPACITY];
+static void finalize_roster_sources(void);
 #ifndef ENTITY_SYNC_API
 #define ENTITY_SYNC_API __declspec(dllexport)
 #endif
 ENTITY_SYNC_API volatile uint32_t clonewars_entity_debug[12];
+ENTITY_SYNC_API volatile uint32_t clonewars_roster_source_debug[8];
+ENTITY_SYNC_API volatile uint32_t clonewars_hub_source_debug[16];
 static int valid(const void *p,SIZE_T size) {
     MEMORY_BASIC_INFORMATION m;
     return p && VirtualQuery(p,&m,sizeof(m)) && m.State==MEM_COMMIT &&
@@ -55,6 +79,7 @@ static void current_pool(void) {
     if (now==pool) return;
     pool=now;
     memset(local,0,sizeof(local)); entities_reset_bindings();
+    memset(roster_pending,0,sizeof roster_pending);
 }
 static int raw_slot(const void *actor) {
     uintptr_t offset=(uintptr_t)actor-(uintptr_t)pool;
@@ -82,6 +107,15 @@ static char *create_hook(void) {
     const uintptr_t caller=(uintptr_t)__builtin_return_address(0);
     SyncSpawnSource source={0};
 #ifndef ENTITY_SYNC_TEST
+    if (caller==0x9c5ce6 && roster_scope && roster_scope->qualified) {
+        char *actor=create_actor((uint32_t)(caller-0x400000),(SyncSpawnSource){0});
+        if (++roster_scope->allocations==1) {
+            roster_scope->created=actor;
+            int slot=raw_slot(actor);
+            roster_scope->generation=slot>=0?local[slot].key.generation:0;
+        }
+        return actor;
+    }
     if (caller==0x9c5ce6 && spawn_context.source.producer)
         return create_actor(spawn_context.site,spawn_context.source);
     if (caller==0x9c5ef6) {
@@ -127,7 +161,129 @@ void entities_update(void) {
             entry->origin_ready=1;
         }
     }
+    finalize_roster_sources();
 }
+static void finalize_roster_sources(void) {
+#ifndef ENTITY_SYNC_TEST
+    for (unsigned i=0;i<NATIVE_SAVED_ROSTER_CAPACITY;++i) {
+        RosterPending *pending=roster_pending+i;
+        if (!pending->active) continue;
+        int slot=raw_slot(pending->actor);
+        if (slot<0 || slot>=game_actor_count() || local[slot].key.generation!=pending->generation ||
+            !entities_allocation_live(pending->actor,pending->generation)) {
+            pending->active=0;++clonewars_roster_source_debug[5];continue;
+        }
+        if (native_roster_source_revalidate(&pending->source,pending->actor)) {
+            local[slot].key.spawn_tag=0x5c5ce6;
+            local[slot].key.spawn_source=(SyncSpawnSource){NATIVE_SAVED_ROSTER_PRODUCER,
+                ((uint32_t)pending->source.level<<3)|i};
+            pending->active=0;++clonewars_roster_source_debug[2];
+        } else if (!native_roster_source_revalidate(&pending->source,NULL)) {
+            pending->active=0;++clonewars_roster_source_debug[5];
+        }
+    }
+#endif
+}
+
+#ifndef ENTITY_SYNC_TEST
+typedef char *(__cdecl *RosterConstructor)(uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,
+    uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t);
+typedef struct RosterConstructorCall {
+    RosterSpawnScope scope;
+    volatile uint32_t arguments[12];
+    unsigned char incoming[512] __attribute__((aligned(16))),outgoing[512] __attribute__((aligned(16)));
+    DWORD incoming_error,outgoing_error;
+    int linked;
+} RosterConstructorCall;
+static void __cdecl roster_constructor_abort(void *raw) {
+    RosterConstructorCall *call=raw;
+    unsigned char fx[512] __attribute__((aligned(16)));
+    __asm__ volatile("fxsave %0":"=m"(fx));
+    DWORD error=GetLastError();
+    if (call->linked && roster_scope==&call->scope) roster_scope=call->scope.previous;
+    call->linked=0;
+    if(call->scope.kind)++clonewars_hub_source_debug[4];else ++clonewars_roster_source_debug[4];
+    SetLastError(error);__asm__ volatile("fxrstor %0"::"m"(fx));
+}
+static void *__cdecl roster_constructor_invoke(void *raw) {
+    RosterConstructorCall *call=raw;
+    call->scope.previous=roster_scope;roster_scope=&call->scope;call->linked=1;
+    SetLastError(call->incoming_error);__asm__ volatile("fxrstor %0"::"m"(call->incoming));
+    char *actor=((RosterConstructor)0x9de240)(call->arguments[0],call->arguments[1],call->arguments[2],
+        call->arguments[3],call->arguments[4],call->arguments[5],call->arguments[6],call->arguments[7],
+        call->arguments[8],call->arguments[9],call->arguments[10],call->arguments[11]);
+    __asm__ volatile("fxsave %0":"=m"(call->outgoing));call->outgoing_error=GetLastError();
+    roster_scope=call->scope.previous;call->linked=0;
+    if (call->scope.qualified) {
+        volatile uint32_t *debug=call->scope.kind?clonewars_hub_source_debug:clonewars_roster_source_debug;
+        ++debug[1];
+        int slot=raw_slot(actor);
+        if (actor && actor==call->scope.created && call->scope.allocations==1 && slot>=0 &&
+            local[slot].key.generation==call->scope.generation &&
+            (call->scope.kind?native_hub_source_revalidate(&call->scope.hub):native_roster_source_revalidate(&call->scope.source,NULL))) {
+            entities_update();
+            if (local[slot].key.generation==call->scope.generation &&
+                entities_allocation_live(actor,call->scope.generation) &&
+                *(int16_t *)(actor+0xdc0)==(int32_t)call->arguments[0] &&
+                (call->scope.kind?native_hub_source_revalidate(&call->scope.hub):native_roster_source_revalidate(&call->scope.source,NULL))) {
+                if(call->scope.kind){
+                    local[slot].key.spawn_tag=0x5c5ce6;
+                    local[slot].key.spawn_source=(SyncSpawnSource){call->scope.hub.owner_id,call->scope.hub.serial};
+                    ++clonewars_hub_source_debug[2];
+                }else{
+                    unsigned ordinal=call->scope.source.ordinal;
+                    RosterPending *pending=roster_pending+ordinal;
+                    if (!pending->active) {
+                        *pending=(RosterPending){call->scope.source,actor,call->scope.generation,1};
+                        clonewars_roster_source_debug[6]=ordinal;clonewars_roster_source_debug[7]=call->scope.generation;
+                    } else ++debug[5];
+                }
+            } else ++debug[5];
+        } else ++debug[5];
+    }
+    return actor;
+}
+static char *__attribute__((used,noinline)) entity_roster_constructor(uint32_t *saved) {
+    unsigned char incoming[512] __attribute__((aligned(16)));
+    __asm__ volatile("fxsave %0":"=m"(incoming));DWORD error=GetLastError();
+    RosterConstructorCall call;
+    memset(&call,0,sizeof call);memcpy(call.incoming,incoming,sizeof incoming);call.incoming_error=error;
+    memcpy((void *)call.arguments,(unsigned char *)saved+40,sizeof call.arguments);
+    call.scope.qualified=native_roster_source_resolve((void *)(uintptr_t)saved[1],(const uint32_t *)call.arguments,&call.scope.source);
+    ++clonewars_roster_source_debug[0];
+    if (!call.scope.qualified) ++clonewars_roster_source_debug[3];
+    char *actor=constructor_lexical_seh(&call,roster_constructor_invoke,roster_constructor_abort);
+    SetLastError(call.outgoing_error);__asm__ volatile("fxrstor %0"::"m"(call.outgoing));
+    return actor;
+}
+static void *__attribute__((naked)) entity_roster_thunk(void) {
+    __asm__ volatile(NATIVE_ROSTER_SOURCE_THUNK_ASM);
+}
+static char *__attribute__((used,noinline)) entity_hub_constructor(uint32_t *saved) {
+    unsigned char incoming[512] __attribute__((aligned(16)));
+    __asm__ volatile("fxsave %0":"=m"(incoming));DWORD error=GetLastError();
+    RosterConstructorCall call;
+    memset(&call,0,sizeof call);memcpy(call.incoming,incoming,sizeof incoming);call.incoming_error=error;
+    memcpy((void *)call.arguments,(unsigned char *)saved+40,sizeof call.arguments);call.scope.kind=1;
+    uint32_t reason=0;
+    call.scope.qualified=native_hub_source_resolve((void *)(uintptr_t)saved[1],(void *)(uintptr_t)saved[2],
+        (const uint32_t *)call.arguments,&call.scope.hub,&reason);
+    ++clonewars_hub_source_debug[0];clonewars_hub_source_debug[6]=reason;
+    clonewars_hub_source_debug[7]=call.scope.hub.owner_id;clonewars_hub_source_debug[8]=(uint32_t)call.scope.hub.level;
+    clonewars_hub_source_debug[9]=call.scope.hub.ordinal;clonewars_hub_source_debug[10]=call.scope.hub.manager_id;
+    clonewars_hub_source_debug[11]=call.scope.hub.manager_generation;
+    clonewars_hub_source_debug[12]=saved[1];clonewars_hub_source_debug[14]=saved[2];
+    clonewars_hub_source_debug[13]=valid((void *)(uintptr_t)saved[2],0x18)?*(uint32_t *)(uintptr_t)(saved[2]+8):0;
+    clonewars_hub_source_debug[15]=call.arguments[0];
+    if(!call.scope.qualified)++clonewars_hub_source_debug[3];
+    char *actor=constructor_lexical_seh(&call,roster_constructor_invoke,roster_constructor_abort);
+    SetLastError(call.outgoing_error);__asm__ volatile("fxrstor %0"::"m"(call.outgoing));
+    return actor;
+}
+static void *__attribute__((naked)) entity_hub_thunk(void) {
+    __asm__ volatile(NATIVE_HUB_SOURCE_THUNK_ASM);
+}
+#endif
 void entities_describe(SyncActor *state,const void *actor) {
     int slot=raw_slot(actor);
     if (slot<0) return;
@@ -253,6 +409,17 @@ int entities_bind(const SyncFrame *frame) {
     unsigned char claimed[SYNC_MAX_ACTORS]={0};
     uint32_t wanted[SYNC_MAX_ACTORS]={0};
     for (unsigned i=0;i<frame->actor_count;++i) { retire(frame->actors+i); wanted[frame->actors[i].slot]=frame->actors[i].generation; }
+    if (frame->tag_count>SYNC_MAX_TAGS) return 0;
+    for (unsigned i=0;i<frame->tag_count;++i) {
+        const SyncTag *tag=frame->tags+i;
+        const int32_t slots[2]={tag->from,tag->to};
+        const uint32_t generations[2]={tag->from_generation,tag->to_generation};
+        for (unsigned side=0;side<2;++side) {
+            int32_t slot=slots[side];uint32_t generation=generations[side];
+            if (slot>=0 && slot<SYNC_MAX_ACTORS && generation && (!wanted[slot] || wanted[slot]==generation))
+                wanted[slot]=generation;
+        }
+    }
     // PREPARE sees post-tag roles before in-tick Tag replay; that handoff does not retire an allocation.
     for (int slot=0;slot<SYNC_MAX_ACTORS;++slot) {
         Binding *b=bindings+slot;
@@ -265,6 +432,30 @@ int entities_bind(const SyncFrame *frame) {
     for (int slot=0;slot<count;++slot) {
         keys[slot]=local[slot].key;
         if ((*(uint32_t *)(pool+slot*0x1440+0x50)&3)!=3) keys[slot].generation=0;
+    }
+    for (unsigned i=0;i<frame->tag_count;++i) {
+        const SyncTag *tag=frame->tags+i;
+        const int32_t slots[2]={tag->from,tag->to};
+        const uint32_t generations[2]={tag->from_generation,tag->to_generation};
+        const SyncTagIdentity *identities[2]={&tag->from_identity,&tag->to_identity};
+        for (unsigned side=0;side<2;++side) {
+            SyncActor reference;
+            if (!tag_identity_reference(&reference,slots[side],generations[side],identities[side]) ||
+                wanted[reference.slot]!=reference.generation) continue;
+            char *actor=entities_resolve_reference(&reference);
+            int slot=raw_slot(actor);
+            if (slot<0 || slot>=count || !keys[slot].generation || !reference_matches(&keys[slot],&reference)) continue;
+            Binding *binding=bindings+reference.slot;
+            if (claimed[slot] && (binding->local_slot!=slot || binding->local_generation!=keys[slot].generation ||
+                binding->remote_generation!=reference.generation)) continue;
+            if (assigned[slot].local_generation==keys[slot].generation &&
+                (assigned[slot].remote_slot!=reference.slot || assigned[slot].remote_generation!=reference.generation)) continue;
+            *binding=(Binding){reference.generation,keys[slot].generation,slot};
+            known[reference.slot]=*binding;
+            assigned[slot].local_generation=keys[slot].generation;
+            assigned[slot].remote_generation=reference.generation;assigned[slot].remote_slot=reference.slot;
+            claimed[slot]=1;
+        }
     }
     const int initial_party=frame->sequence==1;
     const int native_party_count=initial_party ? 8 : 2;
@@ -383,6 +574,12 @@ int entities_install(void) {
     unsigned char *placement=(unsigned char *)0x9c63ac;
     const unsigned char placement_call[]={0xe8,0x1f,0xf0,0xe1,0xff};
     if (!valid(placement,5) || memcmp(placement,placement_call,5)) return 0;
+    unsigned char *roster_first=(unsigned char *)0x8afc3a,*roster_second=(unsigned char *)0x8afcbe;
+    if (!valid(roster_first,5) || !valid(roster_second,5) || roster_first[0]!=0xe8 || roster_second[0]!=0xe8 ||
+        (uintptr_t)(roster_first+5)+*(int32_t *)(roster_first+1)!=0x9de240 ||
+        (uintptr_t)(roster_second+5)+*(int32_t *)(roster_second+1)!=0x9de240) return 0;
+    unsigned char *hub=(unsigned char *)0x4eed96;
+    if(!valid(hub,5)||hub[0]!=0xe8||(uintptr_t)(hub+5)+*(int32_t *)(hub+1)!=0x9de240)return 0;
 #endif
     unsigned char *trampoline=VirtualAlloc(NULL,10,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);DWORD old;
     if (!trampoline || !VirtualProtect(target,5,PAGE_EXECUTE_READWRITE,&old)) return 0;
@@ -397,6 +594,14 @@ int entities_install(void) {
     *(int32_t *)(placement+1)=(int32_t)((uintptr_t)create_placement_thunk-(uintptr_t)placement-5);
     FlushInstructionCache(GetCurrentProcess(),placement,5);
     VirtualProtect(placement,5,old,&old);
+    if (!VirtualProtect(roster_first,0x89,PAGE_EXECUTE_READWRITE,&old)) return 0;
+    *(int32_t *)(roster_first+1)=(int32_t)((uintptr_t)entity_roster_thunk-(uintptr_t)roster_first-5);
+    *(int32_t *)(roster_second+1)=(int32_t)((uintptr_t)entity_roster_thunk-(uintptr_t)roster_second-5);
+    FlushInstructionCache(GetCurrentProcess(),roster_first,0x89);
+    VirtualProtect(roster_first,0x89,old,&old);
+    if(!VirtualProtect(hub,5,PAGE_EXECUTE_READWRITE,&old))return 0;
+    *(int32_t *)(hub+1)=(int32_t)((uintptr_t)entity_hub_thunk-(uintptr_t)hub-5);
+    FlushInstructionCache(GetCurrentProcess(),hub,5);VirtualProtect(hub,5,old,&old);
 #endif
     return 1;
 }

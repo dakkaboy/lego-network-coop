@@ -12,7 +12,47 @@
 _Static_assert(sizeof(SyncActor)==272,"Actor wire layout changed");
 _Static_assert(offsetof(SyncActor,rigid_body)==196,"Native rigid body wire offset changed");
 _Static_assert(offsetof(SyncActor,party_slot)==102,"Party slot must use defined padding");
+_Static_assert(sizeof(SyncTagIdentity)==16,"Tag identity wire layout changed");
+_Static_assert(sizeof(SyncTag)==100,"Tag command wire layout changed");
+static void world_physics_inputs(void) {
+    SyncFrame *frame=calloc(1,sizeof(*frame)),*decoded=calloc(1,sizeof(*decoded));
+    unsigned char *wire=malloc(sizeof(*frame));
+    assert(frame && decoded && wire);
+    frame->epoch=1;frame->sequence=1;frame->level=6;frame->delta=.016f;
+    frame->physics_choice_count=3;
+    SyncPhysicsChoice *seed=frame->physics_choices,*entity=seed+1,*enabled=seed+2;
+    seed->kind=SYNC_PHYSICS_SPELLIT_SEED;seed->site=0x86101e;
+    seed->world=(SyncPhysicsWorldInput){.clock=UINT32_MAX,.value=0xfedcba98,
+        .source_name={1,2,3,4},.gizmo_class=0x8480ac,.gizmo_ordinal=65535};
+    *entity=*seed;entity->kind=SYNC_PHYSICS_SPELLIT_ENTITY;entity->site=0x8407d4;
+    entity->world.value=1;entity->world.resource_name[0]=17;entity->world.poi_name[3]=19;
+    entity->world.poi_count=65536;entity->world.poi_ordinal=65535;
+    entity->world.piece_ordinal=65535;entity->world.receiver_class=0x820f64;
+    *enabled=*entity;enabled->kind=SYNC_PHYSICS_SPELLIT_ENABLED;enabled->site=0x84085b;
+    size_t size=sync_frame_encode(frame,wire,sizeof(*frame));
+    assert(size && sync_frame_decode(decoded,wire,size));
+    assert(!memcmp(frame->physics_choices,decoded->physics_choices,3*sizeof(*seed)));
+    SyncPhysicsChoice different=*entity;different.world.value=0;
+    assert(physics_choice_same_source(entity,&different));
+    different.world.poi_ordinal=65534;assert(!physics_choice_same_source(entity,&different));
+    different=*entity;different.world.source_name[3]^=1;assert(!physics_choice_same_source(entity,&different));
+    different=*entity;different.world.receiver_class^=1;assert(!physics_choice_same_source(entity,&different));
+    entity->world.value=2;assert(!sync_frame_valid(frame,sync_frame_size(frame)));entity->world.value=1;
+    entity->world.poi_ordinal=65536;assert(!sync_frame_encode(frame,wire,sizeof(*frame)));entity->world.poi_ordinal=65535;
+    entity->world.poi_count=65537;assert(!physics_choice_valid(entity));entity->world.poi_count=65536;
+    entity->world.piece_ordinal=65536;assert(!physics_choice_valid(entity));entity->world.piece_ordinal=65535;
+    enabled->site=entity->site;assert(!physics_choice_valid(enabled));enabled->site=0x84085b;
+    seed->world.receiver_class=1;assert(!physics_choice_valid(seed));seed->world.receiver_class=0;
+    seed->world.resource_name[3]=1;assert(!physics_choice_valid(seed));seed->world.resource_name[3]=0;
+    seed->world.gizmo_ordinal=65536;assert(!physics_choice_valid(seed));seed->world.gizmo_ordinal=65535;
+    different=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_AXIS_SPIN,.site=0x7425c3,
+        .flags=0x40000091,.model=1,.name_hash={12,34}};
+    assert(physics_choice_valid(&different));
+    ((unsigned char *)&different)[sizeof(different)-1]=1;assert(!physics_choice_valid(&different));
+    free(wire);free(decoded);free(frame);
+}
 int main(void) {
+    world_physics_inputs();
     SyncFrame *input=calloc(1,sizeof(*input)),*output=calloc(1,sizeof(*output));
     unsigned char *wire=malloc(sizeof(*input));
     assert(input && output && wire);
@@ -49,6 +89,8 @@ int main(void) {
     input->actors[0].party_slot=0; input->actors[1].party_slot=1;
     input->rng_game_after=123; input->rng_engine_after=456;
     input->tag_count=1; input->tags[0]=(SyncTag){.id=1,.from=0,.to=1,.from_generation=7,.to_generation=8,.phase=1,.delta=.016f};
+    input->tags[0].from_identity=(SyncTagIdentity){.character=329,.spawn_tag=0x5c5ef6,.spawn_source={1,0}};
+    input->tags[0].to_identity=(SyncTagIdentity){.character=189,.spawn_tag=0x5c5ce6,.spawn_source={2,1}};
     input->actors[0].generation=7; input->actors[0].player=0;
     input->actors[1].generation=8; input->actors[1].player=1;
     input->inputs[1].aim_x=13; input->inputs[1].aim_y=219;
@@ -89,7 +131,7 @@ int main(void) {
     input->projectiles[0].id=41; input->projectiles[1].id=42;
     input->projectiles[1].velocity[2]=6.75f;
     input->projectiles[1].cast_origin[2]=-4.75f;
-    input->fire_task_gate_count=6;
+    input->fire_task_gate_count=8;
     input->fire_task_gates[0]=(SyncFireTaskGate){
         .slot=5,.generation=17,.character=321,.origin={1,2,3},
         .flags=SYNC_FIRE_TASK_QUEUES_SHOT,.action=92,.value=1,
@@ -110,6 +152,15 @@ int main(void) {
     input->fire_task_gates[4].kind=SYNC_ACTOR_DEATH_BREAKUP;
     input->fire_task_gates[5]=input->fire_task_gates[3];
     input->fire_task_gates[5].kind=SYNC_ACTOR_FALL_VISIBILITY;
+    input->fire_task_gates[6]=input->fire_task_gates[3];
+    input->fire_task_gates[6].kind=SYNC_ACTOR_AIM_TASK;
+    input->fire_task_gates[6].aim=(SyncAimTaskState){.target_slot=1,.target_generation=8,
+        .rng_engine=0xf1234567,.clock=1550,.remaining=-.016f,.minimum=.5f,.maximum=1.5f,.task_class=0x721234};
+    input->fire_task_gates[7]=input->fire_task_gates[6];
+    input->fire_task_gates[7].kind=SYNC_ACTOR_RTS_COMPETITOR;
+    input->fire_task_gates[7].value=0;
+    input->fire_task_gates[7].competitor=(SyncRtsCompetitorState){.rng_game=123,.rng_engine=0x81234567,.clock=1550,
+        .competitor_class=0x6ee004,.delta=.017f,.timers={0,.5f,.2f,0,3,-1,.1f,-2,.3f,.25f,0,1}};
     input->rts_team_timer_count=2;
     input->rts_team_timers[0]=(SyncRtsTeamTimers){.slot=1,.remaining={0,0,3.5831935f}};
     input->rts_team_timers[1]=(SyncRtsTeamTimers){.slot=3,.remaining={1.25f,0,0}};
@@ -123,6 +174,7 @@ int main(void) {
     assert(output->epoch==7 && output->sequence==1);
     assert(output->actors[1].party_slot==1 && output->rng_game_after==123 && output->rng_engine_after==456);
     assert(output->tag_count==1 && output->tags[0].id==1 && output->tags[0].to_generation==8 && output->tags[0].phase==1);
+    assert(!memcmp(&output->tags[0].from_identity,&input->tags[0].from_identity,2*sizeof(SyncTagIdentity)));
     assert(output->actors[1].animation.current==100 && output->actors[1].animation.frames[3]==19.5f);
     assert(output->actors[1].animation.clips[2]==-1 && output->variables[0].value==1);
     assert(memcmp(output->variables,input->variables,3*sizeof(SyncVariable))==0);
@@ -147,17 +199,42 @@ int main(void) {
     assert(!sync_frame_valid(input,sync_frame_size(input)));input->tick_gates[0].site--;
     input->tick_gates[0].value=256;
     assert(!sync_frame_valid(input,sync_frame_size(input)));input->tick_gates[0].value=1;
+    input->tick_gates[0].site=0x888889;
+    assert(sync_frame_valid(input,sync_frame_size(input)));
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes);
+    assert(sync_frame_decode(output,wire,bytes));
+    assert(output->tick_gates[0].site==0x888889 && output->tick_gates[0].value==1);
+    input->tick_gates[0].value=2;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->tick_gates[0].site=0x8888cd;input->tick_gates[0].value=1;
+    input->tick_gates[0].site=0x889edc;input->tick_gates[0].value=UINT32_MAX;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->tick_gates[0].value==UINT32_MAX);
+    input->tick_gates[0].value=0x14;assert(sync_frame_valid(input,sync_frame_size(input)));
+    input->tick_gates[0].value=0x15;assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->tick_gates[0].site=0x8888cd;input->tick_gates[0].value=1;
     input->tick_gate_reserved=1;
     assert(!sync_frame_valid(input,sync_frame_size(input)));input->tick_gate_reserved=0;
     input->tick_gate_count=SYNC_MAX_TICK_GATES+1;
     assert(!sync_frame_size(input));input->tick_gate_count=2;
+    SyncTickGate saved_tick[2];memcpy(saved_tick,input->tick_gates,sizeof saved_tick);
+    input->tick_gate_count=3;
+    input->tick_gates[0]=(SyncTickGate){.site=0x7b8ae1,.clock=14313,.value=0x12345678};
+    input->tick_gates[1]=(SyncTickGate){.site=0x7b8afd,.clock=14313,.value=0x87654321};
+    input->tick_gates[2]=(SyncTickGate){.site=0x7b8b08,.clock=14313,.value=0x3c23d70a};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->tick_gate_count==3 && !memcmp(output->tick_gates,input->tick_gates,3*sizeof(SyncTickGate)));
+    input->tick_gates[2].value=0xbf800000;assert(sync_frame_valid(input,sync_frame_size(input)));
+    input->tick_gates[2].value=0x7fc00000;assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->tick_gates[2].value=0x3c23d70a;input->tick_gates[1].clock++;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));input->tick_gates[1].clock--;
+    input->tick_gate_count=2;assert(!sync_frame_valid(input,sync_frame_size(input)));
+    memcpy(input->tick_gates,saved_tick,sizeof saved_tick);
     assert(physics_choice_same_source(input->physics_choices,input->physics_choices+1));
     input->physics_choices[1].name_hash[1]^=1;
     assert(!physics_choice_same_source(input->physics_choices,input->physics_choices+1));input->physics_choices[1].name_hash[1]^=1;
     input->physics_choices[0].flags=0x40000000;
     assert(!sync_frame_valid(input,sync_frame_size(input)));input->physics_choices[0].flags=0x40000091;
-    input->physics_choice_reserved=1;
-    assert(!sync_frame_valid(input,sync_frame_size(input)));input->physics_choice_reserved=0;
     input->physics_choice_count=SYNC_MAX_PHYSICS_CHOICES+1;
     assert(sync_frame_size(input)==0);input->physics_choice_count=3;
     input->physics_choices[2].site=0x905f39;
@@ -188,7 +265,7 @@ int main(void) {
     input->reactions[3].range.reach=NAN;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->reactions[3].range.reach=.1f;
-    assert(output->fire_task_gate_count==6 && output->fire_task_gates[0].value==1 && output->fire_task_gates[1].value==0);
+    assert(output->fire_task_gate_count==8 && output->fire_task_gates[0].value==1 && output->fire_task_gates[1].value==0);
     assert(output->fire_task_gates[5].kind==SYNC_ACTOR_FALL_VISIBILITY && output->fire_task_gates[5].value==1);
     assert(output->fire_task_gates[4].kind==SYNC_ACTOR_DEATH_BREAKUP && output->fire_task_gates[4].value==1);
     assert(output->fire_task_gates[3].kind==SYNC_ACTOR_BREAKUP_VISIBILITY && output->fire_task_gates[3].value==1);
@@ -225,6 +302,30 @@ int main(void) {
     input->rts_team_timers[1].remaining[0]=NAN;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->rts_team_timers[1].remaining[0]=1.25f;
+    assert(output->fire_task_gate_count==8 && !memcmp(&output->fire_task_gates[6],&input->fire_task_gates[6],sizeof(SyncFireTaskGate)));
+    SyncFireTaskGate *aim=&input->fire_task_gates[6];
+    const SyncFireTaskGate valid_aim=*aim;
+    aim->aim.remaining=NAN;assert(!sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    aim->aim.minimum=INFINITY;assert(!sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    aim->aim.maximum=-INFINITY;assert(!sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    aim->aim.reserved=1;assert(!sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    aim->aim.task_class=0;assert(!sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    aim->aim.target_slot=SYNC_MAX_ACTORS;assert(!sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    aim->aim.target_generation=0;assert(!sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    aim->aim.target_slot=aim->aim.target_generation=0;assert(sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    aim->value=2;assert(!sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    aim->flags=1;assert(!sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    aim->action=1;assert(!sync_frame_valid(input,sync_frame_size(input)));*aim=valid_aim;
+    assert(!memcmp(&output->fire_task_gates[7],&input->fire_task_gates[7],sizeof(SyncFireTaskGate)));
+    SyncFireTaskGate *competitor=&input->fire_task_gates[7];
+    const SyncFireTaskGate valid_competitor=*competitor;
+    competitor->competitor.delta=NAN;assert(!sync_frame_valid(input,sync_frame_size(input)));*competitor=valid_competitor;
+    competitor->competitor.delta=-.1f;assert(!sync_frame_valid(input,sync_frame_size(input)));*competitor=valid_competitor;
+    competitor->competitor.competitor_class=0;assert(!sync_frame_valid(input,sync_frame_size(input)));*competitor=valid_competitor;
+    for (unsigned i=0;i<12;++i) {competitor->competitor.timers[i]=INFINITY;assert(!sync_frame_valid(input,sync_frame_size(input)));*competitor=valid_competitor;}
+    competitor->value=1;assert(!sync_frame_valid(input,sync_frame_size(input)));*competitor=valid_competitor;
+    input->fire_task_gates[6].storage[sizeof(SyncFireTaskState)]=1;assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->fire_task_gates[6].storage[sizeof(SyncFireTaskState)]=0;
     input->sequence=2;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->sequence=1;
@@ -274,6 +375,9 @@ int main(void) {
     wire[bytes-1]^=1; assert(!sync_frame_decode(output,wire,bytes)); wire[bytes-1]^=1;
     input->tags[0].parent=123; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->tags[0].parent=0;
     input->tags[0].to_generation=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->tags[0].to_generation=8;
+    input->tags[0].from_identity.character=-1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->tags[0].from_identity.character=329;
+    input->tags[0].to_identity.character=4096;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->tags[0].to_identity.character=189;
+    input->tags[0].from_identity.spawn_source=(SyncSpawnSource){0,1};assert(!sync_frame_encode(input,wire,sizeof(*input)));input->tags[0].from_identity.spawn_source=(SyncSpawnSource){1,0};
     input->actors[1].party_slot=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].party_slot=1;
     input->epoch=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->epoch=7;
     input->sequence=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->sequence=1;
@@ -345,6 +449,172 @@ int main(void) {
     input->level=12; input->reactions[0].source_id=1; assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->reactions[0].source_id=0; input->reactions[0].arena_attacker_generation=0;
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    memset(input,0,sizeof(*input));
+    input->epoch=7;input->sequence=3;input->level=6;input->delta=1.0f/60;
+    input->fire_task_gate_count=1;
+    input->fire_task_gates[0]=(SyncFireTaskGate){.slot=5,.generation=25,.character=321,
+        .kind=SYNC_ACTOR_FORCE_VISIBILITY,.value=1,.force={.caster_slot=0,.caster_generation=12,.mode=2,.clock=3307}};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->fire_task_gates[0].force.caster_generation==12 && output->fire_task_gates[0].force.clock==3307);
+    input->fire_task_gates[0].force.caster_generation=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].force.caster_generation=12;
+    input->fire_task_gates[0].force.caster_slot=SYNC_MAX_ACTORS;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].force.caster_slot=0;
+    input->fire_task_gates[0].force.reserved[4]=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].force.reserved[4]=0;
+    input->fire_task_gates[0].value=2;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].value=1;
+    input->fire_task_gates[0]=(SyncFireTaskGate){.slot=5,.generation=25,.character=321,.kind=SYNC_ACTOR_FORCE_GEOMETRY,
+        .force_geometry={.caster_slot=0,.caster_generation=12,.mode=1,.clock=3555,.caster_position={1,2,3},.candidate_position={4,5,6}}};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->fire_task_gates[0].force_geometry.candidate_position[2]==6);
+    input->fire_task_gates[0].force_geometry.caster_position[0]=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].force_geometry.caster_position[0]=1;
+    input->fire_task_gates[0].force_geometry.caster_generation=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].force_geometry.caster_generation=12;
+    input->fire_task_gates[0].force_geometry.reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].force_geometry.reserved=0;
+    input->fire_task_gates[0].storage[sizeof(SyncForceGeometryState)]=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[0]=(SyncFireTaskGate){.slot=0,.generation=12,.character=360,.kind=SYNC_ACTOR_SPELLIT_QUERY,
+        .spellit={.clock=6450,.manager_class=0x1234,.caller_site=0x457f0a,.heading=65535,.position={1,2,3},.limit=1}};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->fire_task_gates[0].spellit.position[2]==3 && output->fire_task_gates[0].spellit.heading==65535);
+    input->fire_task_gates[0].spellit.limit=-1;assert(sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].spellit.limit=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].spellit.limit=1;
+    input->fire_task_gates[0].spellit.heading=65536;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].spellit.heading=0;
+    input->fire_task_gates[0].spellit.position[1]=INFINITY;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].spellit.position[1]=2;
+    input->fire_task_gates[0].spellit.manager_class=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].spellit.manager_class=0x1234;
+    input->fire_task_gates[0].spellit.reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].spellit.reserved=0;
+    input->fire_task_gates[0].storage[sizeof(SyncSpellItQueryState)]=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[0]=(SyncFireTaskGate){.slot=5,.generation=25,.character=321,.kind=SYNC_ACTOR_AIM_BASE,
+        .aim_base={.rng_engine=123,.rng_game=451,.clock=3307,.task_class=0x84e95c,.callback_class=0x123456,.elapsed=1.2f,.remaining=-.01f,.delta=.025f}};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->fire_task_gates[0].aim_base.elapsed==1.2f && output->fire_task_gates[0].aim_base.rng_game==451);
+    input->fire_task_gates[0].aim_base.elapsed=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].aim_base.elapsed=1.2f;
+    input->fire_task_gates[0].aim_base.delta=-.01f;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].aim_base.delta=.025f;
+    input->fire_task_gates[0].aim_base.task_class=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].aim_base.task_class=0x84e95c;
+    input->fire_task_gates[0].aim_base.reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].aim_base.reserved=0;
+    input->fire_task_gates[0]=(SyncFireTaskGate){.slot=0,.generation=12,.character=360,.kind=SYNC_ACTOR_SPELLIT_NODE,
+        .spellit_node={.clock=7885,.gizmo_class=0x1234,.receiver_class=0x820b1c,.resource_name={1,2,3,4},.poi_ordinal=95,.poi_count=500,
+            .poi_name=42,.component_class=0x820fb4,.node_ordinal=0,.gizmo_ordinal=4,.position={3,-.2f,-2}}};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(!memcmp(&input->fire_task_gates[0].spellit_node,&output->fire_task_gates[0].spellit_node,sizeof(SyncSpellItNodeState)));
+    for (unsigned i=0;i<3;++i) {
+        float saved=input->fire_task_gates[0].spellit_node.position[i];
+        input->fire_task_gates[0].spellit_node.position[i]=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+        input->fire_task_gates[0].spellit_node.position[i]=saved;
+    }
+    input->fire_task_gates[0].spellit_node.poi_ordinal=500;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].spellit_node.poi_ordinal=95;
+    input->fire_task_gates[0].spellit_node.reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].spellit_node.reserved=0;
+    input->fire_task_gates[0].flags=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].flags=0;
+    input->fire_task_gates[0].spellit_node.component_class=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].spellit_node.component_class=0x820fb4;
+    input->fire_task_gates[0]=(SyncFireTaskGate){.slot=0,.generation=12,.character=360,.kind=SYNC_ACTOR_CHARACTER_MOTION,
+        .character_motion={.clock=2973,.body_class=0x869f1c,.velocity={-.8f,-.3f,-.2f,1},.rest_counter=6}};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(!memcmp(&input->fire_task_gates[0].character_motion,&output->fire_task_gates[0].character_motion,sizeof(SyncCharacterMotionState)));
+    input->fire_task_gates[0].character_motion.rest_counter=UINT16_MAX;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->fire_task_gates[0].character_motion.rest_counter==UINT16_MAX);
+    input->fire_task_gates[0].character_motion.rest_counter=UINT16_MAX+1u;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[0].character_motion.rest_counter=6;
+    for(unsigned component=0;component<4;++component){
+        const float saved=input->fire_task_gates[0].character_motion.velocity[component];
+        input->fire_task_gates[0].character_motion.velocity[component]=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+        input->fire_task_gates[0].character_motion.velocity[component]=INFINITY;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+        input->fire_task_gates[0].character_motion.velocity[component]=saved;
+    }
+    input->fire_task_gates[0].character_motion.body_class=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].character_motion.body_class=0x869f1c;
+    input->fire_task_gates[0].storage[sizeof(SyncCharacterMotionState)]=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].storage[sizeof(SyncCharacterMotionState)]=0;
+    input->fire_task_gates[0].value=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].value=0;
+    memset(input,0,sizeof(*input));
+    input->epoch=9;input->sequence=1;input->level=7;input->fire_task_gate_count=1;
+    input->fire_task_gates[0]=(SyncFireTaskGate){.slot=6,.generation=18,.character=321,
+        .kind=SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY,.value=1,
+        .script_shoot={.clock=1627,.model_class=0x82141c,.brain_class=0x8324c4,.state_class=0x842b34,
+            .brain_admission=1,.state_flags=1,.argument_count=2,.caller_rva=0x30e29b,.argument_hash={11,22,33,44}}};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(!memcmp(&input->fire_task_gates[0],&output->fire_task_gates[0],sizeof(SyncFireTaskGate)));
+    SyncScriptShootState *script_shoot=&input->fire_task_gates[0].script_shoot;
+    const SyncScriptShootState script_shoot_valid=*script_shoot;
+    input->fire_task_gates[0].value=0;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(!output->fire_task_gates[0].value);
+    input->fire_task_gates[0].value=2;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].value=1;
+    script_shoot->model_class=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    script_shoot->brain_class=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    script_shoot->state_class=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    script_shoot->brain_admission=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    script_shoot->brain_admission=2;assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    script_shoot->state_flags=0x10000;assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    script_shoot->argument_count=SYNC_SCRIPT_SHOOT_MAX_ARGUMENTS+1;assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    script_shoot->initialize=2;assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    script_shoot->caller_rva=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    memset(script_shoot->argument_hash,0,sizeof(script_shoot->argument_hash));assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    script_shoot->reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));*script_shoot=script_shoot_valid;
+    input->fire_task_gates[0].storage[sizeof(SyncScriptShootState)]=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[0].storage[sizeof(SyncScriptShootState)]=0;
+    script_shoot->argument_count=0;script_shoot->initialize=1;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    script_shoot->state_flags=0;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->fire_task_gates[0].script_shoot.initialize==1 && !output->fire_task_gates[0].script_shoot.argument_count);
+    memset(input,0,sizeof(*input));
+    input->epoch=9;input->sequence=1;input->level=7;
+    input->physics_choice_count=1;
+    input->physics_choices[0]=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_MODULE_SEED,.site=0x4da6d0,
+        .module={.clock=8965,.value=3387502361u,.module_id=1969741825,.module_type=516652984,
+            .module_generation=24,.module_class=0x6e6b3c,.burst_min=3,.burst_max=5,
+            .channel_count=1,.weapon=7,.intervals={6,4,.2f}}};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(sizeof(SyncPhysicsModuleInput)==80 && sizeof(SyncPhysicsChoice)==88);
+    assert(!memcmp(input->physics_choices,output->physics_choices,sizeof(SyncPhysicsChoice)));
+    output->physics_choices[0].module.value=4286270884u;
+    assert(physics_choice_same_source(input->physics_choices,output->physics_choices));
+    output->physics_choices[0].module.module_generation++;
+    assert(!physics_choice_same_source(input->physics_choices,output->physics_choices));
+    output->physics_choices[0].module.module_generation--;
+    output->physics_choices[0].module.clock++;
+    assert(!physics_choice_same_source(input->physics_choices,output->physics_choices));
+    SyncPhysicsModuleInput *module=&input->physics_choices[0].module;
+    module->module_id=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));module->module_id=1969741825;
+    module->module_class++;assert(!sync_frame_encode(input,wire,sizeof(*input)));module->module_class--;
+    module->burst_min=5;assert(!sync_frame_encode(input,wire,sizeof(*input)));module->burst_min=3;
+    module->burst_max=256;assert(!sync_frame_encode(input,wire,sizeof(*input)));module->burst_max=5;
+    module->channel_count=4;assert(!sync_frame_encode(input,wire,sizeof(*input)));module->channel_count=1;
+    module->weapon=-129;assert(!sync_frame_encode(input,wire,sizeof(*input)));module->weapon=128;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));module->weapon=-128;
+    assert(sync_frame_encode(input,wire,sizeof(*input)));module->weapon=127;
+    assert(sync_frame_encode(input,wire,sizeof(*input)));module->weapon=7;
+    for(unsigned i=0;i<3;++i){
+        float saved=module->intervals[i];module->intervals[i]=NAN;
+        assert(!sync_frame_encode(input,wire,sizeof(*input)));module->intervals[i]=saved;
+    }
+    for(unsigned i=0;i<7;++i){module->reserved[i]=1;
+        assert(!sync_frame_encode(input,wire,sizeof(*input)));module->reserved[i]=0;}
+    input->physics_choices[0].site++;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->physics_choices[0].site--;
+    module->value=UINT32_MAX;bytes=sync_frame_encode(input,wire,sizeof(*input));
+    assert(bytes && sync_frame_decode(output,wire,bytes) && output->physics_choices[0].module.value==UINT32_MAX);
+    input->physics_choice_count=0;
+    input->projectile_retire_count=2;
+    input->projectile_retires[0]=(SyncProjectileRetireRequest){.id=177,.caller=0x85ba24};
+    input->projectile_retires[1]=(SyncProjectileRetireRequest){.id=23,.caller=0x85ba24};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(bytes==offsetof(SyncFrame,actors)+2*sizeof(SyncProjectileRetireRequest));
+    assert(output->projectile_retire_count==2 &&
+        !memcmp(input->projectile_retires,output->projectile_retires,2*sizeof(SyncProjectileRetireRequest)));
+    memset(output,0,sizeof(*output));sync_frame_copy_valid(output,input);
+    assert(output->projectile_retire_count==2 && output->projectile_retires[1].id==23);
+    assert(!sync_frame_decode(output,wire,bytes-1));
+    input->projectile_retires[1].id=177;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->projectile_retires[1].id=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->projectile_retires[1].id=23;
+    input->projectile_retires[0].caller=0x85b344;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->projectile_retires[0].caller=0x85ba24;
+    input->projectile_retires[0].effects=-1;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->projectile_retires[0].effects=0;
+    input->projectile_retires[0].flags=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->projectile_retires[0].flags=0;
+    input->projectile_retire_count=SYNC_MAX_PROJECTILES+1;assert(!sync_frame_size(input));
+    input->projectile_retire_count=SYNC_MAX_PROJECTILES;
+    for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)
+        input->projectile_retires[i]=(SyncProjectileRetireRequest){.id=i+1,.caller=0x85ba24};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->projectile_retires[SYNC_MAX_PROJECTILES-1].id==SYNC_MAX_PROJECTILES);
+    input->projectile_retire_count=0;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(!output->projectile_retire_count && bytes==offsetof(SyncFrame,actors));
     free(wire); free(output); free(input);
     printf("Protocol %u frame=%zu header=%zu shot=%zu\n",SYNC_PROTOCOL_VERSION,sizeof(SyncFrame),offsetof(SyncFrame,actors),sizeof(SyncShot));
     puts("Combat wire: animation, mixed arrays, shots, projectile state, checksum, bounds and finite values passed");

@@ -4,6 +4,8 @@
 #include "game_state.h"
 #include "../net/lan.h"
 #include "../sync/game_sync.h"
+#include "../sync/preload_state.h"
+#include "../sync/profile_bootstrap_state.h"
 #include <string.h>
 
 static volatile LONG requested = -1;
@@ -15,7 +17,10 @@ static SyncProfile profile_packet;
 static DWORD profile_checked,profile_sent;
 static uint32_t profile_hash;
 static uint32_t profile_epoch;
-static uint32_t received_profile_epoch;
+static ProfileBootstrapHostState initial_profile;
+static ProfileBootstrapClientState received_profile;
+static unsigned char initial_profile_staging[SYNC_PROFILE_BYTES];
+static uint32_t profile_session;
 static int force_requested,force_loading_seen;
 static uint32_t requested_native_entry=1;
 static volatile LONG tick_requested=-1;
@@ -28,6 +33,7 @@ static void host_publication(int current,int playing,int pending);
 __declspec(dllexport) volatile LONG clonewars_transition_in_tick;
 __declspec(dllexport) volatile uint32_t clonewars_transition_context[60];
 __declspec(dllexport) volatile uint32_t clonewars_transition_debug[12];
+__declspec(dllexport) volatile uint32_t clonewars_profile_bootstrap_debug[16];
 
 static int accessible(const void *pointer, SIZE_T bytes) {
     MEMORY_BASIC_INFORMATION info;
@@ -49,10 +55,29 @@ static int is_native_titles(int level) {
     return accessible(titles,0x96) && *(int16_t *)(titles+0x94) == level;
 }
 
+static int native_profile_or_partyless_scene_ready(void) {
+    if (game_native_profile_ready()) return 1;
+    return game_native_scene_input_capability(game_current_level(),*(void **)0xfb4a20)==GAME_SCENE_NO_PARTY_INPUT;
+}
+
 int game_network_level_valid(int level) {
     char *definition = native_level_definition(level);
     char *titles = *(char **)0xfb8414;
     return definition && titles && definition != titles;
+}
+int game_network_world_valid(int level,const void *world) {
+    return game_network_level_valid(level) && accessible(world,0x224) &&
+        *(char *const *)((const char *)world+0x220)==native_level_definition(level);
+}
+int game_network_world_targeted(int level) {
+    int desired=InterlockedCompareExchange(&requested,0,0);
+    return desired<0 || desired==level;
+}
+int game_native_loader_idle(void) {
+    const uint32_t queued=*(volatile uint32_t *)0xeb0d18;
+    const uintptr_t active=*(volatile uintptr_t *)0xeb0d20;
+    MemoryBarrier();
+    return native_jobs_idle(queued,active,*(volatile uint32_t *)0xeb0d18,*(volatile uintptr_t *)0xeb0d20);
 }
 
 int game_actor_count(void) {
@@ -90,8 +115,35 @@ int game_network_level_authorized(int level) {
 static void commit_target(int level,uint32_t serial,int transitioning) {
     if(lan_status()!=LAN_CONNECTED||!lan_is_host()||!game_network_level_valid(level))return;
     if(serial&&(serial!=request_serial||InterlockedCompareExchange(&requested,0,0)!=level))return;
+    const uint32_t session=lan_session_serial(),previous_epoch=game_sync_epoch();
+    const int capture=transitioning || !initial_profile.captured || initial_profile.context.session!=session ||
+        initial_profile.context.epoch!=previous_epoch || initial_profile.context.level!=level;
+    int source_level=-1,source_phase=-1;uint32_t source_clock=0;
+    if(capture){
+        unsigned char *profile=*(unsigned char **)0xfbd8bc;
+        if(!game_native_profile_storage_ready() || !accessible(profile,SYNC_PROFILE_BYTES) ||
+           profile!=*(unsigned char **)0xfbd8bc){lan_publish_ready(0);++clonewars_profile_bootstrap_debug[13];return;}
+        memcpy(initial_profile_staging,profile,SYNC_PROFILE_BYTES);
+        source_level=game_current_level();source_clock=*(uint32_t *)0xfb4b6c;
+        char *root=*(char **)0xfb2e60;
+        if(accessible(root,0x1b7c))source_phase=*(int *)(root+0x1b78);
+    }
     committed_level=level;if(serial)accepted_serial=serial;
     game_sync_poll_epoch(level,transitioning);
+    const ProfileBootstrapContext context={session,game_sync_epoch(),level};
+    if(session!=lan_session_serial() || !profile_bootstrap_context_valid(&context)){lan_publish_ready(0);return;}
+    if(!initial_profile.captured || initial_profile.context.session!=session || initial_profile.context.epoch!=context.epoch || initial_profile.context.level!=level){
+        if(!capture || !profile_bootstrap_host_bind(&initial_profile,&context) ||
+           !profile_bootstrap_host_capture(&initial_profile,&context,initial_profile_staging,SYNC_PROFILE_BYTES,0)){
+            lan_publish_ready(0);++clonewars_profile_bootstrap_debug[13];return;
+        }
+        profile_checked=profile_sent=profile_epoch=profile_hash=0;
+        clonewars_profile_bootstrap_debug[0]=context.epoch;clonewars_profile_bootstrap_debug[1]=level;
+        clonewars_profile_bootstrap_debug[2]=session;clonewars_profile_bootstrap_debug[3]=source_level;
+        clonewars_profile_bootstrap_debug[4]=source_phase;clonewars_profile_bootstrap_debug[5]=source_clock;
+        clonewars_profile_bootstrap_debug[6]=initial_profile.initial.checksum;
+        clonewars_profile_bootstrap_debug[7]=initial_profile.initial.sequence;
+    }
     lan_publish_transition(game_sync_epoch(),level,game_sync_transition_entry());
 }
 static void host_publication(int current,int playing,int pending) {
@@ -102,7 +154,7 @@ static void host_publication(int current,int playing,int pending) {
         return;
     }
     if(game_network_level_valid(pending)){commit_target(pending,0,1);return;}
-    if(playing&&game_native_profile_ready()&&game_network_level_valid(current)){commit_target(current,0,0);return;}
+    if(playing&&native_profile_or_partyless_scene_ready()&&game_network_level_valid(current)){commit_target(current,0,0);return;}
     if(pending<0&&is_native_titles(current)){
         committed_level=-1;accepted_serial=0;game_sync_poll_epoch(-1,0);
         lan_publish_transition(0,-1,0);lan_publish_ready(0);
@@ -112,7 +164,11 @@ static void host_publication(int current,int playing,int pending) {
 int game_load_status(void) { return InterlockedCompareExchange(&load_status,0,0); }
 int game_network_profile_ready(void) {
     int level=game_network_target_level();
-    return game_network_level_authorized(level) && (lan_is_host() || received_profile_epoch==game_sync_epoch());
+    const ProfileBootstrapContext context={lan_session_serial(),game_sync_epoch(),level};
+    if(!game_network_level_authorized(level))return 0;
+    if(lan_is_host())return initial_profile.captured==1 && initial_profile.context.session==context.session &&
+        initial_profile.context.epoch==context.epoch && initial_profile.context.level==level;
+    return profile_bootstrap_client_is_applied(&received_profile,&context);
 }
 
 int game_target_level(void) {
@@ -127,35 +183,65 @@ int game_target_level(void) {
 }
 
 static void poll_profile(void) {
-    if (lan_status()!=LAN_CONNECTED) { profile_hash=0; profile_sent=0; profile_epoch=received_profile_epoch=0; return; }
+    if (lan_status()!=LAN_CONNECTED) {
+        profile_hash=profile_sent=profile_checked=profile_epoch=profile_session=0;
+        profile_bootstrap_host_reset(&initial_profile);profile_bootstrap_client_reset(&received_profile);return;
+    }
+    const uint32_t session=lan_session_serial();
+    if(profile_session!=session){profile_hash=profile_sent=profile_checked=profile_epoch=0;profile_session=session;}
     uint32_t epoch=game_sync_epoch();
     if (!epoch) return;
+    const int level=game_network_target_level();
+    const ProfileBootstrapContext context={session,epoch,level};
+    if(!profile_bootstrap_context_valid(&context)||!game_network_level_authorized(level))return;
     unsigned char *profile=*(unsigned char **)0xfbd8bc;
-    if (!accessible(profile,SYNC_PROFILE_BYTES) || *(uint32_t *)profile!=0x500) return;
+    if (!game_native_profile_storage_ready() || !accessible(profile,SYNC_PROFILE_BYTES)) return;
     if (lan_is_host()) {
         DWORD now=GetTickCount();
         if (now-profile_checked<250) return;
         profile_checked=now;
-        int level=game_network_target_level();
-        if(!game_network_level_authorized(level))return;
-        uint32_t hash=sync_checksum(profile+0x40,SYNC_PROFILE_BYTES-0x40);
+        const SyncProfile *initial=profile_bootstrap_host_initial(&initial_profile,&context);
+        if(!initial)return;
+        const int live=game_sync_scene_ready(level) && game_sync_sequence()>0;
+        const unsigned char *data=live?profile:initial->data;
+        uint32_t hash=sync_checksum(data+0x40,SYNC_PROFILE_BYTES-0x40);
         if (profile_epoch==epoch && profile_sent && hash==profile_hash && now-profile_sent<2000) return;
-        profile_packet.epoch=epoch; profile_packet.sequence=game_sync_sequence(); profile_packet.level=level;
-        memcpy(profile_packet.data,profile,SYNC_PROFILE_BYTES);
+        profile_packet.epoch=epoch; profile_packet.sequence=live?game_sync_sequence():0; profile_packet.level=level;
+        memcpy(profile_packet.data,data,SYNC_PROFILE_BYTES);
         profile_packet.checksum=sync_checksum(profile_packet.data,SYNC_PROFILE_BYTES);
         lan_publish_profile(&profile_packet); profile_hash=hash; profile_sent=now; profile_epoch=epoch;
-    } else if (game_native_profile_ready()) {
+        clonewars_profile_bootstrap_debug[8]=profile_packet.checksum;clonewars_profile_bootstrap_debug[11]=live;
+    } else if (native_profile_or_partyless_scene_ready()) {
+        if(received_profile.context.session!=session || received_profile.context.epoch!=epoch || received_profile.context.level!=level){
+            clonewars_profile_bootstrap_debug[0]=epoch;clonewars_profile_bootstrap_debug[1]=level;
+            clonewars_profile_bootstrap_debug[2]=session;
+            clonewars_profile_bootstrap_debug[10]=clonewars_profile_bootstrap_debug[14]=clonewars_profile_bootstrap_debug[15]=0;
+        }
+        if(!profile_bootstrap_client_bind(&received_profile,&context))return;
+        const int sealed=game_sync_scene_ready(level);
+        if(!profile_bootstrap_client_should_apply(&received_profile,&context,sealed))return;
         uint32_t sequence=game_sync_sequence();
         if (!sequence) sequence=UINT32_MAX;
         if (lan_receive_profile(&profile_packet,sequence) && profile_packet.level==game_network_target_level() &&
-            profile_packet.epoch==game_sync_epoch()) {
+            profile_packet.epoch==game_sync_epoch() &&
+            profile_bootstrap_client_accepts_packet(&received_profile,&context,&profile_packet,sealed)) {
             /* The native save stream writes this pointer-free block verbatim.
                The configuration header remains local; bootstrap uses no save slot. */
             if (memcmp(profile+0x40,profile_packet.data+0x40,SYNC_PROFILE_BYTES-0x40)) {
                 memcpy(profile+0x40,profile_packet.data+0x40,SYNC_PROFILE_BYTES-0x40);
                 ((void (*)(void))0x928f10)();
             }
-            received_profile_epoch=epoch;
+            if(session==lan_session_serial() && epoch==game_sync_epoch() && level==game_network_target_level() &&
+               profile_bootstrap_client_mark_applied(&received_profile,&context)){
+                clonewars_profile_bootstrap_debug[9]=profile_packet.checksum;
+                ++clonewars_profile_bootstrap_debug[10];clonewars_profile_bootstrap_debug[12]=profile_packet.sequence;
+                if(!profile_packet.sequence){
+                    ++clonewars_profile_bootstrap_debug[14];clonewars_profile_bootstrap_debug[6]=profile_packet.checksum;
+                    clonewars_profile_bootstrap_debug[3]=game_current_level();clonewars_profile_bootstrap_debug[5]=*(uint32_t *)0xfb4b6c;
+                    char *root=*(char **)0xfb2e60;
+                    if(accessible(root,0x1b7c))clonewars_profile_bootstrap_debug[4]=*(uint32_t *)(root+0x1b78);
+                }else ++clonewars_profile_bootstrap_debug[15];
+            }
         }
     }
 }
@@ -181,7 +267,7 @@ static void accept_native_transition(int desired,uint32_t serial) {
     InterlockedExchange(&load_status,1);
 }
 static void native_transition(int desired,int stage) {
-    if (desired<0 || InterlockedCompareExchange(&requested,0,0)!=desired || !game_native_profile_ready()) return;
+    if (desired<0 || InterlockedCompareExchange(&requested,0,0)!=desired || !native_profile_or_partyless_scene_ready()) return;
     if(lan_status()==LAN_CONNECTED&&!lan_is_host()&&!game_network_profile_ready())return;
     uint32_t serial=request_serial;
     int pending=*(int *)0xe6e61c;
@@ -235,7 +321,7 @@ static void native_transition(int desired,int stage) {
 }
 void game_native_tick(void) {
     char *root=*(char **)0xfb2e60;
-    if (accessible(root,0x1b7c) && *(int *)(root+0x1b78)==0xe && game_actor_count()>0 && game_native_profile_ready())
+    if (accessible(root,0x1b7c) && *(int *)(root+0x1b78)==0xe && native_profile_or_partyless_scene_ready())
         tick_seen_gameplay=1;
     clonewars_transition_debug[5]=(uint32_t)tick_seen_gameplay;
     clonewars_transition_debug[10]=(uint32_t)initial_request_completed;
@@ -269,6 +355,8 @@ void game_poll(void) {
     int current = game_current_level();
     char *flow_state=*(char **)0xfb2e60;
     int playing=accessible(flow_state,0x1b7c) && *(int *)(flow_state+0x1b78)==0xe;
+    int starting=accessible(flow_state,0x1b7c) && *(int *)(flow_state+0x1b78)==0xd &&
+        game_network_world_valid(current,*(void **)0xfb4a20);
     if (bootstrap_started && lan_status()==LAN_CONNECTED && !*(unsigned char *)0xeb1a74) {
         int device=*(int *)0xeb1a70;
         if (device>=0 && device<14 && *(unsigned char *)(0xead928+device*144)) {
@@ -279,17 +367,20 @@ void game_poll(void) {
     int pending_level=*(int *)0xe6e61c;
     if (lan_status() == LAN_CONNECTED) {
         if (lan_is_host()) {
-            host_publication(current,playing,pending_level);
+            host_publication(current,playing||starting,pending_level);
         } else {
             poll_client_transition(current,playing);
         }
     } else {game_sync_poll_epoch(-1,0);committed_level=-1;accepted_serial=0;}
     poll_profile();
-    lan_publish_ready(game_sync_epoch() && game_network_profile_ready() && playing && game_native_profile_ready() && game_actor_count()>0 &&
+    lan_publish_ready(game_sync_epoch() && game_network_profile_ready() && (playing||starting||game_sync_scene_ready(current)) &&
+                      (game_sync_scene_ready(current)||game_native_loader_idle()) &&
+                      ((game_native_profile_ready() && game_actor_count()>0) ||
+                       game_native_scene_input_capability(current,*(void **)0xfb4a20)==GAME_SCENE_NO_PARTY_INPUT) &&
                       game_network_level_authorized(current) && game_load_status()!=1 && pending_level<0 && !force_requested);
     int desired = InterlockedCompareExchange(&requested,0,0);
     if (desired < 0) return;
-    if (!game_native_profile_ready()) {
+    if (!native_profile_or_partyless_scene_ready()) {
         char *frontend = *(char **)0xfb087c;
         char *storage = *(char **)0xfb0864;
         char *flow = *(char **)0xfb2e60;
@@ -309,7 +400,9 @@ void game_poll(void) {
         return;
     }
     if (force_requested && pending_level==desired) force_loading_seen=1;
-    if (current == desired && pending_level<0 && playing && (!force_requested || force_loading_seen)) {
+    if (current == desired && pending_level<0 &&
+        (playing || (starting && game_sync_scene_initialized(current) && game_native_loader_idle())) &&
+        (!force_requested || force_loading_seen)) {
         commit_target(desired,request_serial,0);
         InterlockedExchange(&requested,-1);
         InterlockedExchange(&load_status,2);
@@ -317,6 +410,11 @@ void game_poll(void) {
         force_requested=force_loading_seen=0;
         initial_request_completed=1;
         capture_transition_context(clonewars_transition_context+40,desired);
+        return;
+    }
+    if (current==desired && pending_level<0 && starting && (!force_requested||force_loading_seen)) {
+        if(lan_status()==LAN_CONNECTED&&lan_is_host()&&accepted_serial!=request_serial)
+            commit_target(desired,request_serial,force_requested);
         return;
     }
     if (last_requested == desired && GetTickCount()-last_attempt < 3000) return;

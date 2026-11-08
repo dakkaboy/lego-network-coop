@@ -24,13 +24,14 @@ int sync_profile_valid(const SyncProfile *profile) {
 }
 
 uint32_t sync_frame_size(const SyncFrame *frame) {
-    if (frame->physics_choice_count>SYNC_MAX_PHYSICS_CHOICES || frame->tick_gate_count>SYNC_MAX_TICK_GATES) return 0;
+    if (frame->physics_choice_count>SYNC_MAX_PHYSICS_CHOICES || frame->tick_gate_count>SYNC_MAX_TICK_GATES ||
+        frame->projectile_retire_count>SYNC_MAX_PROJECTILES) return 0;
     if (frame->spawn_timer_count>SYNC_MAX_SPAWN_TIMERS || frame->fire_task_gate_count>SYNC_MAX_ACTORS ||
         frame->rts_team_timer_count>SYNC_MAX_RTS_TEAMS || frame->spawn_timer_choice_count>SYNC_MAX_SPAWN_TIMER_CHOICES) return 0;
     if (frame->actor_count>SYNC_MAX_ACTORS || frame->variable_count>SYNC_MAX_VARIABLES ||
         frame->shot_count>SYNC_MAX_SHOTS || frame->projectile_count>SYNC_MAX_PROJECTILES || frame->tag_count>SYNC_MAX_TAGS || frame->actor_input_count>SYNC_MAX_ACTORS || frame->cadence_count>SYNC_MAX_ACTORS || frame->geometry_count>SYNC_MAX_ACTORS || frame->geometry_calls>64 || frame->reaction_count>SYNC_MAX_ACTORS || frame->model_input_count>SYNC_MAX_ACTORS) return 0;
     return (uint32_t)offsetof(SyncFrame,actors) + frame->actor_count*sizeof(SyncActor) + frame->variable_count*sizeof(SyncVariable) +
-           frame->shot_count*sizeof(SyncShot) + frame->projectile_count*sizeof(SyncProjectile) + frame->tag_count*sizeof(SyncTag) + frame->actor_input_count*sizeof(SyncActorInput) + frame->cadence_count*sizeof(SyncCadence) + frame->geometry_count*sizeof(SyncCollider) + frame->reaction_count*sizeof(SyncReactionChoice) + frame->model_input_count*sizeof(SyncModelInput) + frame->spawn_timer_count*sizeof(SyncSpawnTimer) + frame->fire_task_gate_count*sizeof(SyncFireTaskGate) + frame->rts_team_timer_count*sizeof(SyncRtsTeamTimers) + frame->spawn_timer_choice_count*sizeof(SyncSpawnTimerChoice) + frame->physics_choice_count*sizeof(SyncPhysicsChoice) + frame->tick_gate_count*sizeof(SyncTickGate);
+           frame->shot_count*sizeof(SyncShot) + frame->projectile_count*sizeof(SyncProjectile) + frame->tag_count*sizeof(SyncTag) + frame->actor_input_count*sizeof(SyncActorInput) + frame->cadence_count*sizeof(SyncCadence) + frame->geometry_count*sizeof(SyncCollider) + frame->reaction_count*sizeof(SyncReactionChoice) + frame->model_input_count*sizeof(SyncModelInput) + frame->spawn_timer_count*sizeof(SyncSpawnTimer) + frame->fire_task_gate_count*sizeof(SyncFireTaskGate) + frame->rts_team_timer_count*sizeof(SyncRtsTeamTimers) + frame->spawn_timer_choice_count*sizeof(SyncSpawnTimerChoice) + frame->physics_choice_count*sizeof(SyncPhysicsChoice) + frame->tick_gate_count*sizeof(SyncTickGate) + frame->projectile_retire_count*sizeof(SyncProjectileRetireRequest);
 }
 
 static bool spawn_source_valid(SyncSpawnSource source) {
@@ -42,9 +43,13 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
         bytes != sync_frame_size(frame) || (frame->native_span_plan & ~SYNC_NATIVE_SPAN_PLAN_MASK) || (frame->native_span_calls & ~SYNC_NATIVE_SPAN_CALLS_MASK) || !frame->epoch || !frame->sequence || frame->level < 0 || frame->level >= 4096 ||
         !isfinite(frame->delta) || frame->delta < 0 || frame->delta > 0.1f ||
         !isfinite(frame->engine_delta) || frame->engine_delta<0 || frame->engine_delta>.1f || frame->engine_mode>16 || frame->world_calls>64 || frame->tick_calls>64 || frame->combat_ready>1 || frame->actor_input_reserved || frame->cadence_reserved || frame->reaction_reserved || frame->model_input_reserved || frame->actor_input_count>SYNC_MAX_ACTORS || frame->cadence_count>SYNC_MAX_ACTORS || frame->geometry_count>SYNC_MAX_ACTORS || frame->geometry_calls>64 || frame->reaction_count>SYNC_MAX_ACTORS || frame->model_input_count>SYNC_MAX_ACTORS) return 0;
-    if (frame->physics_choice_reserved || frame->tick_gate_reserved) return 0;
-    for (uint32_t i=0;i<frame->tick_gate_count;++i)
-        if (!native_tick_gate_valid(frame->tick_gates+i)) return 0;
+    if (frame->tick_gate_reserved) return 0;
+    for (uint32_t i=0;i<frame->projectile_retire_count;++i) {
+        const SyncProjectileRetireRequest &request=frame->projectile_retires[i];
+        if (!request.id || request.flags || request.effects || request.caller!=0x85ba24) return 0;
+        for (uint32_t j=0;j<i;++j) if (frame->projectile_retires[j].id==request.id) return 0;
+    }
+    if (!native_tick_stream_valid(frame->tick_gates,frame->tick_gate_count)) return 0;
     for (uint32_t i=0;i<frame->physics_choice_count;++i)
         if (!physics_choice_valid(frame->physics_choices+i)) return 0;
     if (frame->spawn_timer_reserved || frame->fire_task_gate_reserved ||
@@ -79,6 +84,10 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
     for (uint32_t i=0;i<frame->fire_task_gate_count;++i) {
         const SyncFireTaskGate &gate=frame->fire_task_gates[i];
         if (!spawn_source_valid(gate.spawn_source) || gate.slot>=SYNC_MAX_ACTORS || !gate.generation || gate.character<0 || gate.character>=4096) return 0;
+        if (gate.kind!=SYNC_ACTOR_RTS_COMPETITOR) {
+            const unsigned used=gate.kind==SYNC_ACTOR_FORCE_GEOMETRY ? sizeof(SyncForceGeometryState) : gate.kind==SYNC_ACTOR_CHARACTER_MOTION ? sizeof(SyncCharacterMotionState) : gate.kind==SYNC_ACTOR_SPELLIT_NODE ? sizeof(SyncSpellItNodeState) : gate.kind==SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY ? sizeof(SyncScriptShootState) : sizeof(SyncFireTaskState);
+            for (unsigned offset=used;offset<sizeof(gate.storage);++offset) if (gate.storage[offset]) return 0;
+        }
         switch (gate.kind) {
         case SYNC_FIRE_TASK_VISIBILITY:
             if (!(gate.flags&SYNC_FIRE_TASK_QUEUES_SHOT) || gate.value<0 || gate.value>1) return 0;
@@ -95,6 +104,53 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
         case SYNC_ACTOR_FALL_VISIBILITY:
             if (gate.flags || gate.action || gate.value<0 || gate.value>1) return 0;
             { const SyncFireTaskState empty={}; if (memcmp(&gate.state,&empty,sizeof(empty))) return 0; }
+            break;
+        case SYNC_ACTOR_AIM_BASE:
+            if (gate.flags || gate.action || gate.value || !gate.aim_base.task_class || gate.aim_base.reserved ||
+                !isfinite(gate.aim_base.elapsed) || !isfinite(gate.aim_base.remaining) || !isfinite(gate.aim_base.delta) || gate.aim_base.delta<0) return 0;
+            break;
+        case SYNC_ACTOR_FORCE_VISIBILITY:
+            if (gate.flags || gate.action || gate.value<0 || gate.value>1 || gate.force.caster_slot>=SYNC_MAX_ACTORS || !gate.force.caster_generation) return 0;
+            for (uint32_t reserved : gate.force.reserved) if (reserved) return 0;
+            break;
+        case SYNC_ACTOR_FORCE_GEOMETRY:
+            if (gate.flags || gate.action || gate.value || gate.force_geometry.caster_slot>=SYNC_MAX_ACTORS ||
+                !gate.force_geometry.caster_generation || gate.force_geometry.reserved) return 0;
+            for (float value : gate.force_geometry.caster_position) if (!isfinite(value)) return 0;
+            for (float value : gate.force_geometry.candidate_position) if (!isfinite(value)) return 0;
+            break;
+        case SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY:
+            if (gate.flags || gate.action || gate.value<0 || gate.value>1 || !gate.script_shoot.model_class ||
+                !gate.script_shoot.brain_class || !gate.script_shoot.state_class || gate.script_shoot.brain_admission!=1 ||
+                gate.script_shoot.state_flags>UINT16_MAX || gate.script_shoot.argument_count>SYNC_SCRIPT_SHOOT_MAX_ARGUMENTS ||
+                gate.script_shoot.initialize>1 || (gate.script_shoot.initialize && gate.script_shoot.state_flags) ||
+                !gate.script_shoot.caller_rva || gate.script_shoot.reserved ||
+                !(gate.script_shoot.argument_hash[0]|gate.script_shoot.argument_hash[1]|gate.script_shoot.argument_hash[2]|gate.script_shoot.argument_hash[3])) return 0;
+            break;
+        case SYNC_ACTOR_CHARACTER_MOTION:
+            if (gate.flags || gate.action || gate.value || !gate.character_motion.body_class || gate.character_motion.rest_counter>UINT16_MAX) return 0;
+            for (float value : gate.character_motion.velocity) if (!isfinite(value)) return 0;
+            break;
+        case SYNC_ACTOR_SPELLIT_NODE:
+            if (gate.flags || gate.action || gate.value || gate.spellit_node.reserved || !gate.spellit_node.gizmo_class ||
+                !gate.spellit_node.receiver_class || !(gate.spellit_node.resource_name[0]|gate.spellit_node.resource_name[1]|gate.spellit_node.resource_name[2]|gate.spellit_node.resource_name[3]) ||
+                !gate.spellit_node.poi_count || gate.spellit_node.poi_count>65536 || gate.spellit_node.poi_ordinal>=gate.spellit_node.poi_count ||
+                !gate.spellit_node.poi_name || !gate.spellit_node.component_class || gate.spellit_node.node_ordinal>=65536 || gate.spellit_node.gizmo_ordinal>=65536) return 0;
+            for (float value : gate.spellit_node.position) if (!isfinite(value)) return 0;
+            break;
+        case SYNC_ACTOR_SPELLIT_QUERY:
+            if (gate.flags || gate.action || gate.value || !gate.spellit.manager_class || !gate.spellit.caller_site ||
+                gate.spellit.heading>65535 || gate.spellit.reserved || !isfinite(gate.spellit.limit)) return 0;
+            for (float value : gate.spellit.position) if (!isfinite(value)) return 0;
+            break;
+        case SYNC_ACTOR_RTS_COMPETITOR:
+            if (gate.flags || gate.action || gate.value || !gate.competitor.competitor_class || !isfinite(gate.competitor.delta) || gate.competitor.delta<0) return 0;
+            for (float timer : gate.competitor.timers) if (!isfinite(timer)) return 0;
+            break;
+        case SYNC_ACTOR_AIM_TASK:
+            if (gate.flags || gate.action || gate.value<0 || gate.value>1 || gate.aim.reserved || !gate.aim.task_class ||
+                (gate.aim.target_generation ? gate.aim.target_slot>=SYNC_MAX_ACTORS : gate.aim.target_slot!=0) ||
+                !isfinite(gate.aim.remaining) || !isfinite(gate.aim.minimum) || !isfinite(gate.aim.maximum)) return 0;
             break;
         default: return 0;
         }
@@ -175,6 +231,9 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
         const SyncTag *tag=frame->tags+i;
         if (!tag->id || tag->from<0 || tag->from>=SYNC_MAX_ACTORS || tag->to<0 || tag->to>=SYNC_MAX_ACTORS ||
             tag->from==tag->to || !tag->from_generation || !tag->to_generation || tag->phase>1 ||
+            tag->from_identity.character<0 || tag->from_identity.character>=4096 ||
+            tag->to_identity.character<0 || tag->to_identity.character>=4096 ||
+            !spawn_source_valid(tag->from_identity.spawn_source) || !spawn_source_valid(tag->to_identity.spawn_source) ||
             !isfinite(tag->delta) || tag->delta<0 || tag->delta>.1f || (i && tag->id<=frame->tags[i-1].id)) return 0;
         if (tag->parent) {
             int found=0;
@@ -235,6 +294,7 @@ void sync_frame_copy_valid(SyncFrame *destination, const SyncFrame *source) {
     copy(destination->spawn_timer_choices, source->spawn_timer_choices, source->spawn_timer_choice_count);
     copy(destination->physics_choices, source->physics_choices, source->physics_choice_count);
     copy(destination->tick_gates, source->tick_gates, source->tick_gate_count);
+    copy(destination->projectile_retires, source->projectile_retires, source->projectile_retire_count);
 }
 
 uint32_t sync_frame_encode(const SyncFrame *frame,void *buffer,uint32_t capacity) {
@@ -266,6 +326,8 @@ uint32_t sync_frame_encode(const SyncFrame *frame,void *buffer,uint32_t capacity
     memcpy(wire+tail,frame->physics_choices,frame->physics_choice_count*sizeof(SyncPhysicsChoice));
     tail+=frame->physics_choice_count*sizeof(SyncPhysicsChoice);
     memcpy(wire+tail,frame->tick_gates,frame->tick_gate_count*sizeof(SyncTickGate));
+    tail+=frame->tick_gate_count*sizeof(SyncTickGate);
+    memcpy(wire+tail,frame->projectile_retires,frame->projectile_retire_count*sizeof(SyncProjectileRetireRequest));
     uint32_t checksum=frame_checksum(wire,bytes);
     memcpy(wire+offsetof(SyncFrame,checksum),&checksum,4);
     return bytes;
@@ -300,5 +362,7 @@ int sync_frame_decode(SyncFrame *frame,const void *buffer,uint32_t bytes) {
     memcpy(frame->physics_choices,wire+tail,frame->physics_choice_count*sizeof(SyncPhysicsChoice));
     tail+=frame->physics_choice_count*sizeof(SyncPhysicsChoice);
     memcpy(frame->tick_gates,wire+tail,frame->tick_gate_count*sizeof(SyncTickGate));
+    tail+=frame->tick_gate_count*sizeof(SyncTickGate);
+    memcpy(frame->projectile_retires,wire+tail,frame->projectile_retire_count*sizeof(SyncProjectileRetireRequest));
     return sync_frame_valid(frame,bytes);
 }

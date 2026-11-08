@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <math.h>
 #include "lan.h"
+#include "../sync/preload_state.h"
 #ifndef CLONEWARS_LAN_PORT
 #define CLONEWARS_LAN_PORT 32510
 #endif
@@ -29,7 +30,7 @@ static const unsigned char hello[] = {
 
 struct Request { int host; LONG generation; char address[64]; };
 
-struct PeerState { uint32_t epoch; int32_t level, ready; SyncInput input; SyncLoading loading; uint32_t auto_skip,ack,native_entry; };
+struct PeerState { uint32_t epoch; int32_t level, ready; SyncInput input; SyncLoading loading; uint32_t auto_skip,ack,native_entry; SyncPreloadInput preload; SyncPreloadReceipt preload_receipt; uint32_t preload_seal; SyncWorldReady world_ready; };
 struct Header { uint32_t magic, kind, size; };
 static INIT_ONCE queue_once = INIT_ONCE_STATIC_INIT;
 static CRITICAL_SECTION queue_lock,session_worker_lock;
@@ -37,8 +38,8 @@ static SyncFrame outbound[SYNC_QUEUE_SIZE], inbound[SYNC_QUEUE_SIZE];
 static unsigned out_head, out_count, in_head, in_count;
 static SyncProfile own_profile, peer_profile;
 static int own_profile_pending, peer_profile_pending;
-static struct PeerState local_state = {.level=-1,.input={.analog_x=128,.analog_y=128,.aim_x=128,.aim_y=128},.loading={.level=-1}};
-static struct PeerState peer_state = {.level=-1,.input={.analog_x=128,.analog_y=128,.aim_x=128,.aim_y=128},.loading={.level=-1}};
+static struct PeerState local_state = {.level=-1,.input={.analog_x=128,.analog_y=128,.aim_x=128,.aim_y=128},.loading={.level=-1},.preload={.level=-1},.world_ready={.level=-1}};
+static struct PeerState peer_state = {.level=-1,.input={.analog_x=128,.analog_y=128,.aim_x=128,.aim_y=128},.loading={.level=-1},.preload={.level=-1},.world_ready={.level=-1}};
 static BOOL CALLBACK init_queue(PINIT_ONCE once, PVOID param, PVOID *context) {
     (void)once; (void)param; (void)context;
     InitializeCriticalSection(&queue_lock);
@@ -54,11 +55,17 @@ void lan_clear_frames(void) {
     out_head=out_count=in_head=in_count=0;
     LeaveCriticalSection(&queue_lock);
 }
+static void reset_preload_locked(void) {
+    local_state.preload=(SyncPreloadInput){.level=-1};
+    local_state.preload_receipt=(SyncPreloadReceipt){0};local_state.preload_seal=0;
+    local_state.world_ready=(SyncWorldReady){.level=-1};
+}
 static void publish_epoch_locked(uint32_t epoch) {
     if (local_state.epoch!=epoch) {
         local_state.epoch=epoch;local_state.ack=0;local_state.ready=0;
         local_state.input=(SyncInput){0,0,128,128,128,128};
         local_state.loading=(SyncLoading){.epoch=epoch,.level=-1};
+        reset_preload_locked();
         if(lan_is_host())out_head=out_count=0;
     }
 }
@@ -70,6 +77,7 @@ void lan_publish_transition(uint32_t epoch,int level,uint32_t native_entry) {
     lock_queue();
     if(local_state.epoch!=epoch||local_state.level!=level)local_state.native_entry=native_entry;
     publish_epoch_locked(epoch);
+    if(local_state.level!=level)reset_preload_locked();
     local_state.level=level;InterlockedExchange(&local_level,level);
     LeaveCriticalSection(&queue_lock);
 }
@@ -109,6 +117,81 @@ void lan_publish_ready(int actors) {
 }
 int lan_peer_ready(void) {
     lock_queue(); int value=peer_state.ready && local_state.epoch && peer_state.epoch==local_state.epoch; LeaveCriticalSection(&queue_lock); return value;
+}
+void lan_invalidate_world_ready(void) {
+    lock_queue();local_state.world_ready=(SyncWorldReady){.level=-1};LeaveCriticalSection(&queue_lock);
+}
+int lan_publish_world_ready(const SyncWorldReady *ready) {
+    if (!preload_world_ready_valid(ready) || !ready->epoch) return 0;
+    lock_queue();
+    int accepted=status==LAN_CONNECTED && local_state.epoch==ready->epoch && local_state.level==ready->level;
+    if(accepted)local_state.world_ready=*ready;
+    LeaveCriticalSection(&queue_lock);return accepted;
+}
+int lan_remote_world_ready(uint32_t epoch,int level,SyncWorldReady *ready) {
+    if(!ready)return 0;
+    lock_queue();
+    int accepted=status==LAN_CONNECTED && peer_state.epoch==epoch && peer_state.level==level &&
+        preload_world_ready_valid(&peer_state.world_ready) && peer_state.world_ready.epoch==epoch && peer_state.world_ready.level==level;
+    if(accepted)*ready=peer_state.world_ready;
+    LeaveCriticalSection(&queue_lock);return accepted;
+}
+int lan_publish_preload(const SyncPreloadInput *input) {
+    if (!input || !input->epoch || !preload_input_valid(input)) return 0;
+    lock_queue();
+    int accepted=lan_is_host() && status==LAN_CONNECTED && local_state.epoch==input->epoch && local_state.level==input->level &&
+        peer_state.epoch==input->epoch && peer_state.level==input->level &&
+        preload_world_ready_matches(&local_state.world_ready,&peer_state.world_ready) &&
+        local_state.world_ready.epoch==input->epoch && local_state.world_ready.level==input->level &&
+        local_state.world_ready.completed_serial!=UINT32_MAX && local_state.world_ready.completed_serial+1==input->serial &&
+        local_state.world_ready.root_phase==input->root_phase;
+    if (accepted) local_state.preload=*input;
+    LeaveCriticalSection(&queue_lock);return accepted;
+}
+int lan_receive_preload(uint32_t epoch,int level,SyncPreloadInput *input) {
+    if (!input) return 0;
+    lock_queue();
+    int accepted=!lan_is_host() && status==LAN_CONNECTED && peer_state.epoch==epoch &&
+        peer_state.preload.epoch==epoch && peer_state.preload.level==level && preload_input_valid(&peer_state.preload) &&
+        local_state.world_ready.epoch==epoch && local_state.world_ready.level==level &&
+        local_state.world_ready.completed_serial!=UINT32_MAX && local_state.world_ready.completed_serial+1==peer_state.preload.serial &&
+        local_state.world_ready.root_phase==peer_state.preload.root_phase;
+    if (accepted) *input=peer_state.preload;
+    LeaveCriticalSection(&queue_lock);return accepted;
+}
+int lan_publish_preload_receipt(uint32_t epoch,int level,const SyncPreloadReceipt *receipt) {
+    if(!preload_receipt_valid(receipt)||!receipt->serial)return 0;
+    lock_queue();
+    const SyncPreloadInput *source=lan_is_host()?&local_state.preload:&peer_state.preload;
+    int accepted=status==LAN_CONNECTED&&local_state.epoch==epoch&&local_state.level==level&&
+        source->epoch==epoch&&source->level==level&&source->serial==receipt->serial;
+    if(accepted)local_state.preload_receipt=*receipt;
+    LeaveCriticalSection(&queue_lock);return accepted;
+}
+int lan_remote_preload_receipt(uint32_t epoch,int level,SyncPreloadReceipt *receipt) {
+    if(!receipt)return 0;
+    lock_queue();
+    int accepted=status==LAN_CONNECTED&&peer_state.epoch==epoch&&peer_state.level==level&&preload_receipt_valid(&peer_state.preload_receipt);
+    if(accepted)*receipt=peer_state.preload_receipt;
+    LeaveCriticalSection(&queue_lock);return accepted;
+}
+int lan_publish_preload_seal(uint32_t epoch,int level,uint32_t serial) {
+    if(!serial)return 0;
+    lock_queue();
+    int accepted=lan_is_host()&&status==LAN_CONNECTED&&local_state.epoch==epoch&&local_state.level==level&&peer_state.epoch==epoch&&peer_state.level==level&&
+        local_state.preload_receipt.serial==serial&&peer_state.preload_receipt.serial==serial&&
+        local_state.preload_receipt.world_calls==peer_state.preload_receipt.world_calls&&
+        local_state.preload_receipt.end_phase==peer_state.preload_receipt.end_phase&&
+        preload_world_ready_matches(&local_state.world_ready,&peer_state.world_ready)&&
+        local_state.world_ready.completed_serial==serial&&
+        local_state.preload_receipt.end_phase==local_state.world_ready.root_phase&&
+        (local_state.world_ready.root_phase==0xd||local_state.world_ready.root_phase==0xe);
+    if(accepted)local_state.preload_seal=serial;
+    LeaveCriticalSection(&queue_lock);return accepted;
+}
+uint32_t lan_remote_preload_seal(uint32_t epoch,int level) {
+    lock_queue();uint32_t serial=status==LAN_CONNECTED&&peer_state.epoch==epoch&&peer_state.level==level?peer_state.preload_seal:0;
+    LeaveCriticalSection(&queue_lock);return serial;
 }
 void lan_publish_input(const SyncInput *input) {
     lock_queue();
@@ -304,7 +387,11 @@ static int exchange_packets(SOCKET socket, LONG ticket,int is_host) {
             if (peer.level < -1 || peer.level >= 4096 || peer.native_entry>1 || (peer.ready != 0 && peer.ready != 1) ||
                 peer.loading.level < -1 || peer.loading.level >= 4096 || peer.loading.ready>1 ||
                 peer.loading.skip>1 || peer.loading.active>1 || peer.auto_skip>1 ||
-                !isfinite(peer.loading.elapsed) || peer.loading.elapsed<0 || peer.loading.elapsed>86400) {
+                !isfinite(peer.loading.elapsed) || peer.loading.elapsed<0 || peer.loading.elapsed>86400 ||
+                !preload_input_valid(&peer.preload) || !preload_receipt_valid(&peer.preload_receipt) || !preload_world_ready_valid(&peer.world_ready) ||
+                (peer.world_ready.epoch && (peer.world_ready.epoch!=peer.epoch || peer.world_ready.level!=peer.level)) ||
+                (peer.preload_seal && peer.preload_seal!=peer.preload_receipt.serial) ||
+                (peer.preload.epoch && (peer.preload.epoch!=peer.epoch || peer.preload.level!=peer.level))) {
                 WSASetLastError(WSAEINVAL); success=0; break;
             }
             if(!session_peer(ticket,&peer))break;
@@ -416,6 +503,8 @@ void lan_start(int host, const char *address) {
     if(!ticket){InterlockedExchange(&status,LAN_FAILED);LeaveCriticalSection(&queue_lock);return;}
     out_head=out_count=in_head=in_count=0;
     memset(&local_state,0,sizeof(local_state)); memset(&peer_state,0,sizeof(peer_state));
+    local_state.preload.level=peer_state.preload.level=-1;
+    local_state.world_ready.level=peer_state.world_ready.level=-1;
     own_profile_pending=peer_profile_pending=0;
     local_state.level=peer_state.level=-1;
     local_state.loading.level=peer_state.loading.level=-1;
@@ -454,6 +543,6 @@ long lan_status(void) { return InterlockedCompareExchange(&status, 0, 0); }
 long lan_error(void) { return InterlockedCompareExchange(&error_code, 0, 0); }
 int lan_is_host(void) { return InterlockedCompareExchange(&host_role,0,0) != 0; }
 void lan_publish_level(int level) {
-    if(level>=-1&&level<4096){lock_queue();local_state.level=level;InterlockedExchange(&local_level,level);LeaveCriticalSection(&queue_lock);}
+    if(level>=-1&&level<4096){lock_queue();if(local_state.level!=level)reset_preload_locked();local_state.level=level;InterlockedExchange(&local_level,level);LeaveCriticalSection(&queue_lock);}
 }
 int lan_remote_level(void) { return InterlockedCompareExchange(&remote_level,0,0); }

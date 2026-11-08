@@ -1,9 +1,12 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cstdint>
+#include <cstddef>
 #include <cstring>
 #include "physics_input_sync.h"
 #include "../engine/breakup_launch_thunk.h"
+#include "spellit_input_sync.h"
+#include "module_rng_input_sync.h"
 extern "C" {
 #include "geometry_sync.h"
 #include "game_sync.h"
@@ -12,6 +15,8 @@ extern "C" {
 }
 
 namespace {
+static_assert(sizeof(SyncPhysicsWorldInput)==sizeof(SyncPhysicsModuleInput) &&
+    offsetof(SyncPhysicsWorldInput,value)==offsetof(SyncPhysicsModuleInput,value));
 using NativeSpin = uint32_t (__cdecl *)(void *);
 NativeSpin originals[2];
 SyncFrame *frame;
@@ -51,8 +56,10 @@ int fail(unsigned reason,const SyncPhysicsChoice *local=nullptr,const SyncPhysic
     if (!clonewars_physics_input_failure[0]) {
         const uint32_t values[]={frame->epoch,frame->sequence,cursor,reason,
             local?local->kind:0,expected?expected->kind:0,
-            local?local->name_hash[0]:0,expected?expected->name_hash[0]:0,
-            local?local->clock:0,expected?expected->clock:0,
+            local?(local->kind>=SYNC_PHYSICS_SPELLIT_SEED?local->world.source_name[0]:local->name_hash[0]):0,
+            expected?(expected->kind>=SYNC_PHYSICS_SPELLIT_SEED?expected->world.source_name[0]:expected->name_hash[0]):0,
+            local?(local->kind>=SYNC_PHYSICS_SPELLIT_SEED?local->world.clock:local->clock):0,
+            expected?(expected->kind>=SYNC_PHYSICS_SPELLIT_SEED?expected->world.clock:expected->clock):0,
             local?local->site:0,expected?expected->site:0};
         std::memcpy(const_cast<uint32_t *>(clonewars_physics_input_failure),values,sizeof(values));
     }
@@ -177,7 +184,7 @@ int physics_input_begin(SyncFrame *next,int authority) {
         !coherent_frame_valid(&current.cohort,COHERENT_PHASE_BIT(COHERENT_PREPARE))) return 0;
     frame=next;lease=current;cursor=0;host=authority!=0;failed=false;active=true;
     clonewars_physics_input_debug[5]=reinterpret_cast<uintptr_t>(frame);
-    if (host) frame->physics_choice_count=frame->physics_choice_reserved=0;
+    if (host) frame->physics_choice_count=0;
     if (last_epoch!=frame->epoch) {
         std::memset(const_cast<uint32_t *>(clonewars_physics_input_failure),0,sizeof(clonewars_physics_input_failure));
         std::memset(const_cast<uint32_t *>(clonewars_breakup_launch_correction),0,sizeof(clonewars_breakup_launch_correction));
@@ -191,6 +198,39 @@ int physics_input_finish(void) {
     const bool ok=!failed;active=false;return ok;
 }
 void physics_input_cancel(void) {active=false;frame=nullptr;}
+static int physics_source_input(SyncPhysicsChoice *choice,const CoherentFrameToken *token) {
+    if (!active) return 0;
+    if (!token || !live() || failed || !module_cohort_same(token,&lease.cohort) ||
+        !coherent_frame_valid(token,COHERENT_PHASE_BIT(COHERENT_DISPATCH))) return -1;
+    if (!choice || !physics_choice_valid(choice)) {fail(5,choice);return -1;}
+    if (host) {
+        if (frame->physics_choice_count>=SYNC_MAX_PHYSICS_CHOICES) {fail(2,choice);return -1;}
+        frame->physics_choices[frame->physics_choice_count++]=*choice;++clonewars_physics_input_debug[0];
+    } else {
+        const auto *expected=cursor<frame->physics_choice_count?frame->physics_choices+cursor:nullptr;
+        if (!expected || !physics_choice_same_source(expected,choice)) {fail(6,choice,expected);return -1;}
+        if (choice->kind==SYNC_PHYSICS_MODULE_SEED) choice->module.value=expected->module.value;
+        else choice->world.value=expected->world.value;
+        ++cursor;++clonewars_physics_input_debug[1];
+    }
+    return live()?1:-1;
+}
+int physics_world_input(SyncPhysicsChoice *choice,const CoherentFrameToken *token) {
+    if (!active) return 0;
+    if (!choice || choice->kind<SYNC_PHYSICS_SPELLIT_SEED || choice->kind>SYNC_PHYSICS_SPELLIT_ENABLED) {
+        if (live()) fail(5,choice);
+        return -1;
+    }
+    return physics_source_input(choice,token);
+}
+int physics_module_input(SyncPhysicsChoice *choice,const CoherentFrameToken *token) {
+    if (!active) return 0;
+    if (!choice || choice->kind!=SYNC_PHYSICS_MODULE_SEED) {
+        if (live()) fail(5,choice);
+        return -1;
+    }
+    return physics_source_input(choice,token);
+}
 int physics_input_install(void) {
     auto *launch=reinterpret_cast<unsigned char *>(0x905f33);
     const unsigned char launch_bytes[]={0xe8,0xb8,0x0b,0x06,0x00};
@@ -200,6 +240,8 @@ int physics_input_install(void) {
     void *hooks[]={reinterpret_cast<void *>(axis_hook),reinterpret_cast<void *>(rotation_hook)};
     for (unsigned i=0;i<2;++i)
         if (!readable(reinterpret_cast<void *>(addresses[i]),6) || std::memcmp(reinterpret_cast<void *>(addresses[i]),bytes[i],6)) return 0;
+    if (!spellit_input_install()) return 0;
+    if (!module_rng_input_install()) return 0;
     for (unsigned i=0;i<2;++i) {
         auto *bridge=static_cast<unsigned char *>(VirtualAlloc(nullptr,11,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
         if (!bridge) return 0;

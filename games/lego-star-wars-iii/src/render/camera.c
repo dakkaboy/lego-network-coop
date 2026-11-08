@@ -598,7 +598,8 @@ static void focus_camera(char *parent) {
             forget_camera_focus();
         return;
     }
-    if (!personal_camera_allowed(parent)) { release_camera_focus(); return; }
+    char *views[2],*targets[2];
+    if (!personal_camera_allowed(parent) || !camera_order_pair(parent,views,targets)) { release_camera_focus(); return; }
     uintptr_t state=*(uintptr_t *)(parent+0x1c);
     if (focus_manager && (focus_manager!=parent || state!=0xe62090)) release_camera_focus();
     if (state==0xe62070) {
@@ -623,7 +624,8 @@ static void __attribute__((fastcall)) update_hook(void *state, void *unused, voi
         camera_init_observer_snapshot(parent,1,camera_selected());
         focus_camera(parent);
         camera_init_observer_snapshot(parent,2,camera_selected());
-        if (focus_manager==parent && ordinary_camera_layout(parent) &&
+        char *views[2],*targets[2];
+        if (focus_manager==parent && ordinary_camera_layout(parent) && camera_order_pair(parent,views,targets) &&
             *(uintptr_t *)((char *)parent+0x1c)==0xe62090) {
             int full=personal_fullscreen(parent)!=0;
             if (layout_cache_manager!=parent || layout_cache_fullscreen!=full) {
