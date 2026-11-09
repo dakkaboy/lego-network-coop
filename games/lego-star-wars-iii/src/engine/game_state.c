@@ -26,6 +26,7 @@ static uint32_t requested_native_entry=1;
 static volatile LONG tick_requested=-1;
 static int tick_seen_gameplay,initial_request_completed;
 static uint32_t request_serial=1,accepted_serial;
+static uint32_t last_gameplay_session;
 static int committed_level=-1;
 static int transition_waiting;
 static struct {
@@ -424,7 +425,16 @@ void game_poll(void) {
     }
     int pending_level=*(int *)0xe6e61c;
     if (lan_status() == LAN_CONNECTED) {
+        const uint32_t session=lan_session_serial();
+        const uint32_t published_epoch=lan_epoch();
+        if (published_epoch && published_epoch==game_sync_epoch() && game_sync_status()==2)
+            last_gameplay_session=session;
         if (lan_is_host()) {
+            // A client joining again loads a new world. The host must bootstrap from the same entry.
+            if (session && last_gameplay_session && last_gameplay_session!=session && !published_epoch &&
+                (playing||starting) && pending_level<0 && game_network_level_valid(current) &&
+                InterlockedCompareExchange(&requested,0,0)<0)
+                game_request_reload(current);
             host_publication(current,playing||starting,pending_level);
         } else {
             poll_client_transition(current,playing);
