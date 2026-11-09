@@ -13,7 +13,7 @@
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
 #define SYNC_LAYOUT_VERSION 47
-#define SYNC_WIRE_VERSION 95
+#define SYNC_WIRE_VERSION 99
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -265,7 +265,8 @@ enum SyncFireGateKind {
     SYNC_ACTOR_SPELLIT_QUERY,
     SYNC_ACTOR_CHARACTER_MOTION,
     SYNC_ACTOR_SPELLIT_NODE,
-    SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY
+    SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY,
+    SYNC_ACTOR_PRIMARY_PERCEPTION
 };
 typedef struct SyncFireTaskState {
     uint32_t repeat;
@@ -323,6 +324,14 @@ typedef struct SyncScriptShootState {
     uint32_t argument_count,initialize,caller_rva,argument_hash[4],reserved;
 } SyncScriptShootState;
 
+typedef struct SyncPrimaryPerceptionState {
+    uint32_t clock,target_slot,target_generation,target_tag;
+    int32_t target_character;
+    SyncSpawnSource target_source;
+    float target_origin[3],distance;
+    uint32_t target_visible;
+} SyncPrimaryPerceptionState;
+
 typedef struct SyncFireTaskGate {
     uint32_t slot,generation,spawn_tag;
     int32_t character;
@@ -331,7 +340,7 @@ typedef struct SyncFireTaskGate {
     int32_t value;
     uint32_t kind;
     SyncSpawnSource spawn_source;
-    union { uint8_t storage[sizeof(SyncRtsCompetitorState)]; SyncFireTaskState state; SyncAimTaskState aim; SyncRtsCompetitorState competitor; SyncForceQueryState force; SyncAimBaseState aim_base; SyncForceGeometryState force_geometry; SyncSpellItQueryState spellit; SyncCharacterMotionState character_motion; SyncSpellItNodeState spellit_node; SyncScriptShootState script_shoot; };
+    union { uint8_t storage[sizeof(SyncRtsCompetitorState)]; SyncFireTaskState state; SyncAimTaskState aim; SyncRtsCompetitorState competitor; SyncForceQueryState force; SyncAimBaseState aim_base; SyncForceGeometryState force_geometry; SyncSpellItQueryState spellit; SyncCharacterMotionState character_motion; SyncSpellItNodeState spellit_node; SyncScriptShootState script_shoot; SyncPrimaryPerceptionState perception; };
 } SyncFireTaskGate;
 typedef struct SyncRtsTeamTimers {
     uint32_t slot;
@@ -349,7 +358,7 @@ typedef struct SyncSpawnTimerChoice {
 enum SyncPhysicsChoiceKind {
     SYNC_PHYSICS_AXIS_SPIN=1, SYNC_PHYSICS_ROTATION_SPIN=2, SYNC_PHYSICS_BREAKUP_LAUNCH=3,
     SYNC_PHYSICS_SPELLIT_SEED=4, SYNC_PHYSICS_SPELLIT_ENTITY=5, SYNC_PHYSICS_SPELLIT_ENABLED=6,
-    SYNC_PHYSICS_MODULE_SEED=7
+    SYNC_PHYSICS_MODULE_SEED=7, SYNC_PHYSICS_GUN_JAM_SEED=8
 };
 typedef struct SyncPhysicsWorldInput {
     uint32_t clock,value;
@@ -363,6 +372,13 @@ typedef struct SyncPhysicsModuleInput {
     float intervals[3];
     uint32_t reserved[7];
 } SyncPhysicsModuleInput;
+typedef struct SyncPhysicsGunJamInput {
+    uint32_t clock,value,module_id,module_type,module_generation;
+    uint32_t member_count,candidate_count;
+    int32_t clip;
+    float remaining,minimum,maximum;
+    uint32_t reserved[9];
+} SyncPhysicsGunJamInput;
 typedef struct SyncPhysicsChoice {
     uint32_t kind,site;
     union {
@@ -372,6 +388,7 @@ typedef struct SyncPhysicsChoice {
         };
         SyncPhysicsWorldInput world;
         SyncPhysicsModuleInput module;
+        SyncPhysicsGunJamInput gun_jam;
     };
 } SyncPhysicsChoice;
 

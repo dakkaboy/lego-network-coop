@@ -47,13 +47,16 @@ static char address[64] = "127.0.0.1";
 static float scale = 1.0f;
 static Font *font, *title_font;
 static int keyboard_focus = 1;
+static bool confirm_hub_return;
 static unsigned char previous_keyboard_block;
 enum {
     PROJECT_CONTROL = 7,
+    HUB_CONTROL,
     CONTROL_COUNT,
     PROJECT_X = 230,
     PROJECT_Y = 576,
     PROJECT_WIDTH = 260,
+    HUB_X = 790,
     BUTTON_HEIGHT = 48,
 };
 void coop_set_window(HWND window) { (void)window; }
@@ -95,6 +98,7 @@ static void button(IDirect3DDevice9 *device, const wchar_t *label, int x, int y,
 }
 
 static void activate(HWND window, int control) {
+    if (control != HUB_CONTROL) confirm_hub_return = false;
     if (control == 0) address_focus = 1;
     if (control == 1 || control == 2) {
         if (lan_status() == LAN_OFF || lan_status() == LAN_FAILED) lan_start(control == 1,address);
@@ -104,6 +108,10 @@ static void activate(HWND window, int control) {
     if (control == 6) coop_toggle();
     if (control == PROJECT_CONTROL)
         ShellExecuteW(window,L"open",L"https://github.com/dakkaboy/lego-network-coop",NULL,NULL,SW_SHOWNORMAL);
+    if (control == HUB_CONTROL && game_can_return_to_hub()) {
+        if (!confirm_hub_return) confirm_hub_return = true;
+        else if (game_request_return_to_hub()) coop_toggle();
+    }
 }
 
 static void draw_hud(const CoopHudPlayer hud[2]) {
@@ -199,12 +207,18 @@ void coop_draw(IDirect3DDevice9 *device,const CoopHudPlayer hud[2]) {
     text(L"Tab / Arrows · Enter · Esc",230,530,540,0xffb3c5dc,0);
     button(device,L"Close",790,518,260,keyboard_focus==6);
     button(device,L"Project on GitHub",PROJECT_X,PROJECT_Y,PROJECT_WIDTH,keyboard_focus==PROJECT_CONTROL);
+    if (game_can_return_to_hub()) {
+        if (confirm_hub_return) text(L"Leave the mission?",510,586,270,0xffb3c5dc,0);
+        button(device,confirm_hub_return ? L"Confirm return" : L"Return to hub",
+               HUB_X,PROJECT_Y,PROJECT_WIDTH,keyboard_focus==HUB_CONTROL);
+    } else confirm_hub_return = false;
 }
 
 void coop_toggle(void) {
     opened = !opened;
     address_focus = 0;
     keyboard_focus = 1;
+    confirm_hub_return = false;
     unsigned char *input_flags = (unsigned char *)0xf91eb4;
     if (opened) {
         previous_keyboard_block = *input_flags & 2;
@@ -227,16 +241,22 @@ void coop_fonts_reset(void) {
 
 int coop_input(HWND window, UINT message, WPARAM wp, LPARAM lp) {
     if (!opened) return 0;
-    if (message == WM_KEYDOWN && wp == VK_ESCAPE) { coop_toggle(); return 1; }
+    if (message == WM_KEYDOWN && wp == VK_ESCAPE) {
+        if (confirm_hub_return) confirm_hub_return = false;
+        else coop_toggle();
+        return 1;
+    }
     if (message == WM_KEYDOWN && (wp == VK_TAB || wp == VK_UP || wp == VK_DOWN ||
                                  wp == VK_LEFT || wp == VK_RIGHT)) {
         int backward = wp == VK_UP || wp == VK_LEFT || (wp == VK_TAB && (GetKeyState(VK_SHIFT)&0x8000));
-        keyboard_focus = (keyboard_focus + (backward ? CONTROL_COUNT-1 : 1)) % CONTROL_COUNT;
+        const int count = game_can_return_to_hub() ? CONTROL_COUNT : HUB_CONTROL;
+        keyboard_focus = (keyboard_focus + (backward ? count-1 : 1)) % count;
         address_focus = keyboard_focus == 0;
+        confirm_hub_return = false;
         return 1;
     }
     if (message == WM_KEYDOWN && wp == VK_RETURN) {
-        if (keyboard_focus != PROJECT_CONTROL || !(lp & (1L << 30)))
+        if (keyboard_focus < PROJECT_CONTROL || !(lp & (1L << 30)))
             activate(window,address_focus ? 2 : keyboard_focus < 0 ? 1 : keyboard_focus);
         return 1;
     }
@@ -247,6 +267,12 @@ int coop_input(HWND window, UINT message, WPARAM wp, LPARAM lp) {
             keyboard_focus = PROJECT_CONTROL;
             address_focus = 0;
             activate(window,PROJECT_CONTROL);
+        }
+        if (x >= HUB_X*scale && x < (HUB_X+PROJECT_WIDTH)*scale &&
+            y >= PROJECT_Y*scale && y < (PROJECT_Y+BUTTON_HEIGHT)*scale && game_can_return_to_hub()) {
+            keyboard_focus = HUB_CONTROL;
+            address_focus = 0;
+            activate(window,HUB_CONTROL);
         }
     }
     if (message == WM_CHAR && address_focus) {

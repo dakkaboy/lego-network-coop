@@ -244,13 +244,22 @@ int main(void) {
 
     entities_reset_bindings();
     prepare_party(frame);
+    assert(entities_bind(frame));
     const uint32_t allocated=1;
     char *reserve=entity_test_players[3];
     memcpy(reserve+0x50,&allocated,sizeof(allocated));
     --frame->actor_count;
     assert(entities_collect_dormant_party(frame));
     assert(frame->dormant_party[3]==139);
+    const uint32_t active=3;
+    memcpy(reserve+0x50,&active,sizeof(active));
+    assert(entities_bind(frame) && !entities_party_matches(frame));
+    uint32_t slot,generation;
+    assert(entities_observed_identity(reserve,&slot,&generation) && slot==3 && generation==103);
+    assert(entities_resolve_reference(frame->actors+3)==reserve);
+    memcpy(reserve+0x50,&allocated,sizeof(allocated));
     assert(entities_bind(frame) && entities_party_matches(frame));
+    assert(!entities_observed_identity(reserve,&slot,&generation));
     entity_test_players[3]=NULL;
     assert(!entities_party_matches(frame));
     entity_test_players[3]=reserve;
@@ -260,7 +269,6 @@ int main(void) {
     reserve[0x55]=2;
     assert(!entities_party_matches(frame) && !entities_collect_dormant_party(frame));
     reserve[0x55]=3;
-    const uint32_t active=3;
     memcpy(reserve+0x50,&active,sizeof(active));
     assert(!entities_party_matches(frame));
     ++frame->actor_count;

@@ -210,6 +210,7 @@ static int physics_source_input(SyncPhysicsChoice *choice,const CoherentFrameTok
         const auto *expected=cursor<frame->physics_choice_count?frame->physics_choices+cursor:nullptr;
         if (!expected || !physics_choice_same_source(expected,choice)) {fail(6,choice,expected);return -1;}
         if (choice->kind==SYNC_PHYSICS_MODULE_SEED) choice->module.value=expected->module.value;
+        else if (choice->kind==SYNC_PHYSICS_GUN_JAM_SEED) choice->gun_jam.value=expected->gun_jam.value;
         else choice->world.value=expected->world.value;
         ++cursor;++clonewars_physics_input_debug[1];
     }
@@ -225,7 +226,7 @@ int physics_world_input(SyncPhysicsChoice *choice,const CoherentFrameToken *toke
 }
 int physics_module_input(SyncPhysicsChoice *choice,const CoherentFrameToken *token) {
     if (!active) return 0;
-    if (!choice || choice->kind!=SYNC_PHYSICS_MODULE_SEED) {
+    if (!choice || (choice->kind!=SYNC_PHYSICS_MODULE_SEED && choice->kind!=SYNC_PHYSICS_GUN_JAM_SEED)) {
         if (live()) fail(5,choice);
         return -1;
     }

@@ -27,6 +27,11 @@ static volatile LONG tick_requested=-1;
 static int tick_seen_gameplay,initial_request_completed;
 static uint32_t request_serial=1,accepted_serial;
 static int committed_level=-1;
+static int transition_waiting;
+static struct {
+    uint32_t session,epoch;
+    int level;
+} hub_return;
 static void next_request_serial(void){if(!++request_serial)++request_serial;}
 static void commit_target(int level,uint32_t serial,int transitioning);
 static void host_publication(int current,int playing,int pending);
@@ -48,6 +53,33 @@ static char *native_level_definition(int level) {
     if (!catalog || level < 0 || (unsigned)level >= count || count > 4096) return NULL;
     char *definition = catalog + level * 0x1b0;
     return accessible(definition,0x1b0) && *(int16_t *)(definition+0x94) == level ? definition : NULL;
+}
+
+static int native_hub_destination(void) {
+    const uint32_t hub_level_flag=0x1000000;
+    if (lan_status()!=LAN_CONNECTED || !lan_is_host() || game_sync_status()!=2 ||
+        !game_native_profile_ready() || *(int *)0xe6e61c>=0 || *(uint8_t *)0xfbc161 ||
+        InterlockedCompareExchange(&requested,0,0)>=0) return -1;
+    char *root=*(char **)0xfb2e60;
+    if (!accessible(root,0x1b7c) || *(int *)(root+0x1b78)!=0xe ||
+        !accessible(*(void **)0xfbc114,4) || !accessible(*(void **)0xfb087c,4)) return -1;
+    const uintptr_t *table=*(const uintptr_t **)root;
+    if (!accessible(table,0x188) || table[0x184/4]!=0x4230e0) return -1;
+    typedef const char *(__attribute__((thiscall)) *ReturnDestination)(void *);
+    const char *definition=((ReturnDestination)table[0x184/4])(root);
+    if (!accessible(definition,0x1b0) || !(*(const uint32_t *)(definition+0x50)&hub_level_flag)) return -1;
+    const int level=*(const int16_t *)(definition+0x94);
+    return level!=game_current_level() && definition==native_level_definition(level) ? level : -1;
+}
+
+int game_can_return_to_hub(void) { return native_hub_destination()>=0; }
+
+int game_request_return_to_hub(void) {
+    if (!game_can_return_to_hub()) return 0;
+    hub_return.session=lan_session_serial();
+    hub_return.epoch=game_sync_epoch();
+    hub_return.level=game_current_level();
+    return 1;
 }
 
 static int is_native_titles(int level) {
@@ -87,7 +119,10 @@ int game_actor_count(void) {
 
 void game_request_level(int level) {
     if (level >= 0 && level < 4096) {
-        if (InterlockedCompareExchange(&requested,0,0)!=level){next_request_serial();accepted_serial=0;force_requested=force_loading_seen=0;requested_native_entry=1;lan_publish_ready(0);}
+        if (InterlockedCompareExchange(&requested,0,0)!=level){
+            next_request_serial();accepted_serial=0;force_requested=force_loading_seen=0;requested_native_entry=1;
+            if(!lan_is_host())lan_publish_ready(0);
+        }
         InterlockedExchange(&requested,level);
     }
 }
@@ -96,7 +131,8 @@ void game_request_reload(int level) {
     next_request_serial();accepted_serial=0;
     force_requested=1;force_loading_seen=0;last_requested=-1;
     requested_native_entry=1;
-    InterlockedExchange(&requested,level);lan_publish_ready(0);
+    InterlockedExchange(&requested,level);
+    if(!lan_is_host())lan_publish_ready(0);
 }
 void game_cancel_level_request(void) {
     if(InterlockedCompareExchange(&requested,0,0)<0 && InterlockedCompareExchange(&tick_requested,0,0)<0 && !force_requested)return;
@@ -115,6 +151,8 @@ int game_network_level_authorized(int level) {
 static void commit_target(int level,uint32_t serial,int transitioning) {
     if(lan_status()!=LAN_CONNECTED||!lan_is_host()||!game_network_level_valid(level))return;
     if(serial&&(serial!=request_serial||InterlockedCompareExchange(&requested,0,0)!=level))return;
+    // The outgoing native tick may have queued assets for the destination.
+    if(game_sync_transition_waiting(level,transitioning)){transition_waiting=1;return;}
     const uint32_t session=lan_session_serial(),previous_epoch=game_sync_epoch();
     const int capture=transitioning || !initial_profile.captured || initial_profile.context.session!=session ||
         initial_profile.context.epoch!=previous_epoch || initial_profile.context.level!=level;
@@ -150,6 +188,8 @@ static void host_publication(int current,int playing,int pending) {
     int desired=InterlockedCompareExchange(&requested,0,0);
     if(desired>=0){
         if(accepted_serial==request_serial&&committed_level==desired)commit_target(desired,request_serial,pending>=0);
+        else if(game_sync_transition_waiting(desired,1))transition_waiting=1;
+        else if(pending==desired)commit_target(desired,request_serial,1);
         else lan_publish_ready(0);
         return;
     }
@@ -325,6 +365,20 @@ void game_native_tick(void) {
         tick_seen_gameplay=1;
     clonewars_transition_debug[5]=(uint32_t)tick_seen_gameplay;
     clonewars_transition_debug[10]=(uint32_t)initial_request_completed;
+    if (hub_return.session) {
+        const uint32_t session=hub_return.session;
+        hub_return.session=0;
+        if (session==lan_session_serial() && hub_return.epoch==game_sync_epoch() &&
+            hub_return.level==game_current_level()) {
+            const int destination=native_hub_destination();
+            static const unsigned char return_prefix[]={0x51,0x8b,0x0d,0x60,0x2e,0xfb,0x00};
+            if (destination>=0 && !memcmp((const void *)0x8bc790,return_prefix,sizeof(return_prefix))) {
+                ((void (__cdecl *)(void))0x8bc790)();
+                if (*(int *)0xe6e61c==destination) host_publication(hub_return.level,1,destination);
+                if (transition_waiting) return;
+            }
+        }
+    }
     if (!clonewars_transition_in_tick) return;
     int desired=(int)InterlockedExchange(&tick_requested,-1);
     clonewars_transition_debug[9]=UINT32_MAX;
@@ -352,6 +406,7 @@ static void poll_client_transition(int current,int playing) {
 }
 
 void game_poll(void) {
+    transition_waiting=0;
     int current = game_current_level();
     char *flow_state=*(char **)0xfb2e60;
     int playing=accessible(flow_state,0x1b7c) && *(int *)(flow_state+0x1b78)==0xe;
@@ -370,8 +425,13 @@ void game_poll(void) {
             host_publication(current,playing||starting,pending_level);
         } else {
             poll_client_transition(current,playing);
+            if(game_network_level_valid(pending_level) && game_sync_epoch_level()==current &&
+               game_sync_sequence()){
+                transition_waiting=1;
+            }
         }
     } else {game_sync_poll_epoch(-1,0);committed_level=-1;accepted_serial=0;}
+    if(transition_waiting)return;
     poll_profile();
     lan_publish_ready(game_sync_epoch() && game_network_profile_ready() && (playing||starting||game_sync_scene_ready(current)) &&
                       (game_sync_scene_ready(current)||game_native_loader_idle()) &&
@@ -428,3 +488,4 @@ void game_poll(void) {
     clonewars_transition_debug[9]=UINT32_MAX;
     native_transition(desired,0);
 }
+int game_transition_waiting(void) { return transition_waiting; }

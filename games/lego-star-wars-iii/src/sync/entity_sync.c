@@ -409,6 +409,19 @@ int entities_bind(const SyncFrame *frame) {
     unsigned char claimed[SYNC_MAX_ACTORS]={0};
     uint32_t wanted[SYNC_MAX_ACTORS]={0};
     for (unsigned i=0;i<frame->actor_count;++i) { retire(frame->actors+i); wanted[frame->actors[i].slot]=frame->actors[i].generation; }
+    // The post-tick roster can go dormant after native queries have already used its actors.
+    for (int party=0;party<8;++party) {
+        if (!frame->dormant_party[party]) continue;
+        char *actor=ENTITY_PLAYER(party);
+        const int local_slot=raw_slot(actor);
+        if (local_slot<0 || local_slot>=count) continue;
+        const int remote=inverse[local_slot];
+        if (remote<0 || remote>=SYNC_MAX_ACTORS || wanted[remote]) continue;
+        const Binding *binding=bindings+remote;
+        if (binding->local_slot==local_slot && entities_allocation_live(actor,binding->local_generation) &&
+            *(int8_t *)(actor+0x55)==party && *(int16_t *)(actor+0xdc0)+1==frame->dormant_party[party])
+            wanted[remote]=binding->remote_generation;
+    }
     if (frame->tag_count>SYNC_MAX_TAGS) return 0;
     for (unsigned i=0;i<frame->tag_count;++i) {
         const SyncTag *tag=frame->tags+i;

@@ -10,6 +10,7 @@
 #include "../engine/force_target_thunk.h"
 #include "../engine/force_geometry_thunk.h"
 #include "../engine/character_motion_thunk.h"
+#include "../engine/primary_perception_thunk.h"
 #include "../engine/spellit_query_thunk.h"
 #include "../engine/native_authored_poi.h"
 #include "../engine/native_resource_identity.h"
@@ -139,7 +140,8 @@ static int apply_actor_gate(void *actor,uint32_t kind,uint16_t flags,uint16_t ac
         kind==SYNC_ACTOR_FORCE_GEOMETRY ? sizeof(SyncForceGeometryState) :
         kind==SYNC_ACTOR_CHARACTER_MOTION ? sizeof(SyncCharacterMotionState) :
         kind==SYNC_ACTOR_SPELLIT_NODE ? sizeof(SyncSpellItNodeState) :
-        kind==SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY ? sizeof(SyncScriptShootState) : sizeof(SyncFireTaskState);
+        kind==SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY ? sizeof(SyncScriptShootState) :
+        kind==SYNC_ACTOR_PRIMARY_PERCEPTION ? sizeof(SyncPrimaryPerceptionState) : sizeof(SyncFireTaskState);
     const int failure_value=(kind==SYNC_FIRE_TASK_VISIBILITY || kind==SYNC_ACTOR_DEATH_BREAKUP || kind==SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY) ? 0 : kind==SYNC_ACTOR_BREAKUP_VISIBILITY ? 1 : value;
     if (journal.failed) return failure_value;
     if (journal.host) {
@@ -780,6 +782,75 @@ done:SetLastError(error);
 }
 __attribute__((naked,used)) static void character_motion_thunk(void) {__asm__ volatile(CHARACTER_MOTION_INPUT_THUNK_ASM);}
 
+__attribute__((used)) static volatile uintptr_t primary_perception_resume=0x9ddc1f;
+__declspec(dllexport) volatile uint32_t clonewars_primary_perception_debug[4];
+
+static int perception_target_live(const unsigned char *target) {
+    return valid(target,0x1440) && (*(const uint32_t *)(target+0x50)&3)==3 && !target[0x54];
+}
+
+__attribute__((used,noinline)) static void cadence_primary_perception(unsigned char *actor) {
+    const DWORD error=GetLastError();
+    CadenceFrameLease op;
+    if (!cadence_frame_lease_get(&op) || !op_live(&op) || !active || journal.failed) goto done;
+    if (!valid(actor,0x1440)) goto invalid;
+
+    const uint32_t clock=*(uint32_t *)0xfb4b6c;
+    unsigned char *local_target=*(unsigned char **)(actor+0x164);
+    const float local_distance=*(float *)(actor+0x168);
+    uint32_t *flags=(uint32_t *)(actor+0x1c8);
+    SyncPrimaryPerceptionState input={.clock=clock,.target_slot=UINT32_MAX};
+    entities_update();
+    if (!op_live(&op)) goto done;
+    const uint32_t generation=entities_observed_generation(actor);
+    if (!generation) goto invalid;
+    if (journal.host && perception_target_live(local_target)) {
+        SyncActor identity={0};
+        entities_describe(&identity,local_target);
+        if (!op_live(&op)) goto done;
+        const int slot=entities_slot(local_target);
+        if (slot<0 || slot>=SYNC_MAX_ACTORS || !identity.generation ||
+            (bits(local_distance)&0x7f800000u)==0x7f800000u || local_distance<0) goto invalid;
+        input.target_slot=(uint32_t)slot;
+        input.target_generation=identity.generation;
+        input.target_tag=identity.spawn_tag;
+        input.target_character=*(const int16_t *)(local_target+0xdc0);
+        input.target_source=identity.spawn_source;
+        memcpy(input.target_origin,identity.spawn_position,sizeof(input.target_origin));
+        input.distance=local_distance;
+        input.target_visible=(*flags>>5)&1;
+    }
+
+    apply_actor_gate(actor,SYNC_ACTOR_PRIMARY_PERCEPTION,0,0,0,&input,clonewars_primary_perception_debug);
+    if (!op_live(&op) || !active || journal.failed || journal.host) goto done;
+    unsigned char *target=NULL;
+    if (input.target_slot!=UINT32_MAX) {
+        SyncActor identity={.slot=input.target_slot,.generation=input.target_generation,.spawn_tag=input.target_tag,
+            .character=input.target_character,.spawn_source=input.target_source};
+        memcpy(identity.spawn_position,input.target_origin,sizeof(identity.spawn_position));
+        target=entities_resolve_reference(&identity);
+        if (!op_live(&op)) goto done;
+        if (!perception_target_live(target)) goto invalid;
+    }
+    if (input.clock!=clock || !entities_allocation_live(actor,generation)) goto invalid;
+    if (!op_live(&op)) goto done;
+    if (target!=local_target || (target && (bits(input.distance)!=bits(local_distance) || input.target_visible!=((*flags>>5)&1))))
+        ++clonewars_primary_perception_debug[2];
+    // The stock publisher consumes these temporary operands and clears them before returning.
+    *(unsigned char **)(actor+0x164)=target;
+    if (target) {
+        *(float *)(actor+0x168)=input.distance;
+        *flags=(*flags&~0x20u)|(input.target_visible<<5);
+    }
+    goto done;
+invalid:
+    if (op_live(&op)) {journal.failed=19;++clonewars_primary_perception_debug[3];failed(&op,actor,NULL,19);}
+done:
+    SetLastError(error);
+}
+
+__attribute__((naked,used)) static void primary_perception_thunk(void) {__asm__ volatile(PRIMARY_PERCEPTION_THUNK_ASM);}
+
 static int install_jump(unsigned char *entry,size_t size,void (*thunk)(void)) {
     DWORD protection;
     if (!VirtualProtect(entry,size,PAGE_EXECUTE_READWRITE,&protection)) return 0;
@@ -803,6 +874,8 @@ int cadence_install(void) {
     static const unsigned char script_shoot_native[]={0x80,0x78,0x42,0x00,0x75,0x09};
     unsigned char *character_motion=(unsigned char *)0x9c43d1;
     static const unsigned char character_motion_bytes[]={0xe8,0xaa,0x3f,0x04,0x00};
+    unsigned char *primary_perception=(unsigned char *)0x9ddc19;
+    static const unsigned char primary_perception_bytes[]={0x8b,0x86,0x64,0x01,0x00,0x00};
     unsigned char *force_geometry=(unsigned char *)0x7f8310;
     static const unsigned char force_geometry_native[]={0xe8,0xab,0xcb,0xd7,0xff};
     unsigned char *spellit_prepare=(unsigned char *)0x7da941,*spellit_first_heading=(unsigned char *)0x7da948;
@@ -840,6 +913,7 @@ int cadence_install(void) {
         memcmp(script_shoot,script_shoot_native,sizeof(script_shoot_native)) ||
         memcmp(force_geometry,force_geometry_native,sizeof(force_geometry_native)) ||
         memcmp(character_motion,character_motion_bytes,sizeof(character_motion_bytes)) ||
+        memcmp(primary_perception,primary_perception_bytes,sizeof(primary_perception_bytes)) ||
         memcmp(spellit_prepare,spellit_prepare_bytes,sizeof(spellit_prepare_bytes)) ||
         memcmp(spellit_first_heading,spellit_first_heading_bytes,sizeof(spellit_first_heading_bytes)) ||
         memcmp(spellit_second_heading,spellit_second_heading_bytes,sizeof(spellit_second_heading_bytes)) ||
@@ -857,6 +931,7 @@ int cadence_install(void) {
         !install_jump(aim_visibility,sizeof(aim_visibility_native),aim_task_visibility_thunk) ||
         !install_jump(rts_competitor,sizeof(rts_competitor_native),rts_competitor_input_thunk) ||
         !install_jump(force_target,sizeof(force_target_native),force_target_visibility_thunk) ||
+        !install_jump(primary_perception,sizeof(primary_perception_bytes),primary_perception_thunk) ||
         !install_jump(aim_base,sizeof(aim_base_native),aim_base_input_thunk) ||
         !native_script_shoot_dispatch_install() ||
         !install_jump(script_shoot,sizeof(script_shoot_native),script_shoot_visibility_thunk) ||

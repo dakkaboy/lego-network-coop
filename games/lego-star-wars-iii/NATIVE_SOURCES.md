@@ -18,6 +18,7 @@
 | SpellIt interaction query | `7DA941`, heading reads `7DA948` / `7DA967`, height `7DAA7C`, distance call `7DAAEB` | Native caster position, model heading and initial distance limit, keyed by actor allocation, clock, caller and the current world's registered SpellIt group. Query-local operands and scratch arguments preserve native target selection and local actor/model data. Runtime verification is pending. |
 | AI Attack base callback | `899ED0` before `921140` | Both native RNG inputs, elapsed/cooldown and delta before the original base callback; late AIM input still binds the post-callback task. Pre-callback brain creation remains uncovered. |
 | AI attack task | `899ED0`, source `899F37`, visibility operand `89A093` | Native task timer, engine RNG and visibility decision, keyed by actor/target allocations, native clock and task recipe |
+| AI primary opponent | `9DCE70`, sweep completion at `9DDA14` / `9DD0F4`, candidate read at `9DDC19` | Both peers publish on the host's native sweep boundary. An unfinished sweep carries its native cursor. The stock publisher still validates each candidate and updates the cache from the native target, distance and flag. |
 | RTS actor planning | `541180` | Both RNG inputs, twelve native planning timers and delta; owner verified through competitor/actor backlinks |
 | World admission | `888750` destinations `888889` / `888897` and comparison `8888CD` | Matching host early-exit decision and cinematic operand before original native continuations |
 | Mission/section entry mode | `FC16B0`, `8BD740`, `9097E0` | Native host entry intent and original loader path |
@@ -296,6 +297,13 @@ and A-to-B loading. The client replayed3205 native audio inputs,3064 differing
 from its device clock, with no Tick-input failure. The first correction was
 the measured0.0200226754-to0.01 source difference. B later failed on an extra
 Attack update, so this is a cinematic/transition result, not a full mission pass.
+
+At the end of a chained scene, the native TrackManager can release its track
+before the scene releases the clock provider. Wire96 samples at `7B8B02`,
+after the stock lookup. A present track still invokes the original getter
+once. An absent track supplies the unavailable value from `AD76DC`, and
+the client can replay the host sample while the authored provider still
+matches. The original provider consumes the value and owns scene retirement.
 
 ## Bilateral native loading barrier
 
@@ -597,3 +605,30 @@ stale epoch/serial rejection. The actual engine wrapper and comparison bridge
 pass 90333 checks under optimized C++23, including nested calls, exception
 cleanup and the two different native early-return paths. The full protocol 95
 gameplay regression remains incomplete. Version 0.0.6 publishes the current alpha at the user's request; this does not mark the outstanding source investigations complete.
+
+## Outgoing native level step
+
+The authored scene callback at `827040` can queue a new resource descriptor
+through `826D40` on the outgoing level's final world step. During a Duel of the
+Droids map launch, the next epoch reached the client before it replayed that
+step. The next scene's native constructor then had no descriptor to consume.
+
+The host keeps the outgoing epoch and ready state until the client acknowledges
+the last queued frame for that epoch and level. The native pending request
+selects the destination. Both peers resume loading once the host commits the
+transition.
+
+## Native gun-jam selection
+
+The registered module at `4ACAC0` draws from the shared `EA178C` stream. At
+native clock 228 in the paired repro, it reached the same timer expiry on both
+peers with different seeds. It queued a request for different actors and set
+different next timers. `PlayGunJamAnim` at `487F40` then activated action 92 on
+different actors.
+
+Wire 99 samples the seed at `4ACB53` with the native module registration,
+authored clip and timer parameters, and the native candidate count. The peers
+use the same seed at the original RNG call. The game selects and applies the
+request and advances its own stream. A controlled repeat with the old client
+seed reproduced the input difference and both peers chose the same actor,
+timer and animation after the correction.

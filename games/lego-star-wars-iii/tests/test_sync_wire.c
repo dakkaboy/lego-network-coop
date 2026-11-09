@@ -212,6 +212,12 @@ int main(void) {
     assert(output->tick_gates[0].value==UINT32_MAX);
     input->tick_gates[0].value=0x14;assert(sync_frame_valid(input,sync_frame_size(input)));
     input->tick_gates[0].value=0x15;assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->tick_gates[0].site=0x9dda14;input->tick_gates[0].value=34;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->tick_gates[0].site==0x9dda14 && output->tick_gates[0].value==34);
+    input->tick_gates[0].value=1;assert(sync_frame_valid(input,sync_frame_size(input)));
+    input->tick_gates[0].value=3;assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->tick_gates[0].value=2*(SYNC_MAX_ACTORS+1);assert(!sync_frame_valid(input,sync_frame_size(input)));
     input->tick_gates[0].site=0x8888cd;input->tick_gates[0].value=1;
     input->tick_gate_reserved=1;
     assert(!sync_frame_valid(input,sync_frame_size(input)));input->tick_gate_reserved=0;
@@ -550,6 +556,19 @@ int main(void) {
     script_shoot->state_flags=0;
     bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
     assert(output->fire_task_gates[0].script_shoot.initialize==1 && !output->fire_task_gates[0].script_shoot.argument_count);
+    input->fire_task_gates[0]=(SyncFireTaskGate){.slot=4,.generation=23,.character=160,
+        .kind=SYNC_ACTOR_PRIMARY_PERCEPTION,.perception={.clock=71,.target_slot=8,.target_generation=29,
+            .target_character=321,.target_origin={2,1,-2},.distance=3.75f,.target_visible=1}};
+    SyncPrimaryPerceptionState *perception=&input->fire_task_gates[0].perception;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(!memcmp(perception,&output->fire_task_gates[0].perception,sizeof(*perception)));
+    perception->target_generation=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));perception->target_generation=29;
+    perception->distance=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));perception->distance=3.75f;
+    perception->target_visible=2;assert(!sync_frame_encode(input,wire,sizeof(*input)));perception->target_visible=1;
+    perception->target_slot=UINT32_MAX;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    *perception=(SyncPrimaryPerceptionState){.clock=71,.target_slot=UINT32_MAX};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(!memcmp(perception,&output->fire_task_gates[0].perception,sizeof(*perception)));
     memset(input,0,sizeof(*input));
     input->epoch=9;input->sequence=1;input->level=7;
     input->physics_choice_count=1;
@@ -586,6 +605,21 @@ int main(void) {
     input->physics_choices[0].site++;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->physics_choices[0].site--;
     module->value=UINT32_MAX;bytes=sync_frame_encode(input,wire,sizeof(*input));
     assert(bytes && sync_frame_decode(output,wire,bytes) && output->physics_choices[0].module.value==UINT32_MAX);
+
+    input->physics_choices[0]=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_GUN_JAM_SEED,.site=0x4acb53,
+        .gun_jam={.clock=228,.value=UINT32_MAX,.module_id=1969741825,.module_type=516652984,
+            .module_generation=24,.member_count=2,.candidate_count=16,.clip=20,.remaining=-.01f,.minimum=6,.maximum=40}};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));
+    assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(sizeof(SyncPhysicsGunJamInput)==80 && !memcmp(input->physics_choices,output->physics_choices,sizeof(SyncPhysicsChoice)));
+    output->physics_choices[0].gun_jam.value=0;
+    assert(physics_choice_same_source(input->physics_choices,output->physics_choices));
+    output->physics_choices[0].gun_jam.candidate_count++;
+    assert(!physics_choice_same_source(input->physics_choices,output->physics_choices));
+    SyncPhysicsGunJamInput *jam=&input->physics_choices[0].gun_jam;
+    jam->member_count=13;assert(!sync_frame_encode(input,wire,sizeof(*input)));jam->member_count=2;
+    jam->minimum=INFINITY;assert(!sync_frame_encode(input,wire,sizeof(*input)));jam->minimum=6;
+    jam->reserved[8]=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));jam->reserved[8]=0;
     input->physics_choice_count=0;
     input->projectile_retire_count=2;
     input->projectile_retires[0]=(SyncProjectileRetireRequest){.id=177,.caller=0x85ba24};
