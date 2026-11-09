@@ -7,10 +7,16 @@
 #include <memory>
 #include <cstring>
 #include "../src/sync/native_tick_sync.h"
+extern "C" {
+#include "../src/net/lan.h"
+void __cdecl reset_native_visibility_cache(unsigned char *);
+}
 __attribute__((used)) static unsigned char native_image[0x1200000];
 static CoherentFrameToken bound;
 static unsigned phase,faults;
 static bool alive;
+static long lan_state;
+extern "C" long lan_status(void) { return lan_state; }
 extern "C" int world_vars_cohort_valid(const CoherentFrameToken *token,uint32_t phases) {
  return alive && token && token->frame==bound.frame && token->epoch==bound.epoch &&
   token->sequence==bound.sequence && token->cohort_nonce==bound.cohort_nonce && (phases&COHERENT_PHASE_BIT(phase));
@@ -121,5 +127,22 @@ int main(){
  next(true);sweep_cursor=SYNC_MAX_ACTORS+1;const auto invalid_cursor=faults;
  assert(!native_perception_sweep(0) && !native_tick_finish() && faults==invalid_cursor+1);
  native_tick_cancel(&bound);assert(native_perception_sweep(1) && sweep_cursor==SYNC_MAX_ACTORS+1);
+ unsigned char actor_manager[0x220];std::memset(actor_manager,0x5a,sizeof actor_manager);
+ put(actor_manager,0,0xc4f730);put(actor_manager,8,reinterpret_cast<uintptr_t>(handle));
+ put(reinterpret_cast<void *>(0xfb2f60),0,reinterpret_cast<uintptr_t>(handle));
+ const unsigned char actor_reset[]={0xff,0x05,0,0,0,0,0xc3};
+ unsigned char reset_stub[sizeof actor_reset];std::memcpy(reset_stub,actor_reset,sizeof actor_reset);
+ uint32_t resets=0;put(reset_stub,2,reinterpret_cast<uintptr_t>(&resets));
+ auto *native_reset=reinterpret_cast<void *>(0x8a6560);
+ assert(VirtualProtect(native_reset,sizeof reset_stub,PAGE_EXECUTE_READWRITE,&old));
+ std::memcpy(native_reset,reset_stub,sizeof reset_stub);
+ assert(FlushInstructionCache(GetCurrentProcess(),native_reset,sizeof reset_stub));
+ reset_native_visibility_cache(actor_manager);
+ assert(resets==1 && actor_manager[0x10]==0x5a && actor_manager[0x214]==0x5a);
+ lan_state=LAN_CONNECTED;SetLastError(321);
+ reset_native_visibility_cache(actor_manager);
+ assert(resets==2 && GetLastError()==321);
+ for(unsigned i=0x10;i<0x218;++i) assert(actor_manager[i]==0);
+ assert(actor_manager[0xf]==0x5a && actor_manager[0x218]==0x5a);
  puts("Native world journal host/client correction, order, clock, count, retired lease and LastError checks passed.");
 }

@@ -6,6 +6,7 @@
 extern "C" {
 #include "game_sync.h"
 #include "world_vars.h"
+#include "../net/lan.h"
 #include "../engine/native_tick_gate_thunk.h"
 #include "../engine/native_world_admission_thunk.h"
 #include "../engine/native_flow_request_thunk.h"
@@ -225,6 +226,22 @@ extern "C" uint32_t __cdecl native_perception_sweep(uint32_t completed) {
     SetLastError(error);return publish;
 }
 
+extern "C" void __cdecl reset_native_visibility_cache(unsigned char *actor_manager) {
+    using ResetActors=void (__cdecl *)(unsigned char *);
+    reinterpret_cast<ResetActors>(0x8a6560)(actor_manager);
+    const DWORD error=GetLastError();
+    constexpr size_t cache_offset=0x10;
+    constexpr size_t cache_end=0x218;
+    if (lan_status()!=LAN_CONNECTED || !readable(actor_manager,cache_end) ||
+        pointer(actor_manager)!=0xc4f730 || pointer(actor_manager,8)!=pointer(reinterpret_cast<void *>(0xfb2f60))) {
+        SetLastError(error);
+        return;
+    }
+    // The manager survives level loads. Its cached sight pairs and sweep cursor still refer to the retired actors.
+    std::memset(actor_manager+cache_offset,0,cache_end-cache_offset);
+    SetLastError(error);
+}
+
 extern "C" {
 __attribute__((used)) static volatile uintptr_t world_transition=0x7e4800, world_continue=0x57d420;
 __attribute__((used)) static volatile uintptr_t world_exit_resume=0x888892, world_continue_resume=0x88889c;
@@ -273,11 +290,12 @@ void native_tick_cancel(const CoherentFrameToken *original) {
     if (original && same(token,*original)) {active=false;frame=nullptr;}
 }
 int native_tick_install(void) {
-    const uintptr_t sites[]={0x8888cd,0x888889,0x888897,0x889edc,0x7b8b02,0x9dda14,0x9dd0f4};
-    void *hooks[]={reinterpret_cast<void *>(native_tick_first),reinterpret_cast<void *>(native_world_exit),reinterpret_cast<void *>(native_world_continue),reinterpret_cast<void *>(native_flow_request_input),reinterpret_cast<void *>(native_track_clock_input),reinterpret_cast<void *>(native_perception_sweep_input),reinterpret_cast<void *>(native_perception_sweep_early)};
+    const uintptr_t reset_actors_call=0x791777;
+    const uintptr_t sites[]={0x8888cd,0x888889,0x888897,0x889edc,0x7b8b02,0x9dda14,0x9dd0f4,reset_actors_call};
+    void *hooks[]={reinterpret_cast<void *>(native_tick_first),reinterpret_cast<void *>(native_world_exit),reinterpret_cast<void *>(native_world_continue),reinterpret_cast<void *>(native_flow_request_input),reinterpret_cast<void *>(native_track_clock_input),reinterpret_cast<void *>(native_perception_sweep_input),reinterpret_cast<void *>(native_perception_sweep_early),reinterpret_cast<void *>(reset_native_visibility_cache)};
     const unsigned char bytes[][11]={{0x80,0x3d,0x61,0xc1,0xfb,0,0},{0x6a,0x0f,0x8b,0xcf,0xe8,0x6e,0xbf,0xf5,0xff},{0xe8,0x84,0x4b,0xcf,0xff},{0x8b,0x46,0x60,0x3b,0xc7},{0x85,0xc0,0x74,0x1e,0x8b,0xc8,0xe8,0xc3,0x86,0xf0,0xff},
-        {0x83,0x7c,0x24,0x18,0,0x0f,0x84,0xd3,4,0,0},{0x83,0x7c,0x24,0x18,0,0x0f,0x85,0x20,9,0,0}};
-    const unsigned sizes[]={7,9,5,5,11,11,11};
+        {0x83,0x7c,0x24,0x18,0,0x0f,0x84,0xd3,4,0,0},{0x83,0x7c,0x24,0x18,0,0x0f,0x85,0x20,9,0,0},{0xe8,0xe4,0x4d,0x11,0}};
+    const unsigned sizes[]={7,9,5,5,11,11,11,5};
     const auto count=sizeof(sites)/sizeof(sites[0]);
     for (unsigned i=0;i<count;++i) if (std::memcmp(reinterpret_cast<void *>(sites[i]),bytes[i],sizes[i])) return 0;
     // 8889EA only controls the local preload indicator timer; its outer guard is asynchronous.
@@ -285,7 +303,7 @@ int native_tick_install(void) {
         auto *p=reinterpret_cast<unsigned char *>(sites[i]);DWORD old;
         if (!VirtualProtect(p,sizes[i],PAGE_EXECUTE_READWRITE,&old)) return 0;
         const auto relative=static_cast<int32_t>(reinterpret_cast<uintptr_t>(hooks[i])-sites[i]-5);
-        p[0]=0xe9;std::memcpy(p+1,&relative,4);std::memset(p+5,0x90,sizes[i]-5);
+        p[0]=sites[i]==reset_actors_call?0xe8:0xe9;std::memcpy(p+1,&relative,4);std::memset(p+5,0x90,sizes[i]-5);
         const bool flushed=FlushInstructionCache(GetCurrentProcess(),p,sizes[i])!=0;DWORD ignored;
         if (!VirtualProtect(p,sizes[i],old,&ignored) || !flushed) return 0;
     }
