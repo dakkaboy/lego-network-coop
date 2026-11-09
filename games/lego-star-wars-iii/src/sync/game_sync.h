@@ -7,6 +7,7 @@ int game_sync_restart_required(void);
 unsigned game_sync_sequence(void);
 void game_sync_inspect(void);
 int game_sync_poll_epoch(int target,int transitioning);
+int game_sync_transition_waiting(int target,int transitioning);
 uint32_t game_sync_epoch(void);
 uint32_t game_sync_transition_entry(void);
 int game_sync_epoch_level(void);

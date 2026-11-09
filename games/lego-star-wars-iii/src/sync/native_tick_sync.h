@@ -16,6 +16,7 @@ static inline int native_tick_gate_valid(const SyncTickGate *gate) {
     return gate && ((gate->site==0x8888cd && gate->value<=UINT8_MAX) ||
         (gate->site==0x888889 && gate->value<=1) ||
         (gate->site==0x889edc && (gate->value==UINT32_MAX || gate->value<=0x14)) ||
+        (gate->site==0x9dda14 && (gate->value==1 || (!(gate->value&1) && gate->value/2<=SYNC_MAX_ACTORS))) ||
         gate->site==0x7b8ae1 || gate->site==0x7b8afd ||
         (gate->site==0x7b8b08 && native_track_time_valid(gate->value)));
 }

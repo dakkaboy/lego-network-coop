@@ -23,6 +23,15 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
         for (unsigned i=0;i<7;++i) if (m->reserved[i]) return 0;
         return 1;
     }
+    if (choice->kind==SYNC_PHYSICS_GUN_JAM_SEED) {
+        const SyncPhysicsGunJamInput *jam=&choice->gun_jam;
+        if (choice->site!=0x4acb53 || !jam->module_id || !jam->module_type ||
+            jam->member_count>12 || jam->candidate_count>INT32_MAX ||
+            jam->clip<INT16_MIN || jam->clip>INT16_MAX ||
+            !isfinite(jam->remaining) || !isfinite(jam->minimum) || !isfinite(jam->maximum)) return 0;
+        for (unsigned i=0;i<9;++i) if (jam->reserved[i]) return 0;
+        return 1;
+    }
     if (choice->kind>=SYNC_PHYSICS_SPELLIT_SEED && choice->kind<=SYNC_PHYSICS_SPELLIT_ENABLED) {
         const SyncPhysicsWorldInput *w=&choice->world;
         if (!w->gizmo_class || w->gizmo_ordinal>=65536 ||

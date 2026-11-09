@@ -63,6 +63,7 @@ typedef void (__attribute__((thiscall)) *Tick)(void *);
 typedef void (__attribute__((stdcall)) *World)(void *,void *);
 static SyncFrame working;
 static unsigned sequence,expected;
+static uint32_t last_published_sequence;
 static SyncEpochCursor interval={.level=-1};
 static int session_active,interval_started;
 static uint32_t observed_lan_session;
@@ -219,9 +220,24 @@ static void release_remote(void) {
 }
 
 static uint32_t transition_native_entry;
+__declspec(dllexport) volatile uint32_t clonewars_transition_drain_debug[4];
+static int epoch_needs_transition(int target,int transitioning) {
+    return !interval.active || interval.level!=target || (interval_started && transitioning);
+}
+int game_sync_transition_waiting(int target,int transitioning) {
+    if(!interval.active || !last_published_sequence || observed_lan_session!=lan_session_serial() ||
+       !epoch_needs_transition(target,transitioning))return 0;
+    const uint32_t ack=lan_peer_ack();
+    if(ack==last_published_sequence)return 0;
+    ++clonewars_transition_drain_debug[0];
+    clonewars_transition_drain_debug[1]=interval.epoch;
+    clonewars_transition_drain_debug[2]=last_published_sequence;
+    clonewars_transition_drain_debug[3]=ack;
+    return 1;
+}
 static void prepare_epoch(uint32_t epoch,int level,uint32_t native_entry) {
     release_remote();projectiles_reset();tags_reset();entities_reset_bindings();
-    running=fault=0; sequence=expected=0;
+    running=fault=0; sequence=expected=last_published_sequence=0;
     memset((void *)clonewars_npc_input_failure,0,sizeof(clonewars_npc_input_failure));
     memset((void *)clonewars_input_prep_failure,0,sizeof(clonewars_input_prep_failure)); interval_started=0;
     previous_local_held=0;
@@ -239,7 +255,7 @@ int game_sync_poll_epoch(int target,int transitioning) {
     uint32_t actual_session=lan_session_serial();
     if(actual_session!=observed_lan_session){
         release_remote();projectiles_reset();tags_reset();entities_reset_bindings();
-        observed_lan_session=actual_session;session_active=0;interval.active=0;interval_started=0;sequence=expected=0;
+        observed_lan_session=actual_session;session_active=0;interval.active=0;interval_started=0;sequence=expected=last_published_sequence=0;
     }
     if (lan_status()!=LAN_CONNECTED) {
         session_active=0; interval.active=0; interval_started=0;
@@ -254,7 +270,7 @@ int game_sync_poll_epoch(int target,int transitioning) {
             if(interval.active||lan_epoch()){suspend_epoch_publication();return 1;}
             return 0;
         }
-        if (!interval.active || interval.level!=target || (interval_started && transitioning)) {
+        if (epoch_needs_transition(target,transitioning)) {
             if(interval.epoch==UINT32_MAX){InterlockedOr(&core_reject_bits,0x10000000);coherent_frame_cancel_atomic(0x10000000);return 0;}
             uint32_t epoch=interval.epoch+1;
             prepare_epoch(epoch,target,*(uint32_t *)0xfc16b0!=0);

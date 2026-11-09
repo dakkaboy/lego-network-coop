@@ -303,6 +303,7 @@ static int core_preload_tick(void *flow){
   main_boundary=(CoreMainBoundary){core.owner,core.owner_nonce,GetCurrentThreadId(),coherent_frame_release(),main_boundary_serial};main_boundary_active=1;
   loading_poll();game_poll();
   main_boundary_active=0;
+  if(game_transition_waiting())return 0;
   if(world!=*(void**)0xfb4a20||root!=*(char**)0xfb2e60||phase!=*(uint32_t*)(root+0x1b78)||session!=lan_session_serial()){core_reject_atomic(31,NULL);return 0;}
   int result=core_preload_prepare(core.engine,core.packet,0);
   if(result==1){clonewars_preload_debug[15]=phase;return 1;}
@@ -320,8 +321,10 @@ static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,v
  SpanControlContext permission_before={0};core_control_context(&permission_before,NULL);
  int requested_mapping=0;
  if(!core_prepare_session_mapping(&main_boundary,&requested_mapping)){main_boundary_active=0;return CORE_SPAN_SKIP;}
- loading_poll();game_poll();game_native_tick();
+ loading_poll();game_poll();
+ if(!game_transition_waiting())game_native_tick();
  main_boundary_active=0;
+ if(game_transition_waiting())return CORE_SPAN_SKIP;
  SpanControlContext permission_after={0};core_control_context(&permission_after,NULL);
  if(permission_before.epoch!=permission_after.epoch||permission_before.level!=permission_after.level||permission_before.established!=permission_after.established){core.control_stale=1;return CORE_SPAN_SKIP;}
  if(requested_mapping){core.control_stale=1;return CORE_SPAN_SKIP;}
@@ -508,7 +511,7 @@ static void core_finish(NativeOwnerScope*owner,unsigned nonce,void*unused){
         if(!coherent_frame_set_phase(&core.token,COHERENT_PUBLISH)||!core_live())return;
         if (!fault && core_live() && !model_input_cancelled()) {
             int sent=lan_send_frame(&working);if(!core_live())return;if(!sent)fault=3;
-            else {core.published=1;++core_publish_count;combat_observer_frame_queued(working.epoch,working.sequence);}
+            else {last_published_sequence=working.sequence;core.published=1;++core_publish_count;combat_observer_frame_queued(working.epoch,working.sequence);}
         }
 
  }else{

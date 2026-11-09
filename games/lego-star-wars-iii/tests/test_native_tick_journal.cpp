@@ -18,6 +18,7 @@ extern "C" int world_vars_cohort_valid(const CoherentFrameToken *token,uint32_t 
 extern "C" void game_sync_native_fault(int code){assert(code==22);++faults;}
 extern "C" uint32_t __cdecl native_tick_decision(uint32_t,uint32_t);
 extern "C" void __cdecl native_flow_request(unsigned char *);
+extern "C" uint32_t __cdecl native_perception_sweep(uint32_t);
 extern "C" float __attribute__((thiscall)) native_track_clock(void *);
 static volatile uint32_t getter_calls,getter_sample;
 extern "C" volatile uint32_t clonewars_native_tick_failure[8],clonewars_native_tick_correction[6];
@@ -99,6 +100,26 @@ int main(){
  next(true);shortput(definition,0x94,7);const auto wrong_world=faults;invoke(0x3c23d70a);assert(faults==wrong_world+1 && !native_tick_finish());shortput(definition,0x94,6);
  next(true);assert(invoke(0xbf800000u)==0xbf800000u && native_tick_finish());
  assert(frame->tick_gates[0].value==a && frame->tick_gates[1].value==b);
+ *reinterpret_cast<float *>(0xad76dc)=-1.f;
+ next(true);assert(invoke(0x42308f61u)==0x42308f61u && native_tick_finish());
+ put(tracks,0x28,0);
+ begin(false);const auto before_missing=getter_calls;SetLastError(789);
+ assert(native_track_clock(nullptr)>44.f && GetLastError()==789 && getter_calls==before_missing && native_tick_finish());
+ next(true);assert(native_track_clock(nullptr)==-1.f && native_tick_finish());
+ put(tracks,0x28,reinterpret_cast<uintptr_t>(track));
+ begin(false);assert(invoke(0x42308f61u)==0xbf800000u && native_tick_finish());
+ const auto wrong_lookup=faults;
+ begin(false);assert(native_track_clock(nullptr)==-1.f && !native_tick_finish() && faults==wrong_lookup+1);
  native_tick_cancel(&bound);const auto offline_faults=faults;assert(invoke(0x3ca40698)==0x3ca40698 && faults==offline_faults);
+ auto &sweep_cursor=*reinterpret_cast<uint32_t *>(0xfbea24);
+ next(true);sweep_cursor=17;assert(!native_perception_sweep(0) && native_tick_finish());
+ assert(frame->tick_gate_count==1 && frame->tick_gates[0].site==0x9dda14 && frame->tick_gates[0].value==34);
+ begin(false);sweep_cursor=0;SetLastError(456);
+ assert(!native_perception_sweep(1) && sweep_cursor==17 && GetLastError()==456 && native_tick_finish());
+ next(true);assert(native_perception_sweep(1) && native_tick_finish());
+ begin(false);sweep_cursor=11;assert(native_perception_sweep(0) && sweep_cursor==11 && native_tick_finish());
+ next(true);sweep_cursor=SYNC_MAX_ACTORS+1;const auto invalid_cursor=faults;
+ assert(!native_perception_sweep(0) && !native_tick_finish() && faults==invalid_cursor+1);
+ native_tick_cancel(&bound);assert(native_perception_sweep(1) && sweep_cursor==SYNC_MAX_ACTORS+1);
  puts("Native world journal host/client correction, order, clock, count, retired lease and LastError checks passed.");
 }

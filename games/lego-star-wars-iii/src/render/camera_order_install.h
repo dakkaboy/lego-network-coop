@@ -3,9 +3,9 @@
 #define ORDER_PROTECT VirtualProtect
 #define ORDER_FLUSH FlushInstructionCache
 #endif
-static int camera_order_install_at(unsigned char *site,const unsigned char *native,void *hook,int allowed) {
- static const unsigned char prefix[7]={0x83,0xec,0x0c,0x53,0x55,0x33,0xd2};
- if(!allowed || !site || !native || !hook || memcmp(native,prefix,sizeof(prefix)) || site[0]!=0xe8)return 0;
+static int camera_install_call_at(unsigned char *site,const unsigned char *native,void *hook,int allowed,
+ const unsigned char *prefix,size_t prefix_size) {
+ if(!allowed || !site || !native || !hook || memcmp(native,prefix,prefix_size) || site[0]!=0xe8)return 0;
  int32_t displacement;memcpy(&displacement,site+1,sizeof(displacement));
  uintptr_t destination=(uintptr_t)(site+5)+(intptr_t)displacement;
  if(destination==(uintptr_t)hook)return 1;
@@ -18,4 +18,8 @@ static int camera_order_install_at(unsigned char *site,const unsigned char *nati
  memcpy(site,original,5);int flushed=ORDER_FLUSH(GetCurrentProcess(),site,5);
  int protection=ORDER_PROTECT(site,5,old,&ignored);
  return flushed && protection && !memcmp(site,original,5)?0:-1;
+}
+static int camera_order_install_at(unsigned char *site,const unsigned char *native,void *hook,int allowed) {
+ static const unsigned char prefix[7]={0x83,0xec,0x0c,0x53,0x55,0x33,0xd2};
+ return camera_install_call_at(site,native,hook,allowed,prefix,sizeof(prefix));
 }

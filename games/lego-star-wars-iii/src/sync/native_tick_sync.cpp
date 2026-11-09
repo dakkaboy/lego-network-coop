@@ -60,7 +60,7 @@ bool clock_witness(void *track,uint32_t hash[2]) {
     auto *world=*reinterpret_cast<unsigned char **>(0xfb4a20);
     auto *manager=*reinterpret_cast<unsigned char **>(0xe901f4);
     auto *tracks=*reinterpret_cast<unsigned char **>(0xfa1c98);
-    if (!readable(world,0x224) || !readable(manager,0x90) || !readable(tracks,0x34) || !readable(track,0xc)) return false;
+    if (!readable(world,0x224) || !readable(manager,0x90) || !readable(tracks,0x34)) return false;
     auto *definition=reinterpret_cast<unsigned char *>(pointer(world,0x220));
     if (!readable(definition,0x96) || *reinterpret_cast<int16_t *>(definition+0x94)!=frame->level) return false;
     auto *descriptor=reinterpret_cast<unsigned char *>(pointer(manager,0x84));
@@ -71,9 +71,6 @@ bool clock_witness(void *track,uint32_t hash[2]) {
     auto *provider=reinterpret_cast<unsigned char *>(pointer(request,0x14));
     if (!readable(provider,0xc)) return false;
     auto *owner=reinterpret_cast<unsigned char *>(pointer(provider));
-    unsigned matches=0;
-    for (unsigned i=0;i<3;++i) matches+=pointer(tracks,0x28+4*i)==reinterpret_cast<uintptr_t>(track);
-    if (matches!=1) return false;
     uint32_t limit;std::memcpy(&limit,manager+0x30,4);
     if (!limit || limit>4096) return false;
     auto *node=reinterpret_cast<unsigned char *>(pointer(manager,0x28));
@@ -85,8 +82,19 @@ bool clock_witness(void *track,uint32_t hash[2]) {
     }
     if (node || current_matches!=1 || owner_matches!=1) return false;
     auto *components=reinterpret_cast<unsigned char *>(pointer(owner,0xa0));
-    if (!readable(components,0x24) || !pointer(components,0x20) ||
-        pointer(track,4)!=pointer(components,0x20)) return false;
+    if (!readable(components,0x24)) return false;
+    const auto handle=pointer(components,0x20);
+    if (!handle) return false;
+    const void *matched=nullptr;
+    for (unsigned i=0;i<3;++i) {
+        auto *entry=reinterpret_cast<const void *>(pointer(tracks,0x28+4*i));
+        if (!entry) continue;
+        if (!readable(entry,0xc)) return false;
+        if (pointer(entry,4)!=handle) continue;
+        if (matched) return false;
+        matched=entry;
+    }
+    if (matched!=track) return false;
     hash[0]=2166136261u;hash[1]=0x9e3779b9u;
     // A chained scene keeps its first provider; both authored descriptors identify this input.
     return descriptor_witness(hash,descriptor) && descriptor_witness(hash,owner);
@@ -139,7 +147,8 @@ extern "C" uint32_t native_tick_clock_input(const uint32_t witness[2],uint32_t s
 }
 extern "C" float __attribute__((thiscall,noinline)) native_track_clock(void *track) {
     using Getter=float (__attribute__((thiscall)) *)(void *);
-    float sample=reinterpret_cast<Getter>(0x6c11d0)(track);
+    // Use the game's unavailable sample when its TrackManager lookup returns no receiver.
+    float sample=track ? reinterpret_cast<Getter>(0x6c11d0)(track) : *reinterpret_cast<const float *>(0xad76dc);
     const DWORD error=GetLastError();
     if (live(COHERENT_PHASE_BIT(COHERENT_DISPATCH)) && !failed) {
         uint32_t witness[2],bits;std::memcpy(&bits,&sample,4);
@@ -199,13 +208,49 @@ extern "C" uint32_t __cdecl native_tick_gate(uint32_t site) {
     return native_tick_decision(site,*reinterpret_cast<uint8_t *>(0xfbc161));
 }
 
+extern "C" uint32_t __cdecl native_perception_sweep(uint32_t completed) {
+    const DWORD error=GetLastError();
+    uint32_t publish=completed!=0;
+    constexpr uint32_t dispatch=COHERENT_PHASE_BIT(COHERENT_DISPATCH);
+    if (live(dispatch) && !failed) {
+        auto &next=*reinterpret_cast<uint32_t *>(0xfbea24);
+        // A completed sweep resets the cursor in the native publisher.
+        if (!publish && next>SYNC_MAX_ACTORS) fail(4,0x9dda14,*reinterpret_cast<uint32_t *>(0xfb4b6c));
+        else {
+            const uint32_t decision=native_tick_decision(0x9dda14,publish ? 1 : next*2);
+            publish=decision&1;
+            if (!host && !failed && live(dispatch) && !publish) next=decision/2;
+        }
+    }
+    SetLastError(error);return publish;
+}
+
 extern "C" {
 __attribute__((used)) static volatile uintptr_t world_transition=0x7e4800, world_continue=0x57d420;
 __attribute__((used)) static volatile uintptr_t world_exit_resume=0x888892, world_continue_resume=0x88889c;
 __attribute__((naked)) void native_world_exit(void) {__asm__ volatile(NATIVE_WORLD_ADMISSION_ASM(1));}
 __attribute__((naked)) void native_world_continue(void) {__asm__ volatile(NATIVE_WORLD_ADMISSION_ASM(0));}
 __attribute__((used)) static volatile uintptr_t first_resume=0x8888d4,flow_request_resume=0x889ee1;
+__attribute__((used)) static volatile uintptr_t track_clock_resume=0x7b8b0d;
 __attribute__((naked)) void native_flow_request_input(void) {__asm__ volatile(NATIVE_FLOW_REQUEST_ASM);}
+__attribute__((naked)) void native_track_clock_input(void) {
+    __asm__ volatile("movl %eax,%ecx\n\tcall _native_track_clock\n\tjmp *_track_clock_resume\n\t");
+}
+__attribute__((used)) static volatile uintptr_t perception_continue=0x9dd0ff;
+__attribute__((used)) static volatile uintptr_t perception_publish=0x9dda1f,perception_exit=0x9ddef2;
+__attribute__((naked)) void native_perception_sweep_input(void) {
+    __asm__ volatile(
+        "pushfl\n\tpushal\n\tmovl %esp,%eax\n\tsubl $544,%esp\n\tandl $-16,%esp\n\t"
+        "movl %eax,512(%esp)\n\tfxsave (%esp)\n\tfninit\n\t"
+        "movl $0x1f80,516(%esp)\n\tldmxcsr 516(%esp)\n\tcld\n\t"
+        "subl $12,%esp\n\tpushl 60(%eax)\n\tcall _native_perception_sweep\n\taddl $16,%esp\n\t"
+        "fxrstor (%esp)\n\tmovl 512(%esp),%esp\n\ttestl %eax,%eax\n\tjz 1f\n\t"
+        "popal\n\tpopfl\n\tcmpl $0,0x18(%esp)\n\tjmp *_perception_publish\n\t"
+        "1: popal\n\tpopfl\n\tcmpl $0,0x18(%esp)\n\tjmp *_perception_exit\n\t");
+}
+__attribute__((naked)) void native_perception_sweep_early(void) {
+    __asm__ volatile("cmpl $0,0x18(%esp)\n\tjne _native_perception_sweep_input\n\tjmp *_perception_continue\n\t");
+}
 // The saved x87 stack is restored before the original FSTP between CMP and JNE.
 __attribute__((naked)) void native_tick_first(void) {__asm__ volatile(NATIVE_TICK_GATE_ASM(0x8888cd,first_resume));}
 }
@@ -228,17 +273,19 @@ void native_tick_cancel(const CoherentFrameToken *original) {
     if (original && same(token,*original)) {active=false;frame=nullptr;}
 }
 int native_tick_install(void) {
-    const uintptr_t sites[]={0x8888cd,0x888889,0x888897,0x889edc,0x7b8b08};
-    void *hooks[]={reinterpret_cast<void *>(native_tick_first),reinterpret_cast<void *>(native_world_exit),reinterpret_cast<void *>(native_world_continue),reinterpret_cast<void *>(native_flow_request_input),reinterpret_cast<void *>(native_track_clock)};
-    const unsigned char bytes[][9]={{0x80,0x3d,0x61,0xc1,0xfb,0,0},{0x6a,0x0f,0x8b,0xcf,0xe8,0x6e,0xbf,0xf5,0xff},{0xe8,0x84,0x4b,0xcf,0xff},{0x8b,0x46,0x60,0x3b,0xc7},{0xe8,0xc3,0x86,0xf0,0xff}};
-    const unsigned sizes[]={7,9,5,5,5};
-    for (unsigned i=0;i<5;++i) if (std::memcmp(reinterpret_cast<void *>(sites[i]),bytes[i],sizes[i])) return 0;
+    const uintptr_t sites[]={0x8888cd,0x888889,0x888897,0x889edc,0x7b8b02,0x9dda14,0x9dd0f4};
+    void *hooks[]={reinterpret_cast<void *>(native_tick_first),reinterpret_cast<void *>(native_world_exit),reinterpret_cast<void *>(native_world_continue),reinterpret_cast<void *>(native_flow_request_input),reinterpret_cast<void *>(native_track_clock_input),reinterpret_cast<void *>(native_perception_sweep_input),reinterpret_cast<void *>(native_perception_sweep_early)};
+    const unsigned char bytes[][11]={{0x80,0x3d,0x61,0xc1,0xfb,0,0},{0x6a,0x0f,0x8b,0xcf,0xe8,0x6e,0xbf,0xf5,0xff},{0xe8,0x84,0x4b,0xcf,0xff},{0x8b,0x46,0x60,0x3b,0xc7},{0x85,0xc0,0x74,0x1e,0x8b,0xc8,0xe8,0xc3,0x86,0xf0,0xff},
+        {0x83,0x7c,0x24,0x18,0,0x0f,0x84,0xd3,4,0,0},{0x83,0x7c,0x24,0x18,0,0x0f,0x85,0x20,9,0,0}};
+    const unsigned sizes[]={7,9,5,5,11,11,11};
+    const auto count=sizeof(sites)/sizeof(sites[0]);
+    for (unsigned i=0;i<count;++i) if (std::memcmp(reinterpret_cast<void *>(sites[i]),bytes[i],sizes[i])) return 0;
     // 8889EA only controls the local preload indicator timer; its outer guard is asynchronous.
-    for (unsigned i=0;i<5;++i) {
+    for (unsigned i=0;i<count;++i) {
         auto *p=reinterpret_cast<unsigned char *>(sites[i]);DWORD old;
         if (!VirtualProtect(p,sizes[i],PAGE_EXECUTE_READWRITE,&old)) return 0;
         const auto relative=static_cast<int32_t>(reinterpret_cast<uintptr_t>(hooks[i])-sites[i]-5);
-        p[0]=i==4?0xe8:0xe9;std::memcpy(p+1,&relative,4);std::memset(p+5,0x90,sizes[i]-5);
+        p[0]=0xe9;std::memcpy(p+1,&relative,4);std::memset(p+5,0x90,sizes[i]-5);
         const bool flushed=FlushInstructionCache(GetCurrentProcess(),p,sizes[i])!=0;DWORD ignored;
         if (!VirtualProtect(p,sizes[i],old,&ignored) || !flushed) return 0;
     }

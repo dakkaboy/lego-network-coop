@@ -9,8 +9,11 @@ enum NativeSceneInputCapability {
 };
 void game_poll(void);
 void game_native_tick(void);
+int game_transition_waiting(void);
 void game_request_level(int level);
 void game_request_reload(int level);
+int game_can_return_to_hub(void);
+int game_request_return_to_hub(void);
 int game_current_level(void);
 int game_actor_count(void);
 int game_load_status(void);

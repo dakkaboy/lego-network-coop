@@ -515,6 +515,34 @@ static int personal_fullscreen(char *parent) {
 #include "camera_native_order.inc"
 #include "camera_order_install.h"
 
+typedef void (__attribute__((thiscall)) *NativeModelRender)(void *, void *);
+static void __attribute__((fastcall)) personal_model_render(void *scene,void *unused,void *event) {
+    (void)unused;
+    NativeModelRender render=(NativeModelRender)0x731d00;
+    volatile uint16_t *motion_blur=(volatile uint16_t *)0xd78430;
+    uint16_t enabled=*motion_blur;
+    unsigned segment=*(const uint32_t *)0xeb8374;
+    char *parent=camera_order_prepared_parent;
+    DWORD error=GetLastError();
+    int personal=enabled && segment>=1 && segment<=2 && (clonewars_camera_fullclip&16) &&
+        GetCurrentThreadId()==clonewars_camera_threads[0] &&
+        personal_fullscreen(parent) && camera_order_presentation_ready(parent);
+    SetLastError(error);
+    if (!personal) {
+        render(scene,event);
+        return;
+    }
+
+    // The native motion pass shares its screen history across the two world segments.
+    *motion_blur=0;
+    ++clonewars_camera_native_order_debug[8];
+    __try {
+        render(scene,event);
+    } __finally {
+        *motion_blur=enabled;
+    }
+}
+
 static void camera_render_reset_state(void) {
     layout_cache_manager=NULL;layout_cache_fullscreen=-1;
     camera_order_prepared_parent=NULL;camera_order_prepared_role=-1;
@@ -1075,6 +1103,9 @@ static int camera_install_main_impl(HMODULE module){
             GetCurrentThreadId()==GetWindowThreadProcessId(game_window,NULL));
         clonewars_camera_native_order_installed=order_result==1?1:-1;
     }
+    static const unsigned char model_render_prefix[]={0x55,0x8b,0xec,0x83,0xe4,0xf0,0x6a,0xff};
+    camera_install_call_at((unsigned char *)0x732bd9,(const unsigned char *)0x731d00,(void *)personal_model_render,
+        clonewars_camera_native_order_installed==1,model_render_prefix,sizeof(model_render_prefix));
     log_line(personal_hooks_ready ? "native fullscreen camera hooks installed" : "native fullscreen camera hooks incomplete");
     install_saber_weapon_visibility_gate();
     char saber_trace[2];

@@ -110,7 +110,10 @@ void lan_publish_ack(uint32_t sequence) {
     lock_queue(); local_state.ack=sequence; LeaveCriticalSection(&queue_lock);
 }
 uint32_t lan_peer_ack(void) {
-    lock_queue(); uint32_t value=peer_state.epoch==local_state.epoch ? peer_state.ack : 0; LeaveCriticalSection(&queue_lock); return value;
+    lock_queue();
+    uint32_t value=peer_state.epoch==local_state.epoch && peer_state.level==local_state.level ? peer_state.ack : 0;
+    LeaveCriticalSection(&queue_lock);
+    return value;
 }
 void lan_publish_ready(int actors) {
     lock_queue(); local_state.ready=actors > 0; LeaveCriticalSection(&queue_lock);

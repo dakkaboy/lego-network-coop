@@ -85,7 +85,11 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
         const SyncFireTaskGate &gate=frame->fire_task_gates[i];
         if (!spawn_source_valid(gate.spawn_source) || gate.slot>=SYNC_MAX_ACTORS || !gate.generation || gate.character<0 || gate.character>=4096) return 0;
         if (gate.kind!=SYNC_ACTOR_RTS_COMPETITOR) {
-            const unsigned used=gate.kind==SYNC_ACTOR_FORCE_GEOMETRY ? sizeof(SyncForceGeometryState) : gate.kind==SYNC_ACTOR_CHARACTER_MOTION ? sizeof(SyncCharacterMotionState) : gate.kind==SYNC_ACTOR_SPELLIT_NODE ? sizeof(SyncSpellItNodeState) : gate.kind==SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY ? sizeof(SyncScriptShootState) : sizeof(SyncFireTaskState);
+            const unsigned used=gate.kind==SYNC_ACTOR_FORCE_GEOMETRY ? sizeof(SyncForceGeometryState) :
+                gate.kind==SYNC_ACTOR_CHARACTER_MOTION ? sizeof(SyncCharacterMotionState) :
+                gate.kind==SYNC_ACTOR_SPELLIT_NODE ? sizeof(SyncSpellItNodeState) :
+                gate.kind==SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY ? sizeof(SyncScriptShootState) :
+                gate.kind==SYNC_ACTOR_PRIMARY_PERCEPTION ? sizeof(SyncPrimaryPerceptionState) : sizeof(SyncFireTaskState);
             for (unsigned offset=used;offset<sizeof(gate.storage);++offset) if (gate.storage[offset]) return 0;
         }
         switch (gate.kind) {
@@ -127,6 +131,18 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
                 !gate.script_shoot.caller_rva || gate.script_shoot.reserved ||
                 !(gate.script_shoot.argument_hash[0]|gate.script_shoot.argument_hash[1]|gate.script_shoot.argument_hash[2]|gate.script_shoot.argument_hash[3])) return 0;
             break;
+        case SYNC_ACTOR_PRIMARY_PERCEPTION: {
+            const auto &source=gate.perception;
+            if (gate.flags || gate.action || gate.value || source.target_visible>1 ||
+                !isfinite(source.distance) || source.distance<0 || !spawn_source_valid(source.target_source)) return 0;
+            for (float coordinate : source.target_origin) if (!isfinite(coordinate)) return 0;
+            if (source.target_slot==UINT32_MAX) {
+                const SyncPrimaryPerceptionState empty={source.clock,UINT32_MAX};
+                if (memcmp(&source,&empty,sizeof source)) return 0;
+            } else if (source.target_slot>=SYNC_MAX_ACTORS || !source.target_generation ||
+                       source.target_character<0 || source.target_character>=4096) return 0;
+            break;
+        }
         case SYNC_ACTOR_CHARACTER_MOTION:
             if (gate.flags || gate.action || gate.value || !gate.character_motion.body_class || gate.character_motion.rest_counter>UINT16_MAX) return 0;
             for (float value : gate.character_motion.velocity) if (!isfinite(value)) return 0;
