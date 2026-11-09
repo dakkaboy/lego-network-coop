@@ -330,6 +330,7 @@ static void native_transition(int desired,int stage) {
     int phase = *(int *)(root+0x1b78);
     if (phase != 0xd && phase != 0xe) return;
     if (last_requested == desired && GetTickCount()-last_attempt < 3000) return;
+    const int restarting=force_requested && game_current_level()==desired;
     clonewars_transition_debug[0]=(uint32_t)stage;
     clonewars_transition_debug[4]++;
     clonewars_transition_debug[6]=(uint32_t)desired;
@@ -348,6 +349,8 @@ static void native_transition(int desired,int stage) {
         ((EnterMission)0x8bd740)(definition,-1,-1,0);
     }
     int accepted=*(int *)0xe6e61c==desired;
+    // A fresh Story start retires cached LevelProgress before the loader rebuilds the component list.
+    if (accepted && restarting && !*(uint32_t *)0xfb5170) *(uint32_t *)0xfb5170=1;
     capture_transition_context(clonewars_transition_context+20,desired);
     if(serial!=request_serial||InterlockedCompareExchange(&requested,0,0)!=desired)return;
     if (accepted) {
