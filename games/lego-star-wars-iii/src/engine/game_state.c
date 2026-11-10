@@ -56,6 +56,53 @@ static char *native_level_definition(int level) {
     return accessible(definition,0x1b0) && *(int16_t *)(definition+0x94) == level ? definition : NULL;
 }
 
+typedef struct NativePlayedScene {
+    struct NativePlayedScene *next, *previous;
+    const char *descriptor;
+} NativePlayedScene;
+
+typedef struct NativePlayedScenes {
+    NativePlayedScene *first, *last;
+    uint32_t count;
+} NativePlayedScenes;
+
+static int native_scene_chain_contains(const char *scene,const char *descriptor) {
+    for (unsigned i=0;scene && i<=UINT16_MAX;++i) {
+        if (scene==descriptor) return 1;
+        if (!accessible(scene,0x24)) break;
+        scene=*(const char *const *)(scene+0x20);
+    }
+    return 0;
+}
+
+void * __attribute__((thiscall)) game_native_scene_entry(void *manager,int level,int selector) {
+    typedef void *(__attribute__((thiscall)) *FindScene)(void *,int,int);
+    void *scene=((FindScene)0x7b8630)(manager,level,selector);
+    const uint32_t cinematic_section_flags=0xe0;
+    if (!scene || !force_requested || !force_loading_seen ||
+        InterlockedCompareExchange(&requested,0,0)!=level || !game_network_level_authorized(level) ||
+        manager!=*(void **)0xe901f4) return scene;
+    const char *definition=native_level_definition(level);
+    if (!definition || !(*(const uint32_t *)(definition+0x50)&cinematic_section_flags) ||
+        !accessible(manager,0x84)) return scene;
+
+    // Unloading an interrupted scene marks its continuations as played before this lookup runs.
+    NativePlayedScenes *history=(NativePlayedScenes *)((char *)manager+0x78);
+    typedef void (__attribute__((thiscall)) *Unlink)(NativePlayedScenes *,NativePlayedScene *);
+    typedef void (__attribute__((thiscall)) *Clear)(NativePlayedScenes *);
+    NativePlayedScene *entry=history->first;
+    for (uint32_t remaining=history->count;remaining && accessible(entry,sizeof(*entry));--remaining) {
+        NativePlayedScene *next=entry->next;
+        if (native_scene_chain_contains(scene,entry->descriptor)) {
+            ((Unlink)0x654f00)(history,entry);
+            NativePlayedScenes retired={entry,entry,1};
+            ((Clear)0x7e0220)(&retired);
+        }
+        entry=next;
+    }
+    return scene;
+}
+
 static int native_hub_destination(void) {
     const uint32_t hub_level_flag=0x1000000;
     if (lan_status()!=LAN_CONNECTED || !lan_is_host() || game_sync_status()!=2 ||
@@ -389,7 +436,7 @@ void game_native_tick(void) {
     if (desired>=0) native_transition(desired,1);
 }
 
-static void poll_client_transition(int current,int playing) {
+static void poll_client_transition(int current,int world_active) {
     const int previous=game_network_target_level();
     const int changed=game_sync_poll_epoch(-1,0);
     const int destination=game_network_target_level();
@@ -401,7 +448,7 @@ static void poll_client_transition(int current,int playing) {
         if (previous>=0 && !force_requested) requested_native_entry=game_sync_transition_entry();
         return;
     }
-    if (playing && (previous<0 || destination==previous)) {
+    if (world_active && (previous<0 || destination==previous)) {
         game_request_reload(destination);
         return;
     }
@@ -437,7 +484,7 @@ void game_poll(void) {
                 game_request_reload(current);
             host_publication(current,playing||starting,pending_level);
         } else {
-            poll_client_transition(current,playing);
+            poll_client_transition(current,playing||starting);
             if(game_network_level_valid(pending_level) && game_sync_epoch_level()==current &&
                game_sync_sequence()){
                 transition_waiting=1;

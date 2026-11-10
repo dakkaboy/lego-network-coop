@@ -9,6 +9,7 @@ enum NativeSceneInputCapability {
 };
 void game_poll(void);
 void game_native_tick(void);
+void * __attribute__((thiscall)) game_native_scene_entry(void *manager,int level,int selector);
 int game_transition_waiting(void);
 void game_request_level(int level);
 void game_request_reload(int level);

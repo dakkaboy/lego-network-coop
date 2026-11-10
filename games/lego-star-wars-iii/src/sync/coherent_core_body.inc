@@ -112,9 +112,9 @@ static void __attribute__((thiscall)) pause_request_hook(void *menu, int32_t pla
 }
 static int core_install_base(void){
  if(core_base_install_state)return core_base_install_state>0;core_base_install_state=-1;
- const uintptr_t sites[]={0x889fa0,0x8889ba,0x58f4c6,0x58f5e7,0x5e2a15,0x634a95,0x755347,0x9c53fd,0x9c33bf,0x9c53f7,0x7adc6e};
- const uintptr_t originals[]={0x889640,0x887ac0,0x57b340,0x57b340,0x57b340,0x57b340,0x57b340,0x9ab020,0x9ab020,0x8b0f90,0x8a4780};
- void*hooks[]={tick_hook,world_hook,device_refresh,device_refresh,device_refresh,device_refresh,device_refresh,actor_prepare_normal,actor_prepare_alternate,actor_ai_normal_hook,pause_request_hook};
+ const uintptr_t sites[]={0x889fa0,0x8889ba,0x58f4c6,0x58f5e7,0x5e2a15,0x634a95,0x755347,0x9c53fd,0x9c33bf,0x9c53f7,0x7adc6e,0x84a06d};
+ const uintptr_t originals[]={0x889640,0x887ac0,0x57b340,0x57b340,0x57b340,0x57b340,0x57b340,0x9ab020,0x9ab020,0x8b0f90,0x8a4780,0x7b8630};
+ void*hooks[]={tick_hook,world_hook,device_refresh,device_refresh,device_refresh,device_refresh,device_refresh,actor_prepare_normal,actor_prepare_alternate,actor_ai_normal_hook,pause_request_hook,game_native_scene_entry};
  const unsigned count=sizeof sites/sizeof sites[0];
  for(unsigned i=0;i<count;++i){unsigned char*p=(unsigned char*)sites[i];if(!valid(p,5)||p[0]!=0xe8||sites[i]+5+*(int32_t*)(p+1)!=originals[i])return 0;}
  for(unsigned i=0;i<count;++i)if(!core_patch_call(sites[i],originals[i],hooks[i]))return 0;
