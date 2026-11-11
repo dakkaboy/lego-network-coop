@@ -49,6 +49,35 @@ static void world_physics_inputs(void) {
         .flags=0x40000091,.model=1,.name_hash={12,34}};
     assert(physics_choice_valid(&different));
     ((unsigned char *)&different)[sizeof(different)-1]=1;assert(!physics_choice_valid(&different));
+    frame->physics_choice_count=4;
+    SyncPhysicsChoice *pose=frame->physics_choices+3;
+    *pose=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_SPELLIT_POSE,.site=0x8406b2,
+        .spellit_pose={.clock=32,.position={340.76535f,44.27975f,47.423156f},
+            .source_name={1,2,3,4},.gizmo_class=0x8480ac,.gizmo_ordinal=3,
+            .resource_name={5,6,7,8},.poi_name={9,10,11,12},.poi_ordinal=265,.piece_ordinal=8}};
+    size=sync_frame_encode(frame,wire,sizeof(*frame));assert(size && sync_frame_decode(decoded,wire,size));
+    assert(sizeof(SyncPhysicsSpellItPoseInput)==80 && !memcmp(pose,decoded->physics_choices+3,sizeof(*pose)));
+    different=*pose;different.spellit_pose.position[2]=nextafterf(pose->spellit_pose.position[2],-INFINITY);
+    different.spellit_pose.last_time=123;assert(physics_choice_same_source(pose,&different));
+    ++different.spellit_pose.piece_ordinal;assert(!physics_choice_same_source(pose,&different));
+    for(unsigned axis=0;axis<3;++axis) {
+        different=*pose;different.spellit_pose.position[axis]=NAN;assert(!physics_choice_valid(&different));
+        different.spellit_pose.position[axis]=INFINITY;assert(!physics_choice_valid(&different));
+    }
+    frame->physics_choice_count=5;SyncPhysicsChoice *step=frame->physics_choices+4;
+    *step=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_SPELLIT_STEP,.site=0x86101e,
+        .spellit_step={.clock=42,.engine_seed=12345,.game_seed=23456,.delta=.016f,.timer=-.004f,
+            .source_name={1,2,3,4},.gizmo_class=0x8480ac,.gizmo_ordinal=3}};
+    size=sync_frame_encode(frame,wire,sizeof(*frame));assert(size && sync_frame_decode(decoded,wire,size));
+    assert(sizeof(SyncPhysicsSpellItStepInput)==80 && !memcmp(step,decoded->physics_choices+4,sizeof(*step)));
+    different=*step;different.spellit_step.delta=.017f;different.spellit_step.timer=1;
+    different.spellit_step.engine_seed=5;different.spellit_step.game_seed=6;
+    assert(physics_choice_same_source(step,&different));
+    ++different.spellit_step.gizmo_ordinal;assert(!physics_choice_same_source(step,&different));
+    different=*step;different.spellit_step.timer=NAN;assert(!physics_choice_valid(&different));
+    different=*step;different.spellit_step.delta=INFINITY;assert(!physics_choice_valid(&different));
+    different=*step;different.spellit_step.game_seed=65536;assert(!physics_choice_valid(&different));
+    different=*step;different.spellit_step.reserved[8]=1;assert(!physics_choice_valid(&different));
     free(wire);free(decoded);free(frame);
 }
 int main(void) {
@@ -592,7 +621,7 @@ int main(void) {
     output->physics_choices[0].module.value=4286270884u;
     assert(physics_choice_same_source(input->physics_choices,output->physics_choices));
     output->physics_choices[0].module.module_generation++;
-    assert(!physics_choice_same_source(input->physics_choices,output->physics_choices));
+    assert(physics_choice_same_source(input->physics_choices,output->physics_choices));
     output->physics_choices[0].module.module_generation--;
     output->physics_choices[0].module.clock++;
     assert(!physics_choice_same_source(input->physics_choices,output->physics_choices));
@@ -624,6 +653,11 @@ int main(void) {
     assert(sizeof(SyncPhysicsGunJamInput)==80 && !memcmp(input->physics_choices,output->physics_choices,sizeof(SyncPhysicsChoice)));
     output->physics_choices[0].gun_jam.value=0;
     assert(physics_choice_same_source(input->physics_choices,output->physics_choices));
+    output->physics_choices[0].gun_jam.module_generation++;
+    assert(physics_choice_same_source(input->physics_choices,output->physics_choices));
+    output->physics_choices[0].gun_jam.module_id++;
+    assert(!physics_choice_same_source(input->physics_choices,output->physics_choices));
+    output->physics_choices[0].gun_jam.module_id--;
     output->physics_choices[0].gun_jam.candidate_count++;
     assert(!physics_choice_same_source(input->physics_choices,output->physics_choices));
     SyncPhysicsGunJamInput *jam=&input->physics_choices[0].gun_jam;

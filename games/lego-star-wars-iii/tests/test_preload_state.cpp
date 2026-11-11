@@ -22,7 +22,7 @@ static void reject_finish(NativePreloadState &state,const SyncPreloadReceipt &re
  require(!std::memcmp(&before,&state,sizeof state));
 }
 int main(){
- static_assert(sizeof(SyncPreloadInput)==44);
+ static_assert(sizeof(SyncPreloadInput)==48);
  static_assert(sizeof(SyncPreloadReceipt)==1044);
  static_assert(sizeof(SyncWorldReady)==24);
  require(native_jobs_idle(0,0,0,0));
@@ -143,7 +143,7 @@ int main(){
  require(preload_input_valid(&host)&&preload_input_valid(&empty));
  require(!preload_input_valid(nullptr)&&!preload_input_valid(&zero));
  for(uint32_t phase:{0xau,0xbu,0xdu,0xeu}){auto input=host;input.root_phase=phase;require(preload_input_valid(&input));}
- for(unsigned field=0;field<14;++field){
+ for(unsigned field=0;field<15;++field){
   auto bad=host;
   switch(field){
    case 0:bad.epoch=0;break;
@@ -160,6 +160,7 @@ int main(){
    case 11:bad.engine_delta=.1001f;break;
    case 12:bad.engine_mode=17;break;
    case 13:bad.engine_mode=UINT32_MAX;break;
+   case 14:bad.game_time=std::numeric_limits<float>::quiet_NaN();break;
   }
   require(!preload_input_valid(&bad));
  }

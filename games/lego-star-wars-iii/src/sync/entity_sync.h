@@ -11,6 +11,8 @@ void entities_describe(SyncActor *state,const void *actor);
 void entities_note_spawn_source(const void *actor,uint32_t site,SyncSpawnSource source);
 SyncSpawnSource entities_spawn_source(const void *actor,uint32_t *site);
 int entities_bind(const SyncFrame *frame);
+int entities_bind_tick(const SyncFrame *frame);
+int entities_bind_native_actor(const SyncFrame *frame,const void *actor);
 void *entities_actor(uint32_t network_slot,uint32_t generation);
 uint32_t entities_generation(const void *actor);
 int entities_slot(const void *actor);

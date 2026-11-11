@@ -7,9 +7,15 @@ extern "C" {
 int native_tick_install(void);
 int native_tick_begin(SyncFrame *,int,const CoherentFrameToken *);
 int native_tick_finish(void);
+int native_tick_elapsed_input(void);
 void native_tick_cancel(const CoherentFrameToken *);
 uint32_t native_tick_clock_input(const uint32_t witness[2],uint32_t sample);
 enum {
+    NATIVE_TICK_GAME_TIME = 0xfb4ad4,
+    NATIVE_TICK_GIZMO_TURRET_SOURCE = 0x83827a,
+    NATIVE_TICK_WEAPON_COMMAND_ACTOR = 0x45a929,
+    NATIVE_TICK_WEAPON_COMMAND_GENERATION = 0x45a930,
+    NATIVE_TICK_WEAPON_COMMAND_VALUE = 0x45a936,
     NATIVE_TICK_RTS_PRODUCER_GAME_RNG = 0x562d9b, NATIVE_TICK_RTS_PRODUCER_ENGINE_RNG = 0x562da1,
     NATIVE_TICK_RTS_GAME_RNG = 0x562dd9, NATIVE_TICK_RTS_ENGINE_RNG = 0x562dde,
     NATIVE_TICK_RTS_PACK_ADMISSION = 0x547ec2,
@@ -68,16 +74,24 @@ static inline int native_track_time_valid(uint32_t sample) {
 }
 static inline int native_tick_gate_valid(const SyncTickGate *gate) {
     if(gate) {
+        if(gate->site>=NATIVE_TICK_GIZMO_TURRET_SOURCE && gate->site<=NATIVE_TICK_GIZMO_TURRET_SOURCE+6) {
+            const unsigned field=gate->site-NATIVE_TICK_GIZMO_TURRET_SOURCE;
+            return field==4 ? gate->value<=UINT16_MAX : field==6 ? native_track_time_valid(gate->value) : 1;
+        }
         const unsigned field=native_pack_pose_field(gate->site);
         if(field) return field==1 || (field==6 ? gate->value<=UINT16_MAX : native_track_time_valid(gate->value));
     }
     return gate && ((gate->site==0x8888cd && gate->value<=UINT8_MAX) ||
+        (gate->site==NATIVE_TICK_GAME_TIME && native_track_time_valid(gate->value)) ||
         (gate->site==0x888889 && gate->value<=1) ||
         (gate->site==NATIVE_TICK_RTS_PACK_ADMISSION && gate->value<32) ||
         ((gate->site==NATIVE_TICK_RTS_TURRET_HEADING || gate->site==NATIVE_TICK_RTS_TURRET_AIM) && (gate->value>>16)<SYNC_MAX_ACTORS) ||
         (gate->site==NATIVE_TICK_RTS_TURRET_PILOT && gate->value!=0) ||
         (gate->site==NATIVE_TICK_FIRE_VISIBILITY && (gate->value>>8)<SYNC_MAX_ACTORS) ||
         (gate->site==NATIVE_TICK_FIRE_VISIBILITY_ACTOR && gate->value!=0) ||
+        (gate->site==NATIVE_TICK_WEAPON_COMMAND_ACTOR && gate->value<SYNC_MAX_ACTORS) ||
+        (gate->site==NATIVE_TICK_WEAPON_COMMAND_GENERATION && gate->value!=0) ||
+        gate->site==NATIVE_TICK_WEAPON_COMMAND_VALUE ||
         native_pack_hit_rng_site(gate->site) || native_pack_hit_rng_site(gate->site-5) ||
         gate->site==NATIVE_TICK_PACK_CELL_MEMBER ||
         (gate->site==NATIVE_TICK_PACK_CELL_FLAGS && !(gate->value&~0x60u)) ||
@@ -106,7 +120,14 @@ static inline int native_tick_stream_valid(const SyncTickGate *gates,uint32_t co
     if (count>SYNC_MAX_TICK_GATES || (count && !gates)) return 0;
     for (uint32_t i=0;i<count;++i) {
         if (!native_tick_gate_valid(gates+i)) return 0;
-        if (native_pack_hit_rng_site(gates[i].site)) {
+        if (gates[i].site==NATIVE_TICK_GIZMO_TURRET_SOURCE) {
+            if(count-i<7)return 0;
+            for(unsigned j=1;j<7;++j)
+                if(gates[i+j].site!=NATIVE_TICK_GIZMO_TURRET_SOURCE+j || gates[i+j].clock!=gates[i].clock ||
+                   !native_tick_gate_valid(gates+i+j))return 0;
+            i+=6;
+        } else if(gates[i].site>NATIVE_TICK_GIZMO_TURRET_SOURCE && gates[i].site<=NATIVE_TICK_GIZMO_TURRET_SOURCE+6)return 0;
+        else if (native_pack_hit_rng_site(gates[i].site)) {
             if(count-i<2 || gates[i+1].site!=gates[i].site+5 || gates[i+1].clock!=gates[i].clock)return 0;
             ++i;
         } else if(native_pack_hit_rng_site(gates[i].site-5))return 0;
@@ -128,6 +149,12 @@ static inline int native_tick_stream_valid(const SyncTickGate *gates,uint32_t co
             for (unsigned j=1;j<5;++j)
                 if (gates[i+j].clock!=gates[i].clock || !native_tick_gate_valid(gates+i+j)) return 0;
             i+=4;
+        } else if (gates[i].site==NATIVE_TICK_WEAPON_COMMAND_ACTOR) {
+            if (count-i<3 || gates[i+1].site!=NATIVE_TICK_WEAPON_COMMAND_GENERATION ||
+                gates[i+2].site!=NATIVE_TICK_WEAPON_COMMAND_VALUE ||
+                gates[i+1].clock!=gates[i].clock || gates[i+2].clock!=gates[i].clock ||
+                !native_tick_gate_valid(gates+i+1)) return 0;
+            i+=2;
         } else if (gates[i].site==NATIVE_TICK_PACK_MODE_MEMBER) {
             if (count-i<3 || gates[i+1].site!=NATIVE_TICK_PACK_MODE_WITNESS || gates[i+2].site!=NATIVE_TICK_PACK_MODE_VALUE ||
                 gates[i+1].clock!=gates[i].clock || gates[i+2].clock!=gates[i].clock || !native_tick_gate_valid(gates+i+2)) return 0;
@@ -157,6 +184,7 @@ static inline int native_tick_stream_valid(const SyncTickGate *gates,uint32_t co
                 gates[i+1].clock!=gates[i].clock || !native_tick_gate_valid(gates+i+1)) return 0;
             ++i;
         } else if (gates[i].site==0x7b8afd || gates[i].site==0x7b8b08 ||
+                   gates[i].site==NATIVE_TICK_WEAPON_COMMAND_GENERATION || gates[i].site==NATIVE_TICK_WEAPON_COMMAND_VALUE ||
                    gates[i].site==NATIVE_TICK_PACK_ANIMATION_REQUEST || gates[i].site==NATIVE_TICK_PACK_ANIMATION_STATE ||
                    gates[i].site==NATIVE_TICK_PACK_ANIMATION_CLOCK || gates[i].site==NATIVE_TICK_PACK_ANIMATION_DELTA ||
                    gates[i].site==NATIVE_TICK_FIRE_VISIBILITY_ACTOR ||

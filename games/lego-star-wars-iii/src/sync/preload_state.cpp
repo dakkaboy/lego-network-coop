@@ -21,7 +21,7 @@ int preload_input_valid(const SyncPreloadInput *input) {
     }
     return v.level>=0 && v.level<4096 && v.serial && preload_phase_active(v.root_phase,1) &&
         std::isfinite(v.delta) && v.delta>=0 && v.delta<=.1f &&
-        std::isfinite(v.engine_delta) && v.engine_delta>=0 && v.engine_delta<=.1f && v.engine_mode<=16;
+        std::isfinite(v.engine_delta) && v.engine_delta>=0 && v.engine_delta<=.1f && v.engine_mode<=16 && std::isfinite(v.game_time);
 }
 int preload_receipt_valid(const SyncPreloadReceipt *receipt) {
     if (!receipt) return 0;

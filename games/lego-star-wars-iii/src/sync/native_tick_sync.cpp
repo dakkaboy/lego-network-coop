@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include "native_tick_sync.h"
+#include "../engine/native_gizmo_source.h"
 extern "C" {
 #include "game_sync.h"
 #include "entity_sync.h"
@@ -109,6 +110,7 @@ __declspec(dllexport) volatile uint32_t clonewars_native_tick_correction[6];
 __declspec(dllexport) volatile uint32_t clonewars_native_pack_pose_correction[16];
 __declspec(dllexport) volatile uint32_t clonewars_native_pack_cell_correction[8];
 __declspec(dllexport) volatile uint32_t clonewars_native_pack_hit_correction[8];
+__declspec(dllexport) volatile uint32_t clonewars_native_weapon_command_correction[8];
 __declspec(dllexport) volatile uint32_t clonewars_native_clock_debug[4],clonewars_native_clock_correction[10];
 }
 namespace {
@@ -191,6 +193,108 @@ extern "C" uint32_t __cdecl native_tick_decision(uint32_t site,uint32_t local) {
         }
     }
     SetLastError(error);return result;
+}
+
+extern "C" int native_tick_elapsed_input(void) {
+    const DWORD error=GetLastError();int result=0;
+    if(live(COHERENT_PHASE_BIT(COHERENT_DISPATCH)) && !failed) {
+        const uint32_t local=*reinterpret_cast<uint32_t *>(NATIVE_TICK_GAME_TIME);
+        if(!native_track_time_valid(local))fail(6,NATIVE_TICK_GAME_TIME,*reinterpret_cast<uint32_t *>(0xfb4b6c));
+        else {
+            const uint32_t canonical=native_tick_decision(NATIVE_TICK_GAME_TIME,local);
+            if(!failed && live(COHERENT_PHASE_BIT(COHERENT_DISPATCH))) {
+                *reinterpret_cast<uint32_t *>(NATIVE_TICK_GAME_TIME)=canonical;result=1;
+            }
+        }
+    }
+    SetLastError(error);return result;
+}
+extern "C" void __cdecl native_weapon_commands(unsigned char *actor) {
+    if (!live(COHERENT_PHASE_BIT(COHERENT_DISPATCH)) || failed) return;
+    const DWORD error=GetLastError();
+    const uint32_t clock=*reinterpret_cast<uint32_t *>(0xfb4b6c);
+    int slot=entities_slot(actor);
+    uint32_t generation=entities_generation(actor);
+    constexpr uint32_t site=NATIVE_TICK_WEAPON_COMMAND_ACTOR;
+    if(!host && (slot<0 || !generation) && entities_bind_native_actor(frame,actor)) {
+        slot=entities_slot(actor);generation=entities_generation(actor);
+    }
+    if (slot<0 || !generation) {SetLastError(error);return;}
+    if (static_cast<uint32_t>(slot)>=SYNC_MAX_ACTORS || !readable(actor,0x1440)) {
+        fail(4,site,clock);SetLastError(error);return;
+    }
+    const uint32_t local=static_cast<uint32_t>(actor[0x8ea]) | static_cast<uint32_t>(actor[0x8fa])<<8 |
+        static_cast<uint32_t>(actor[0x8fb])<<16 | static_cast<uint32_t>(actor[0x8fc])<<24;
+    const auto *expected=cursor<frame->tick_gate_count ? frame->tick_gates+cursor : nullptr;
+    if (host && frame->tick_gate_count>SYNC_MAX_TICK_GATES-3) fail(1,site,clock);
+    else if (!host && (!expected || frame->tick_gate_count-cursor<3 ||
+             expected[0].site!=site || expected[0].clock!=clock || expected[0].value!=static_cast<uint32_t>(slot) ||
+             expected[1].site!=NATIVE_TICK_WEAPON_COMMAND_GENERATION || expected[1].clock!=clock || expected[1].value!=generation ||
+             expected[2].site!=NATIVE_TICK_WEAPON_COMMAND_VALUE || expected[2].clock!=clock)) {
+        fail(2,site,clock,expected);
+        const uint32_t values[]={static_cast<uint32_t>(slot),generation,
+            expected?expected[0].value:UINT32_MAX,
+            expected && frame->tick_gate_count-cursor>=2?expected[1].value:0,
+            reinterpret_cast<uintptr_t>(actor),local,
+            *reinterpret_cast<uint32_t *>(actor+0x4c),*reinterpret_cast<uint32_t *>(actor+0x50)};
+        std::memcpy(const_cast<uint32_t *>(clonewars_native_tick_failure)+8,values,sizeof values);
+    }
+    else {
+        native_tick_decision(site,static_cast<uint32_t>(slot));
+        native_tick_decision(NATIVE_TICK_WEAPON_COMMAND_GENERATION,generation);
+        const uint32_t result=native_tick_decision(NATIVE_TICK_WEAPON_COMMAND_VALUE,local);
+        if (!host && !failed && live(COHERENT_PHASE_BIT(COHERENT_DISPATCH))) {
+            if (result!=local && !clonewars_native_weapon_command_correction[0]) {
+                const uint32_t values[]={frame->epoch,frame->sequence,clock,static_cast<uint32_t>(slot),generation,local,result,cursor-3};
+                std::memcpy(const_cast<uint32_t *>(clonewars_native_weapon_command_correction),values,sizeof values);
+            }
+            // 7E6CD0 queues these bytes; 45A929 consumes them before invoking stock Fire.
+            actor[0x8ea]=result;actor[0x8fa]=result>>8;actor[0x8fb]=result>>16;actor[0x8fc]=result>>24;
+        }
+    }
+    SetLastError(error);
+}
+
+extern "C" void __cdecl native_gizmo_turret_input(unsigned char *gizmo) {
+    if(!live(COHERENT_PHASE_BIT(COHERENT_DISPATCH)) || failed)return;
+    const DWORD error=GetLastError();
+    constexpr uint32_t site=NATIVE_TICK_GIZMO_TURRET_SOURCE;
+    const uint32_t clock=*reinterpret_cast<uint32_t *>(0xfb4b6c);
+    NativeGizmoSource source;
+    if(!readable(gizmo,0x158) || !native_gizmo_source_find(gizmo,0x838260,source)) {
+        fail(4,site,clock);
+        const uint32_t values[]={reinterpret_cast<uintptr_t>(gizmo),readable(gizmo,4)?static_cast<uint32_t>(pointer(gizmo)):0,
+            *reinterpret_cast<uint32_t *>(0xfb4a20),*reinterpret_cast<uint32_t *>(0xe90184),0,0,0,0};
+        std::memcpy(const_cast<uint32_t *>(clonewars_native_tick_failure)+8,values,sizeof values);
+        SetLastError(error);return;
+    }
+    uint32_t local[7];std::memcpy(local,source.key,sizeof source.key);
+    local[4]=*reinterpret_cast<uint16_t *>(0xe637b4);
+    local[5]=*reinterpret_cast<uint32_t *>(0xea178c);
+    std::memcpy(local+6,gizmo+0x154,4);
+    const auto *expected=cursor<frame->tick_gate_count?frame->tick_gates+cursor:nullptr;
+    bool valid=native_track_time_valid(local[6]);
+    if(host)valid=valid && frame->tick_gate_count<=SYNC_MAX_TICK_GATES-7;
+    else {
+        valid=valid && expected && frame->tick_gate_count-cursor>=7;
+        for(unsigned i=0;valid && i<7;++i)
+            valid=expected[i].site==site+i && expected[i].clock==clock && native_tick_gate_valid(expected+i) &&
+                (i>=4 || expected[i].value==local[i]);
+    }
+    if(!valid)fail(2,site,clock,expected);
+    else {
+        uint32_t result[7];
+        for(unsigned i=0;i<7;++i)result[i]=native_tick_decision(site+i,local[i]);
+        if(!host && !failed && live(COHERENT_PHASE_BIT(COHERENT_DISPATCH))) {
+            if(!native_gizmo_source_revalidate(source))fail(4,site,clock,expected);
+            else {
+                *reinterpret_cast<uint16_t *>(0xe637b4)=static_cast<uint16_t>(result[4]);
+                *reinterpret_cast<uint32_t *>(0xea178c)=result[5];
+                std::memcpy(gizmo+0x154,result+6,4);
+            }
+        }
+    }
+    SetLastError(error);
 }
 
 extern "C" uint32_t __cdecl native_fire_visibility(const void *actor,uint32_t local) {
@@ -864,6 +968,26 @@ __attribute__((naked)) void native_rts_turret_aim_input(void) {
         "fxrstor (%esp)\n\tmovl 512(%esp),%esp\n\tpopal\n\tpopfl\n\t"
         "leal 0x8a0(%esi),%eax\n\tjmp *_rts_turret_aim_resume");
 }
+__attribute__((used)) static volatile uintptr_t gizmo_turret_resume=0x838281;
+__attribute__((naked)) void native_gizmo_turret_bridge(void) {
+    __asm__ volatile(
+        "pushfl\n\tpushal\n\tmovl %esp,%eax\n\tsubl $544,%esp\n\tandl $-16,%esp\n\t"
+        "movl %eax,512(%esp)\n\tfxsave (%esp)\n\tfninit\n\t"
+        "movl $0x1f80,516(%esp)\n\tldmxcsr 516(%esp)\n\tcld\n\t"
+        "subl $12,%esp\n\tpushl 16(%eax)\n\tcall _native_gizmo_turret_input\n\taddl $16,%esp\n\t"
+        "fxrstor (%esp)\n\tmovl 512(%esp),%esp\n\tpopal\n\tpopfl\n\t"
+        "movzwl 0x1ba(%ebx),%eax\n\tjmp *_gizmo_turret_resume");
+}
+__attribute__((used)) static volatile uintptr_t weapon_commands_resume=0x45a930;
+__attribute__((naked)) void native_weapon_commands_input(void) {
+    __asm__ volatile(
+        "pushfl\n\tpushal\n\tmovl %esp,%eax\n\tsubl $544,%esp\n\tandl $-16,%esp\n\t"
+        "movl %eax,512(%esp)\n\tfxsave (%esp)\n\tfninit\n\t"
+        "movl $0x1f80,516(%esp)\n\tldmxcsr 516(%esp)\n\tcld\n\t"
+        "subl $12,%esp\n\tpushl 16(%eax)\n\tcall _native_weapon_commands\n\taddl $16,%esp\n\t"
+        "fxrstor (%esp)\n\tmovl 512(%esp),%esp\n\tpopal\n\tpopfl\n\t"
+        "cmpb $0xff,0x8fb(%ebx)\n\tjmp *_weapon_commands_resume");
+}
 __attribute__((naked,thiscall)) uint32_t native_fire_visibility_input(const void *actor) {
     __asm__ volatile(
         "movl 8(%ecx),%eax\n\ttestl %eax,%eax\n\tjz 1f\n\tmovb 0x42(%eax),%al\n\t"
@@ -928,6 +1052,7 @@ int native_tick_begin(SyncFrame *next,int authority,const CoherentFrameToken *or
         std::memset(const_cast<uint32_t *>(clonewars_native_pack_pose_correction),0,sizeof(clonewars_native_pack_pose_correction));
         std::memset(const_cast<uint32_t *>(clonewars_native_pack_cell_correction),0,sizeof(clonewars_native_pack_cell_correction));
         std::memset(const_cast<uint32_t *>(clonewars_native_pack_hit_correction),0,sizeof(clonewars_native_pack_hit_correction));
+        std::memset(const_cast<uint32_t *>(clonewars_native_weapon_command_correction),0,sizeof(clonewars_native_weapon_command_correction));
     }
     frame=next;token=*original;cursor=0;host=authority!=0;failed=false;active=true;
     if (host) frame->tick_gate_count=frame->tick_gate_reserved=0;
@@ -953,11 +1078,11 @@ int native_tick_install(void) {
         if(code[0]!=0xe8 || source[0]+5+relative!=source[1])return 0;
     }
     const uintptr_t reset_actors_call=0x791777;
-    const uintptr_t sites[]={0x8888cd,0x888889,0x888897,0x889edc,0x7b8b02,0x9dda14,0x9dd0f4,reset_actors_call,NATIVE_TICK_RTS_GAME_RNG,NATIVE_TICK_RTS_PRODUCER_GAME_RNG,NATIVE_TICK_RTS_PACK_ADMISSION,NATIVE_TICK_RTS_TURRET_HEADING,NATIVE_TICK_PACK_ATTACK,NATIVE_TICK_PACK_TIMER_MEMBER,NATIVE_TICK_PACK_MODE_MEMBER,NATIVE_TICK_PACK_REARM_MEMBER,0x4604b3,NATIVE_TICK_FIRE_VISIBILITY,NATIVE_TICK_RTS_TURRET_AIM,NATIVE_TICK_PACK_ANIMATION_MEMBER,NATIVE_TICK_PACK_MOVE_TIMER,NATIVE_TICK_PACK_MOVE_HEADING,NATIVE_TICK_PACK_MOVE_CHOICE,NATIVE_TICK_PACK_POSE_QUERY,NATIVE_TICK_PACK_POSE_COMMIT,NATIVE_TICK_PACK_CELL_MEMBER};
-    void *hooks[]={reinterpret_cast<void *>(native_tick_first),reinterpret_cast<void *>(native_world_exit),reinterpret_cast<void *>(native_world_continue),reinterpret_cast<void *>(native_flow_request_input),reinterpret_cast<void *>(native_track_clock_input),reinterpret_cast<void *>(native_perception_sweep_input),reinterpret_cast<void *>(native_perception_sweep_early),reinterpret_cast<void *>(reset_native_visibility_cache),reinterpret_cast<void *>(native_rts_registry_input),reinterpret_cast<void *>(native_rts_producer_input),reinterpret_cast<void *>(native_rts_pack_gate),reinterpret_cast<void *>(native_rts_turret_heading_input),reinterpret_cast<void *>(native_pack_attack_input),reinterpret_cast<void *>(native_pack_attack_seed_input),reinterpret_cast<void *>(native_pack_mode_input),reinterpret_cast<void *>(native_pack_rearm_seed_input),reinterpret_cast<void *>(native_pack_formation_input),reinterpret_cast<void *>(native_fire_visibility_input),reinterpret_cast<void *>(native_rts_turret_aim_input),reinterpret_cast<void *>(native_pack_animation_input),reinterpret_cast<void *>(native_pack_move_timer_seed_input),reinterpret_cast<void *>(native_pack_move_heading_seed_input),reinterpret_cast<void *>(native_pack_move_choice_seed_input),reinterpret_cast<void *>(native_pack_pose_query_input),reinterpret_cast<void *>(native_pack_pose_commit_input),reinterpret_cast<void *>(native_pack_cell_admission_input)};
-    const unsigned char bytes[][11]={{0x80,0x3d,0x61,0xc1,0xfb,0,0},{0x6a,0x0f,0x8b,0xcf,0xe8,0x6e,0xbf,0xf5,0xff},{0xe8,0x84,0x4b,0xcf,0xff},{0x8b,0x46,0x60,0x3b,0xc7},{0x85,0xc0,0x74,0x1e,0x8b,0xc8,0xe8,0xc3,0x86,0xf0,0xff},
+    const uintptr_t sites[]={NATIVE_TICK_GIZMO_TURRET_SOURCE,NATIVE_TICK_WEAPON_COMMAND_ACTOR,0x8888cd,0x888889,0x888897,0x889edc,0x7b8b02,0x9dda14,0x9dd0f4,reset_actors_call,NATIVE_TICK_RTS_GAME_RNG,NATIVE_TICK_RTS_PRODUCER_GAME_RNG,NATIVE_TICK_RTS_PACK_ADMISSION,NATIVE_TICK_RTS_TURRET_HEADING,NATIVE_TICK_PACK_ATTACK,NATIVE_TICK_PACK_TIMER_MEMBER,NATIVE_TICK_PACK_MODE_MEMBER,NATIVE_TICK_PACK_REARM_MEMBER,0x4604b3,NATIVE_TICK_FIRE_VISIBILITY,NATIVE_TICK_RTS_TURRET_AIM,NATIVE_TICK_PACK_ANIMATION_MEMBER,NATIVE_TICK_PACK_MOVE_TIMER,NATIVE_TICK_PACK_MOVE_HEADING,NATIVE_TICK_PACK_MOVE_CHOICE,NATIVE_TICK_PACK_POSE_QUERY,NATIVE_TICK_PACK_POSE_COMMIT,NATIVE_TICK_PACK_CELL_MEMBER};
+    void *hooks[]={reinterpret_cast<void *>(native_gizmo_turret_bridge),reinterpret_cast<void *>(native_weapon_commands_input),reinterpret_cast<void *>(native_tick_first),reinterpret_cast<void *>(native_world_exit),reinterpret_cast<void *>(native_world_continue),reinterpret_cast<void *>(native_flow_request_input),reinterpret_cast<void *>(native_track_clock_input),reinterpret_cast<void *>(native_perception_sweep_input),reinterpret_cast<void *>(native_perception_sweep_early),reinterpret_cast<void *>(reset_native_visibility_cache),reinterpret_cast<void *>(native_rts_registry_input),reinterpret_cast<void *>(native_rts_producer_input),reinterpret_cast<void *>(native_rts_pack_gate),reinterpret_cast<void *>(native_rts_turret_heading_input),reinterpret_cast<void *>(native_pack_attack_input),reinterpret_cast<void *>(native_pack_attack_seed_input),reinterpret_cast<void *>(native_pack_mode_input),reinterpret_cast<void *>(native_pack_rearm_seed_input),reinterpret_cast<void *>(native_pack_formation_input),reinterpret_cast<void *>(native_fire_visibility_input),reinterpret_cast<void *>(native_rts_turret_aim_input),reinterpret_cast<void *>(native_pack_animation_input),reinterpret_cast<void *>(native_pack_move_timer_seed_input),reinterpret_cast<void *>(native_pack_move_heading_seed_input),reinterpret_cast<void *>(native_pack_move_choice_seed_input),reinterpret_cast<void *>(native_pack_pose_query_input),reinterpret_cast<void *>(native_pack_pose_commit_input),reinterpret_cast<void *>(native_pack_cell_admission_input)};
+    const unsigned char bytes[][11]={{0x0f,0xb7,0x83,0xba,1,0,0},{0x80,0xbb,0xfb,8,0,0,0xff},{0x80,0x3d,0x61,0xc1,0xfb,0,0},{0x6a,0x0f,0x8b,0xcf,0xe8,0x6e,0xbf,0xf5,0xff},{0xe8,0x84,0x4b,0xcf,0xff},{0x8b,0x46,0x60,0x3b,0xc7},{0x85,0xc0,0x74,0x1e,0x8b,0xc8,0xe8,0xc3,0x86,0xf0,0xff},
         {0x83,0x7c,0x24,0x18,0,0x0f,0x84,0xd3,4,0,0},{0x83,0x7c,0x24,0x18,0,0x0f,0x85,0x20,9,0,0},{0xe8,0xe4,0x4d,0x11,0},{0xe8,0xd2,0x6a,0xfb,0xff},{0x8b,0xbe,0xb8,0,0,0},{0x3b,0xdf,0x7d,0x26,0x84,0xc0,0x75,0x22},{0x66,0x89,0x86,0x80,8,0,0},{0xf6,0xc2,2,0x74,0x34,0xd8,0x1d,0x44,0xae,0xad,0},{0xe8,0xa7,0x5c,0x27,0},{0x0f,0xb6,0x46,0x60,0x83,0xf8,0x1d},{0xe8,0xc6,0x59,0x27,0},{0x74,0x3f,0xd9,0x44,0x24,0x20},{0xe8,0x78,0x8a,0xb8,0xff},{0x8d,0x86,0xa0,8,0,0},{0x51,0x8b,0x44,0x24,0x0c,0x56},{0xe8,0xbe,0x63,0x27,0},{0xe8,0xb1,0x63,0x27,0},{0xe8,0x23,0x5f,0x27,0},{0xe8,0x5c,0x4f,0xfb,0xff},{0x8b,0x41,0x38,0x8b,0x54,0x24,0x04},{0xf6,0xc3,0x60,0x75,0x20}};
-    const unsigned sizes[]={7,9,5,5,11,11,11,5,5,6,8,7,11,5,7,5,6,5,6,6,5,5,5,5,7,5};
+    const unsigned sizes[]={7,7,7,9,5,5,11,11,11,5,5,6,8,7,11,5,7,5,6,5,6,6,5,5,5,5,7,5};
     const auto count=sizeof(sites)/sizeof(sites[0]);
     for (unsigned i=0;i<count;++i) if (std::memcmp(reinterpret_cast<void *>(sites[i]),bytes[i],sizes[i])) return 0;
     // 8889EA only controls the local preload indicator timer; its outer guard is asynchronous.

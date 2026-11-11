@@ -5,6 +5,7 @@
 #include "sync/entity_sync.h"
 #include "sync/entity_match.h"
 #include "sync/tag_identity.h"
+#include "sync/native_tick_sync.h"
 
 enum { ACTOR_COUNT = 4, ACTOR_STRIDE = 0x1440 };
 
@@ -126,6 +127,47 @@ static void test_retiring_tag_operands(void) {
     entity_test_pool=saved_pool;
     memcpy(entity_test_players,saved_players,sizeof saved_players);
     entities_update();
+}
+static void test_last_native_weapon_command(void) {
+    char *saved_pool=entity_test_pool,*saved_players[8];
+    memcpy(saved_players,entity_test_players,sizeof saved_players);
+    entity_test_pool=calloc(ACTOR_COUNT,ACTOR_STRIDE);assert(entity_test_pool);
+    memset(entity_test_players,0,sizeof entity_test_players);
+    char *actor=entity_test_pool;const uint32_t active=3,inactive=0;const int16_t character=381;
+    memcpy(actor+0x50,&active,4);memcpy(actor+0xdc0,&character,2);actor[0x55]=-1;
+    entities_update();entities_note_spawn_source(actor,123,(SyncSpawnSource){1,2});
+    SyncFrame *post=calloc(1,sizeof *post);assert(post);post->sequence=2;post->actor_count=1;
+    entities_describe(post->actors,actor);post->actors[0].slot=70;post->actors[0].generation=900;
+    post->actors[0].player=post->actors[0].party_slot=-1;post->actors[0].health=2;post->actors[0].character=character;
+    const SyncActor original=post->actors[0];assert(entities_bind(post));
+    post->actor_count=0;post->tick_gate_count=3;
+    post->tick_gates[0]=(SyncTickGate){NATIVE_TICK_WEAPON_COMMAND_ACTOR,100,70};
+    post->tick_gates[1]=(SyncTickGate){NATIVE_TICK_WEAPON_COMMAND_GENERATION,100,900};
+    post->tick_gates[2]=(SyncTickGate){NATIVE_TICK_WEAPON_COMMAND_VALUE,100,0xfffefe03};
+    assert(entities_bind_tick(post) && entities_actor(70,900)==actor && entities_generation(actor)==900);
+    post->tick_gate_count=2;assert(!entities_bind_tick(post) && entities_actor(70,900)==actor);
+    post->tick_gate_count=3;
+    assert(entities_bind(post) && !entities_actor(70,900) && !entities_generation(actor));
+    post->actors[0]=original;post->actor_count=1;assert(entities_bind(post));
+    post->actors[0].generation=901;
+    assert(entities_bind_tick(post) && entities_actor(70,900)==actor && !entities_actor(70,901));
+    memcpy(actor+0x50,&inactive,4);entities_update();
+    memcpy(actor+0x50,&active,4);entities_update();entities_note_spawn_source(actor,123,(SyncSpawnSource){1,2});
+    assert(entities_bind(post) && entities_actor(70,901)==actor && !entities_actor(70,900));
+    memcpy(actor+0x50,&inactive,4);entities_update();post->actor_count=0;
+    assert(entities_bind_tick(post) && !entities_actor(70,900));
+    char *newborn=entity_test_pool+2*ACTOR_STRIDE;const int16_t newborn_character=357;
+    post->actor_count=1;post->actors[0]=original;post->actors[0].slot=72;post->actors[0].generation=904;
+    post->actors[0].character=newborn_character;post->actors[0].spawn_source=(SyncSpawnSource){5,3};
+    assert(!entities_bind(post));assert(!entities_bind_native_actor(post,newborn));
+    memcpy(newborn+0x50,&active,4);memcpy(newborn+0xdc0,&newborn_character,2);newborn[0x55]=-1;
+    entities_update();entities_note_spawn_source(newborn,original.spawn_tag,(SyncSpawnSource){5,3});
+    post->actor_count=2;post->actors[1]=post->actors[0];post->actors[1].slot=73;
+    assert(!entities_bind_native_actor(post,newborn));post->actor_count=1;
+    assert(entities_bind_native_actor(post,newborn) && entities_actor(72,904)==newborn && entities_generation(newborn)==904);
+    memcpy(newborn+0x50,&inactive,4);entities_update();assert(!entities_bind_native_actor(post,newborn));
+    free(post);free(entity_test_pool);entity_test_pool=saved_pool;
+    memcpy(entity_test_players,saved_players,sizeof saved_players);entities_update();
 }
 static void test_cold_tag_binding(void) {
     char *saved_pool=entity_test_pool,*saved_players[8];
@@ -282,6 +324,7 @@ int main(void) {
 
     test_retiring_tag_operands();
     test_cold_tag_binding();
+    test_last_native_weapon_command();
 
     free(frame);
     free(entity_test_pool);

@@ -4,6 +4,7 @@
 #include <string.h>
 #include "entity_sync.h"
 #include "entity_match.h"
+#include "native_tick_sync.h"
 #include "tag_identity.h"
 #include "../net/lan.h"
 #include "../engine/game_state.h"
@@ -404,7 +405,8 @@ static void retire(const SyncActor *state) {
     retired_head=(retired_head+1)%SYNC_MAX_PROJECTILES;
     ++clonewars_entity_debug[8];
 }
-int entities_bind(const SyncFrame *frame) {
+static int bind_frame(const SyncFrame *frame,int before_tick) {
+    if(before_tick && !native_tick_stream_valid(frame->tick_gates,frame->tick_gate_count))return 0;
     entities_update(); int count=game_actor_count();
     unsigned char claimed[SYNC_MAX_ACTORS]={0};
     uint32_t wanted[SYNC_MAX_ACTORS]={0};
@@ -432,6 +434,15 @@ int entities_bind(const SyncFrame *frame) {
             if (slot>=0 && slot<SYNC_MAX_ACTORS && generation && (!wanted[slot] || wanted[slot]==generation))
                 wanted[slot]=generation;
         }
+    }
+    if(before_tick)for(uint32_t i=0;i<frame->tick_gate_count;++i) {
+        if(frame->tick_gates[i].site!=NATIVE_TICK_WEAPON_COMMAND_ACTOR)continue;
+        const uint32_t slot=frame->tick_gates[i].value,generation=frame->tick_gates[i+1].value;
+        const Binding *binding=bindings+slot;
+        if(binding->remote_generation==generation && binding->local_slot>=0 && binding->local_slot<count &&
+           entities_allocation_live(pool+binding->local_slot*0x1440,binding->local_generation))
+            wanted[slot]=generation;
+        i+=2;
     }
     // PREPARE sees post-tag roles before in-tick Tag replay; that handoff does not retire an allocation.
     for (int slot=0;slot<SYNC_MAX_ACTORS;++slot) {
@@ -480,6 +491,8 @@ int entities_bind(const SyncFrame *frame) {
     }
     for (unsigned i=0;i<frame->actor_count;++i) {
         const SyncActor *state=frame->actors+i;
+        // The last native command precedes retirement or reuse represented by the post-tick roster.
+        if(before_tick && wanted[state->slot] && wanted[state->slot]!=state->generation)continue;
         const int native_party=initial_party && state->party_slot>=2 ? state->party_slot : state->player;
         if ((native_party<0)!=(pass==1)) continue;
         Binding *b=bindings+state->slot;
@@ -532,6 +545,39 @@ int entities_bind(const SyncFrame *frame) {
     clonewars_entity_debug[6]=sizeof(LocalEntity);
     clonewars_entity_debug[7]=(uint32_t)(uintptr_t)bindings;
     return !missing;
+}
+int entities_bind(const SyncFrame *frame) {return bind_frame(frame,0);}
+int entities_bind_tick(const SyncFrame *frame) {return bind_frame(frame,1);}
+static int bind_native_actor(const SyncFrame *frame,const void *actor) {
+    if(!frame || frame->actor_count>SYNC_MAX_ACTORS || lan_is_host())return 0;
+    entities_update();const int slot=raw_slot(actor);
+    if(slot<0 || slot>=game_actor_count() || !entities_allocation_live(actor,local[slot].key.generation))return 0;
+    const int remote=inverse[slot];
+    if(remote>=0 && remote<SYNC_MAX_ACTORS && bindings[remote].local_generation==local[slot].key.generation)return 1;
+    if(!local[slot].key.spawn_source.producer)return 0;
+    const SyncActor *match=NULL;
+    for(uint32_t i=0;i<frame->actor_count;++i) {
+        const SyncActor *state=frame->actors+i;
+        if(!reference_matches(&local[slot].key,state))continue;
+        if(match || state->slot>=SYNC_MAX_ACTORS || !state->generation)return 0;
+        match=state;
+    }
+    if(!match || (assigned[slot].local_generation==local[slot].key.generation &&
+       (assigned[slot].remote_slot!=match->slot || assigned[slot].remote_generation!=match->generation)))return 0;
+    for(int other=0;other<game_actor_count();++other)
+        if(other!=slot && reference_matches(&local[other].key,match) &&
+           entities_allocation_live(pool+other*0x1440,local[other].key.generation))return 0;
+    const Binding *previous=bindings+match->slot;
+    if(previous->remote_generation && previous->local_slot!=slot && previous->local_slot>=0 &&
+       previous->local_slot<game_actor_count() &&
+       entities_allocation_live(pool+previous->local_slot*0x1440,previous->local_generation))return 0;
+    Binding value={match->generation,local[slot].key.generation,slot};
+    bindings[match->slot]=known[match->slot]=value;inverse[slot]=(int)match->slot;
+    assigned[slot].local_generation=value.local_generation;assigned[slot].remote_slot=match->slot;
+    assigned[slot].remote_generation=match->generation;return 1;
+}
+int entities_bind_native_actor(const SyncFrame *frame,const void *actor) {
+    const DWORD error=GetLastError();const int result=bind_native_actor(frame,actor);SetLastError(error);return result;
 }
 void *entities_actor(uint32_t network_slot,uint32_t wanted_generation) {
     if (network_slot>=SYNC_MAX_ACTORS) return NULL;

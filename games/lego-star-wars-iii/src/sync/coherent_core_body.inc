@@ -349,6 +349,7 @@ static int core_preload_prepare(void *receiver,void *packet,unsigned ready_snaps
   if(core_preload.applied.serial==UINT32_MAX){core_reject_atomic(31,NULL);return 0;}
   source.serial=core_preload.applied.serial+1;
   source.clock=*(uint32_t*)0xfb4b6c;source.rng_game=*(uint32_t*)0xe637b4;source.rng_engine=*(uint32_t*)0xea178c;source.rng_effects=*(uint32_t*)0xe5f498;
+  memcpy(&source.game_time,(void*)0xfb4ad4,4);
   memcpy(&source.delta,(void*)0xfb4b74,4);memcpy(&source.engine_delta,(char*)packet+8,4);source.engine_mode=*(uint32_t*)((char*)receiver+0xe30);
   if(!game_native_loader_idle()){lan_invalidate_world_ready();return 0;}
   if(!lan_publish_preload(&source))return 0;
@@ -368,6 +369,7 @@ static int core_preload_prepare(void *receiver,void *packet,unsigned ready_snaps
  core.preload=1;core.preload_world=world;core.preload_epoch=source.epoch;core.release=release;core.session=session;
  if(source.serial==1){clonewars_load_barrier_debug[10]=source.clock;clonewars_load_barrier_debug[11]=source.serial;}
  *(uint32_t*)0xfb4b6c=source.clock;*(uint32_t*)0xe637b4=source.rng_game;*(uint32_t*)0xea178c=source.rng_engine;*(uint32_t*)0xe5f498=source.rng_effects;
+ memcpy((void*)0xfb4ad4,&source.game_time,4);
  clonewars_preload_seed_debug[0]=source.rng_game;clonewars_preload_seed_debug[1]=source.rng_engine;clonewars_preload_seed_debug[2]=source.rng_effects;
  memcpy((void*)0xfb4b74,&source.delta,4);memcpy((char*)packet+8,&source.engine_delta,4);
  *(uint32_t*)((char*)packet+0xc)=source.engine_mode;memcpy((char*)receiver+0xe0c,&source.engine_delta,4);
@@ -486,7 +488,7 @@ static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,v
         int world_ready=world_vars_apply(&working);
         if (!core_live()) { return CORE_SPAN_SKIP; }
         if (!world_ready) { tags_cancel();if (!fault) fault=6;return CORE_SPAN_SKIP; }
-        entities_bind(&working);
+        entities_bind_tick(&working);
         if(!core_live())return CORE_SPAN_SKIP;
         int projectiles_started=projectiles_begin(&working,0);
         if (!projectiles_started || !core_live()) { return CORE_SPAN_SKIP; }
@@ -512,6 +514,9 @@ static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,v
  global_step=(GlobalStepState){0};core.main_calls=core.optional_calls=0;clonewars_coherent_debug[14]=clonewars_coherent_debug[15]=0;clonewars_coherent_debug[16]=actual_plan;
  if(!coherent_frame_set_phase(&core.token,COHERENT_DISPATCH)||!core_live())return CORE_SPAN_SKIP;
  running=1;action_dispatch_open(callback_release_token);
+ if(!native_tick_elapsed_input()||!core_live()){
+  action_dispatch_close();running=0;return CORE_SPAN_SKIP;
+ }
  if(projectiles_dispatch_pending()<0||!core_live()){
   action_dispatch_close();running=0;
   if(core_live())core_reject_atomic(29,NULL);

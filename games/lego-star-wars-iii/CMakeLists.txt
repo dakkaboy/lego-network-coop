@@ -40,6 +40,7 @@ add_library(clonewars-camera SHARED
     src/engine/native_hub_source.cpp
     src/engine/native_authored_poi.cpp
     src/engine/native_resource_identity.cpp
+    src/engine/native_gizmo_source.cpp
     src/engine/native_script_shoot_source.cpp
     src/engine/script_shoot_dispatch_thunk.cpp
     src/engine/span_engine.c
