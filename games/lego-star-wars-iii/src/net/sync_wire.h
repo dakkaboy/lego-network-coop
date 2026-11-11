@@ -4,7 +4,7 @@
 #define SYNC_MAX_VARIABLES 1024
 #define SYNC_MAX_SHOTS 128
 #define SYNC_MAX_PHYSICS_CHOICES 1024
-#define SYNC_MAX_TICK_GATES 64
+#define SYNC_MAX_TICK_GATES (SYNC_MAX_ACTORS * 2)
 #define SYNC_MAX_PROJECTILES 512
 #define SYNC_MAX_TAGS 16
 #define SYNC_MAX_SPAWN_TIMERS 192
@@ -12,8 +12,8 @@
 #define SYNC_MAX_SPAWN_TIMER_CHOICES (SYNC_MAX_SPAWN_TIMERS + SYNC_MAX_RTS_TEAMS * 4)
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
-#define SYNC_LAYOUT_VERSION 47
-#define SYNC_WIRE_VERSION 99
+#define SYNC_LAYOUT_VERSION 50
+#define SYNC_WIRE_VERSION 122
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -47,13 +47,21 @@ typedef struct SyncPreloadInput {
     float delta,engine_delta;
     uint32_t engine_mode;
 } SyncPreloadInput;
+#define SYNC_MAX_PRELOAD_FLOW_REQUESTS 64
+typedef struct SyncPreloadTrack {
+    uint32_t witness[2],time;
+} SyncPreloadTrack;
 typedef struct SyncPreloadReceipt {
-    uint32_t serial,world_calls,end_phase;
+    uint32_t serial,world_calls,end_phase,flow_count;
+    uint32_t flow_requests[SYNC_MAX_PRELOAD_FLOW_REQUESTS];
+    uint32_t track_count;
+    SyncPreloadTrack tracks[SYNC_MAX_PRELOAD_FLOW_REQUESTS];
 } SyncPreloadReceipt;
 typedef struct SyncWorldReady {
     uint32_t epoch;
     int32_t level;
     uint32_t root_phase,completed_serial;
+    uint32_t collider_count,collider_roster;
 } SyncWorldReady;
 typedef struct SyncInput {
     uint32_t held;
@@ -119,6 +127,8 @@ typedef struct SyncTagIdentity {
     SyncSpawnSource spawn_source;
 } SyncTagIdentity;
 
+enum { SYNC_TAG_UNSCOPED, SYNC_TAG_ACTOR_UPDATE };
+
 typedef struct SyncTag {
     uint32_t id,parent;
     int32_t from,to;
@@ -126,7 +136,7 @@ typedef struct SyncTag {
     int32_t arguments[6];
     uint32_t clock,rng_game,rng_engine;
     float delta;
-    uint32_t phase;
+    uint32_t phase, source;
     SyncTagIdentity from_identity,to_identity;
 } SyncTag;
 

@@ -247,6 +247,7 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
         const SyncTag *tag=frame->tags+i;
         if (!tag->id || tag->from<0 || tag->from>=SYNC_MAX_ACTORS || tag->to<0 || tag->to>=SYNC_MAX_ACTORS ||
             tag->from==tag->to || !tag->from_generation || !tag->to_generation || tag->phase>1 ||
+            tag->source>SYNC_TAG_ACTOR_UPDATE || (tag->source && (tag->phase || tag->parent)) ||
             tag->from_identity.character<0 || tag->from_identity.character>=4096 ||
             tag->to_identity.character<0 || tag->to_identity.character>=4096 ||
             !spawn_source_valid(tag->from_identity.spawn_source) || !spawn_source_valid(tag->to_identity.spawn_source) ||

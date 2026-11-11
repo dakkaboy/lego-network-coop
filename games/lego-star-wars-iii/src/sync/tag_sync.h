@@ -55,4 +55,5 @@ int tags_abort_frame(const TagFrameBinding *);
 
 int tags_dispatch_pending(void);
 int tags_dispatch_complete(void);
+void tags_actor_update(void *actor, void (*update)(void *));
 int tags_dispatch_revision(const CoherentFrameToken*,uint64_t*);

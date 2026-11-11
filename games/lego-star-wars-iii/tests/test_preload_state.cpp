@@ -23,8 +23,8 @@ static void reject_finish(NativePreloadState &state,const SyncPreloadReceipt &re
 }
 int main(){
  static_assert(sizeof(SyncPreloadInput)==44);
- static_assert(sizeof(SyncPreloadReceipt)==12);
- static_assert(sizeof(SyncWorldReady)==16);
+ static_assert(sizeof(SyncPreloadReceipt)==1044);
+ static_assert(sizeof(SyncWorldReady)==24);
  require(native_jobs_idle(0,0,0,0));
  require(!native_jobs_idle(1,0,0,0));require(!native_jobs_idle(0,1,0,0));
  require(!native_jobs_idle(0,0,1,0));require(!native_jobs_idle(0,0,0,1));
@@ -33,6 +33,12 @@ int main(){
  require(!preload_world_ready_valid(nullptr)&&!preload_world_ready_matches(&absent_ready,&absent_ready));
  SyncWorldReady prepared{5,7,0xd,0};require(preload_world_ready_valid(&prepared));
  require(preload_world_ready_matches(&prepared,&prepared));
+ auto fewer=prepared;
+ fewer.collider_count=1;
+ fewer.collider_roster=42;
+ require(preload_world_ready_matches(&prepared,&fewer));
+ require(!preload_world_roster_matches(&prepared,&fewer));
+ require(preload_world_roster_matches(&fewer,&fewer));
  for(unsigned field=0;field<4;++field){auto stale=prepared;
   if(field==0)stale.epoch++;if(field==1)stale.level++;if(field==2)stale.root_phase=0xe;if(field==3)stale.completed_serial++;
   require(!preload_world_ready_matches(&prepared,&stale));
@@ -52,6 +58,61 @@ int main(){
  require(preload_stage_eligible(0xd,7,-1,1,0));
  require(preload_stage_eligible(0xe,7,-1,1,1));
  require(!preload_initial_seal_ready(nullptr,0xd));
+ {
+  SyncPreloadReceipt receipt{3,1,14,2,{UINT32_MAX,14}};
+  uint32_t request=99;
+  require(preload_receipt_valid(&receipt));
+  require(preload_flow_request_read(&receipt,3,0,&request)==1 && request==UINT32_MAX);
+  require(preload_flow_request_read(&receipt,3,1,&request)==1 && request==14);
+  require(preload_flow_request_read(&receipt,4,0,&request)==0 && request==14);
+  require(preload_flow_request_read(&receipt,2,0,&request)==-1 && request==14);
+  require(preload_flow_request_read(&receipt,3,2,&request)==-1);
+  require(preload_flow_request_read(&receipt,3,SYNC_MAX_PRELOAD_FLOW_REQUESTS,&request)==-1);
+  auto invalid=receipt;invalid.flow_requests[1]=21;require(!preload_receipt_valid(&invalid));
+  invalid=receipt;invalid.flow_requests[2]=1;require(!preload_receipt_valid(&invalid));
+  invalid=receipt;invalid.flow_count=SYNC_MAX_PRELOAD_FLOW_REQUESTS+1;require(!preload_receipt_valid(&invalid));
+  auto state=bound();auto input=source();require(preload_state_accept(&state,&input));
+  receipt.serial=1;require(preload_state_finish(&state,&receipt));
+  require(preload_state_peer_receipt(&state,&receipt)==1);
+  receipt.flow_requests[1]=13;require(preload_state_peer_receipt(&state,&receipt)==-1);
+ }
+ {
+  SyncPreloadReceipt receipt{.serial=3,.world_calls=1,.end_phase=13,.track_count=1};
+  receipt.tracks[0]={{0x1234,0x5678},0x3f800000};
+  uint32_t witness[2]={0x1234,0x5678},time=0;
+  require(preload_receipt_valid(&receipt));
+  require(preload_track_read(&receipt,3,0,witness,&time)==1 && time==0x3f800000);
+  require(preload_track_read(&receipt,4,0,witness,&time)==0 && time==0x3f800000);
+  require(preload_track_read(&receipt,2,0,witness,&time)==-1);
+  witness[1]^=1;require(preload_track_read(&receipt,3,0,witness,&time)==-1);witness[1]^=1;
+  require(preload_track_read(&receipt,3,1,witness,&time)==-1);
+  auto invalid=receipt;invalid.tracks[0].time=0x7fc00000;require(!preload_receipt_valid(&invalid));
+  invalid=receipt;invalid.tracks[1].witness[0]=1;require(!preload_receipt_valid(&invalid));
+  invalid=receipt;invalid.track_count=SYNC_MAX_PRELOAD_FLOW_REQUESTS+1;require(!preload_receipt_valid(&invalid));
+  auto state=bound();auto input=source();require(preload_state_accept(&state,&input));
+  receipt.serial=1;require(preload_state_finish(&state,&receipt));
+  require(preload_state_peer_receipt(&state,&receipt)==1);
+  receipt.tracks[0].time++;require(preload_state_peer_receipt(&state,&receipt)==-1);
+ }
+ {
+  auto entering=bound();auto input=source();input.root_phase=0xb;
+  require(preload_state_accept(&entering,&input));
+  const SyncPreloadReceipt entered{1,1,0xd};
+  require(preload_state_finish(&entering,&entered));
+  require(!preload_initial_seal_ready(&entering,0xd));
+  input=source(2);require(preload_state_accept(&entering,&input));
+  const SyncPreloadReceipt without_world{2,0,0xd};
+  require(preload_state_finish(&entering,&without_world));
+  require(!preload_initial_seal_ready(&entering,0xd));
+  input=source(3);require(preload_state_accept(&entering,&input));
+  const SyncPreloadReceipt updated{3,1,0xd};
+  require(preload_state_finish(&entering,&updated));
+  require(!preload_initial_seal_ready(&entering,0xd));
+  input=source(4);input.root_phase=0xe;require(preload_state_accept(&entering,&input));
+  const SyncPreloadReceipt playable{4,1,0xe};
+  require(preload_state_finish(&entering,&playable));
+  require(preload_initial_seal_ready(&entering,0xe));
+ }
  for(uint32_t phase:{0xdu,0xeu}){
   auto early=bound();auto initial=source();initial.root_phase=phase;
   require(!preload_initial_seal_ready(&early,phase));
@@ -61,7 +122,7 @@ int main(){
   early=bound();require(preload_state_accept(&early,&initial));
   const SyncPreloadReceipt first_world{1,1,phase};
   require(preload_state_finish(&early,&first_world));
-  require(preload_initial_seal_ready(&early,phase));
+  require(preload_initial_seal_ready(&early,phase)==(phase==0xe));
   auto wrong=first_world;wrong.end_phase=phase==0xd?0xe:0xd;
   require(preload_state_peer_receipt(&early,&wrong)==-1);
   require(!preload_initial_seal_ready(&early,wrong.end_phase));

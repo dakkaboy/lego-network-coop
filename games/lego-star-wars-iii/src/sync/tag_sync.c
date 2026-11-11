@@ -55,6 +55,8 @@ typedef struct TagGuard {
     uint64_t serial, binding, pending_generation;
     uint32_t epoch, session;
 } TagGuard;
+typedef struct TagActorUpdate TagActorUpdate;
+static __thread TagActorUpdate *actor_update_scope;
 static int same_token(const CoherentFrameToken *a, const CoherentFrameToken *b) {
     return a->owner == b->owner && a->owner_nonce == b->owner_nonce && a->cohort_nonce == b->cohort_nonce &&
            a->thread == b->thread && a->release == b->release && a->epoch == b->epoch &&
@@ -249,6 +251,13 @@ typedef struct TagOutcome {
     DWORD error;
     int seen;
 } TagOutcome;
+struct TagActorUpdate {
+    TagActorUpdate *previous;
+    void *actor;
+    void (*update)(void *);
+    TagGuard guard;
+    TagOutcome outcome;
+};
 typedef struct TagCall {
     TagControllerScope scope;
     TagGuard authority;
@@ -508,6 +517,8 @@ static int tag_hook_impl(void *from, void *to, int a, int b, int c, int d, int e
         reject_atomic(21);
         return lan_is_host() ? call_original(from, to, args, NULL, outcome) : 0;
     }
+    int actor_update = frame && !active_event && actor_update_scope &&
+        actor_update_scope->actor == from && guard_valid(&actor_update_scope->guard);
     if (frame && !host_role) {
         SyncFrame *borrowed = current;
         for (unsigned i = 0; guard_valid(&guard) && i < borrowed->tag_count; ++i) {
@@ -515,6 +526,9 @@ static int tag_hook_impl(void *from, void *to, int a, int b, int c, int d, int e
                 continue;
             SyncTag tag = borrowed->tags[i];
             if (tag.parent != active_event || (tag.phase && !active_event))
+                break;
+            if (tag.source == SYNC_TAG_ACTOR_UPDATE &&
+                (!actor_update || tag.clock != clock_read().clock))
                 break;
             void *expected_from =
                 resolve_identity(tag.from, tag.from_generation, &tag.from_identity, &guard);
@@ -542,7 +556,8 @@ static int tag_hook_impl(void *from, void *to, int a, int b, int c, int d, int e
     entities_update();
     if (!guard_valid(&guard))
         return call_original(from, to, args, NULL, outcome);
-    SyncTag tag = {.parent = active_event, .phase = frame ? 0u : 1u};
+    SyncTag tag = {.parent = active_event, .phase = frame ? 0u : 1u,
+                   .source = actor_update ? SYNC_TAG_ACTOR_UPDATE : SYNC_TAG_UNSCOPED};
     tag.from = entities_slot(from);
     if (!guard_valid(&guard))
         return call_original(from, to, args, NULL, outcome);
@@ -623,6 +638,55 @@ static int tag_hook(void *from, void *to, int a, int b, int c, int d, int e, int
     SetLastError(outcome.error);
     __asm__ volatile("fxrstor %0" ::"m"(outcome.fx) : "memory");
     return result;
+}
+static int __cdecl actor_update_invoke(void *raw) {
+    TagActorUpdate *scope = raw;
+    actor_update_scope = scope;
+    TagOutcome *outcome = &scope->outcome;
+    SetLastError(outcome->error);
+    __asm__ volatile("fxrstor %0" ::"m"(outcome->fx) : "memory");
+    scope->update(scope->actor);
+    __asm__ volatile("fxsave %0" : "=m"(outcome->fx));
+    outcome->error = GetLastError();
+    const TagGuard *guard = &scope->guard;
+    if (!host_role && guard_valid(guard) && !failed) {
+        SyncFrame *frame = current;
+        for (unsigned i = 0; i < frame->tag_count; ++i) {
+            if (consumed[i])
+                continue;
+            const SyncTag *tag = &frame->tags[i];
+            if (tag->source != SYNC_TAG_ACTOR_UPDATE || tag->clock != clock_read().clock)
+                break;
+            void *from = resolve_identity(tag->from, tag->from_generation, &tag->from_identity, guard);
+            if (!guard_valid(guard) || from != scope->actor || !replay(i, 0, outcome) || !guard_valid(guard))
+                break;
+        }
+    }
+    return 0;
+}
+static void __cdecl actor_update_leave(void *raw, int completed) {
+    (void)completed;
+    TagActorUpdate *scope = raw;
+    actor_update_scope = scope->previous;
+}
+void tags_actor_update(void *actor, void (*update)(void *)) {
+    TagActorUpdate scope;
+    __asm__ volatile("fxsave %0" : "=m"(scope.outcome.fx));
+    scope.outcome.error = GetLastError();
+    scope.outcome.seen = 0;
+    scope.previous = actor_update_scope;
+    scope.actor = actor;
+    scope.update = update;
+    if (active_event || !frame_guard(&scope.guard) ||
+        !coherent_frame_valid(&scope.guard.frame, COHERENT_PHASE_BIT(COHERENT_DISPATCH))) {
+        SetLastError(scope.outcome.error);
+        __asm__ volatile("fxrstor %0" ::"m"(scope.outcome.fx) : "memory");
+        update(actor);
+        return;
+    }
+    tag_lexical_seh(&scope, actor_update_invoke, actor_update_leave);
+    SetLastError(scope.outcome.error);
+    __asm__ volatile("fxrstor %0" ::"m"(scope.outcome.fx) : "memory");
 }
 static void reset_state(void) {
     initial_control_available = 0;
@@ -732,7 +796,14 @@ int tags_dispatch_pending(void){
 }
 int tags_dispatch_complete(void){
  TagGuard guard;if(!frame_guard(&guard)||!coherent_frame_valid(&guard.frame,COHERENT_PHASE_BIT(COHERENT_DISPATCH))||failed)return TAG_FRAME_CANCELLED;
- if(!host_role){SyncFrame*f=current;for(unsigned i=0;guard_valid(&guard)&&i<f->tag_count;++i)if(!consumed[i]&&!replay(i,1,NULL))break;}
+ if(!host_role){
+  SyncFrame*f=current;
+  for(unsigned i=0;guard_valid(&guard)&&i<f->tag_count;++i){
+   if(consumed[i])continue;
+   if(f->tags[i].source==SYNC_TAG_ACTOR_UPDATE){failed=6;break;}
+   if(!replay(i,1,NULL))break;
+  }
+ }
  if(!guard_valid(&guard))return TAG_FRAME_CANCELLED;return failed?TAG_FRAME_FAILED:TAG_FRAME_OK;
 }
 int tags_finish(void) {

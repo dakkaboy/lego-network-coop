@@ -430,15 +430,15 @@ int projectiles_abort_frame(const ProjectileFrameLease*captured){
 #endif
  fire_detach();current=NULL;network_active=authority=0;frame_bound=frame_associated=frame_started=frame_complete=0;binding_cancelled=1;return 1;
 }
-typedef void (__attribute__((stdcall)) *Fire)(void *,const char *,int,void *,void *);
-typedef struct FireCall {FireContext fire;ShooterObservationScope observation;int observing;void *actor,*output1,*output2;const char *weapon;int mode;} FireCall;
+typedef void (__attribute__((thiscall)) *Fire)(void *,void *,const char *,int,void *,void *);
+typedef struct FireCall {FireContext fire;ShooterObservationScope observation;int observing;void *receiver,*actor,*output1,*output2;const char *weapon;int mode;} FireCall;
 static void fire_unlink(FireCall*c){if(active_fire==&c->fire&&c->fire.cleanup_stamp==fire_cleanup_stamp){active_fire=operation_live(&c->fire.operation)?c->fire.previous:NULL;}}
-static void* __cdecl fire_invoke(void*opaque){FireCall*c=opaque;((Fire)0x879710)(c->actor,c->weapon,c->mode,c->output1,c->output2);return NULL;}
+static void* __cdecl fire_invoke(void*opaque){FireCall*c=opaque;((Fire)0x879710)(c->receiver,c->actor,c->weapon,c->mode,c->output1,c->output2);return NULL;}
 static void __cdecl fire_abort(void*opaque){DWORD error=GetLastError();FireCall*c=opaque;if(c->observing)shooter_observer_fire_abort(&c->observation);operation_exception(&c->fire.operation);fire_unlink(c);SetLastError(error);}
 __attribute__((used,noinline)) static void fire_complete_impl(FireCall*c,void*unused){(void)unused;if(!operation_live(&c->fire.operation)){if(c->observing)shooter_observer_fire_abort(&c->observation);fire_unlink(c);return;}if(c->observing)shooter_observer_fire_end(&c->observation);fire_unlink(c);}
 __attribute__((naked)) static void fire_complete(FireCall*c,void*p){__asm__ volatile(CONSTRUCTOR_OBSERVER_THUNK_ASM("_fire_complete_impl"));}
-static void __attribute__((stdcall)) fire_hook(void *actor,const char *weapon,int mode,void *output1,void *output2) {
- FireCall c={0};c.actor=actor;c.weapon=weapon;c.mode=mode;c.output1=output1;c.output2=output2;
+static void __attribute__((thiscall)) fire_hook(void *receiver,void *actor,const char *weapon,int mode,void *output1,void *output2) {
+ FireCall c={0};c.receiver=receiver;c.actor=actor;c.weapon=weapon;c.mode=mode;c.output1=output1;c.output2=output2;
  c.fire.operation=operation_capture();operation_admit_event(&c.fire.operation);c.fire.previous=active_fire;c.fire.cleanup_stamp=fire_cleanup_stamp;c.fire.actor=actor;c.fire.caller=(uint32_t)(uintptr_t)__builtin_return_address(0);c.fire.mode=mode;
  if(c.fire.operation.kind==PROJECTILE_KEYED&&operation_live(&c.fire.operation)){
   c.fire.local_generation=entities_observed_generation(actor);
@@ -839,7 +839,16 @@ int projectiles_dispatch_complete(void){
   char*manager=*(char**)0xe9019c;if(!valid(manager,0x3c)){if(operation_live(&op))failed=1;}else{
 
    for(unsigned i=0;;++i){if(!operation_live(&op))return 0;if(i>=frame->projectile_count)break;const SyncProjectile*state=frame->projectiles+i;Tracked*e=find(state->id);
-    if(!e){record_failure(&op,4,NULL,NULL,state->id,NULL,0,UINT32_MAX);if(!operation_live(&op))return 0;failed=1;continue;}
+    if(!e){
+     unsigned birth=0;
+     while(birth<frame->shot_count && frame->shots[birth].id!=state->id)++birth;
+     void *owner=NULL;
+     if(birth<frame->shot_count)owner=actor_at(frame->shots[birth].owner,frame->shots[birth].owner_generation);
+     else birth=UINT32_MAX;
+     record_failure(&op,4,owner,NULL,state->id,NULL,0,birth);
+     if(!operation_live(&op))return 0;
+     failed=1;continue;
+    }
     if(!valid(e->object,0x210)){if(!operation_live(&op))return 0;record_failure(&op,5,actor_at(e->birth.owner,e->birth.owner_generation),NULL,state->id,e->object,0,UINT32_MAX);if(!operation_live(&op))return 0;failed=1;continue;}
     if(!operation_live(&op))return 0;if(*(void**)(e->object+0x14)!=e->resource){record_failure(&op,5,actor_at(e->birth.owner,e->birth.owner_generation),NULL,state->id,e->object,0,UINT32_MAX);if(!operation_live(&op))return 0;failed=1;continue;}
     if(!correct(&op,state,e))return 0;
