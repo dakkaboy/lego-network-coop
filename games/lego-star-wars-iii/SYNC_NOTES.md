@@ -288,3 +288,28 @@ entry/action route in two offscreen instances. Run ledger: hub-native-time161.
 Screens confirm native HUD, distinct views, visible players and textured geometry.
 This covers mission entry and short actions, not complete missions or two PCs.
 Space vehicle assignment and extended RTS/campaign regression remain unqualified.
+
+## Native piece selection inputs (wire 126)
+
+SpellIt can choose a new piece at three sites inside its native update: 8406A7,
+840790 and 840B93. The last two run after other native effects. Sharing the engine
+seed only at update entry did not cover those consumers. Each site now supplies
+the actual EA178C seed immediately before the original 7DA280 selector. Native
+gizmo identity, piece count and an eligibility fingerprint of the game's linked
+list must match. Eligibility follows the selector's own state != 3 predicate.
+No piece pointer, piece state, NPC action or actor flag is projected by this fix.
+The native selector runs once and retains its own RNG advance.
+
+29 CTests pass, including wire round trips, stale source/cohort rejection without
+seed writes, all three actual call-site wrappers, original-once behavior and live
+x87 state. Exact DLL163 completed CWHub actions with both players through
+947/946, then ShadowOfMalevolence_A in the same session through 652/660 with
+both-role firing. Source-data level selection used the native loader; this does
+not certify a mission-map UI route or full mission completion. Frames show ships,
+textured geometry, stock HUD and different views. Ledger: hub-selection163.
+
+The game selected roaming NPC195 on both peers, matching the earlier -21 case.
+Neither -21 nor -16 recurred. Hardware write observation found no bit400 change
+in Hub; the first changes on both sides were normal native destruction at unload
+clock982. The original -21 flag writer was not separately reproduced, so this is
+regression evidence rather than a claim that every -21 source is closed.

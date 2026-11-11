@@ -13,7 +13,7 @@
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
 #define SYNC_LAYOUT_VERSION 50
-#define SYNC_WIRE_VERSION 125
+#define SYNC_WIRE_VERSION 126
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -370,7 +370,7 @@ enum SyncPhysicsChoiceKind {
     SYNC_PHYSICS_AXIS_SPIN=1, SYNC_PHYSICS_ROTATION_SPIN=2, SYNC_PHYSICS_BREAKUP_LAUNCH=3,
     SYNC_PHYSICS_SPELLIT_SEED=4, SYNC_PHYSICS_SPELLIT_ENTITY=5, SYNC_PHYSICS_SPELLIT_ENABLED=6,
     SYNC_PHYSICS_MODULE_SEED=7, SYNC_PHYSICS_GUN_JAM_SEED=8, SYNC_PHYSICS_SPELLIT_POSE=9,
-    SYNC_PHYSICS_SPELLIT_STEP=10
+    SYNC_PHYSICS_SPELLIT_STEP=10, SYNC_PHYSICS_SPELLIT_SELECTION=11
 };
 typedef struct SyncPhysicsWorldInput {
     uint32_t clock,value;
@@ -404,6 +404,11 @@ typedef struct SyncPhysicsSpellItStepInput {
     float delta,timer;
     uint32_t game_seed,source_name[4],gizmo_class,gizmo_ordinal,reserved[9];
 } SyncPhysicsSpellItStepInput;
+
+typedef struct SyncPhysicsSpellItSelectionInput {
+    uint32_t clock,engine_seed,source_name[4],gizmo_class,gizmo_ordinal;
+    uint32_t candidate_count,eligibility[4],piece_count,reserved[6];
+} SyncPhysicsSpellItSelectionInput;
 typedef struct SyncPhysicsChoice {
     uint32_t kind,site;
     union {
@@ -416,6 +421,7 @@ typedef struct SyncPhysicsChoice {
         SyncPhysicsGunJamInput gun_jam;
         SyncPhysicsSpellItPoseInput spellit_pose;
         SyncPhysicsSpellItStepInput spellit_step;
+        SyncPhysicsSpellItSelectionInput spellit_selection;
     };
 } SyncPhysicsChoice;
 

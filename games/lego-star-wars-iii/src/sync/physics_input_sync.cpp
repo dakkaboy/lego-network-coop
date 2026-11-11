@@ -231,7 +231,8 @@ static int physics_source_input(SyncPhysicsChoice *choice,const CoherentFrameTok
 int physics_world_input(SyncPhysicsChoice *choice,const CoherentFrameToken *token) {
     if (!active) return 0;
     if (!choice || ((choice->kind<SYNC_PHYSICS_SPELLIT_SEED || choice->kind>SYNC_PHYSICS_SPELLIT_ENABLED) &&
-                   choice->kind!=SYNC_PHYSICS_SPELLIT_POSE && choice->kind!=SYNC_PHYSICS_SPELLIT_STEP)) {
+                   choice->kind!=SYNC_PHYSICS_SPELLIT_POSE && choice->kind!=SYNC_PHYSICS_SPELLIT_STEP &&
+                   choice->kind!=SYNC_PHYSICS_SPELLIT_SELECTION)) {
         if (live()) fail(5,choice);
         return -1;
     }
