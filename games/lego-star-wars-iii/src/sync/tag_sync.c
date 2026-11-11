@@ -436,7 +436,7 @@ static int replay(unsigned index, int preserve_context, TagOutcome *outcome) {
     if (!guard_valid(&guard))
         return 0;
     if (result == 1) {
-        entities_bind(frame);
+        entities_bind_tick(frame);
         if (!guard_valid(&guard)) return 0;
     }
     active_event = parent;

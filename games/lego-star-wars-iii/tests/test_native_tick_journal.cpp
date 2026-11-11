@@ -31,6 +31,24 @@ extern "C" uint32_t __cdecl native_rts_pack_admission(const void *,int32_t,int32
 extern "C" uint32_t __cdecl native_rts_turret_heading(const void *,uint32_t);
 extern "C" void __cdecl native_rts_turret_aim(void *);
 extern "C" uint32_t __cdecl native_fire_visibility(const void *,uint32_t);
+extern "C" void __cdecl native_weapon_commands(unsigned char *);
+extern "C" void __cdecl native_gizmo_turret_input(unsigned char *);
+extern "C" void native_weapon_commands_input(void);
+__attribute__((naked)) static uint32_t invoke_weapon_commands(unsigned char *) {
+ __asm__ volatile("pushl %ebx\n\tmovl 8(%esp),%ebx\n\t"
+  "movl $0xcafebabe,%eax\n\tmovl $0x12345678,%ecx\n\tmovl $0x87654321,%edx\n\t"
+  "call _native_weapon_commands_input\n\tpushfl\n\t"
+  "cmpl $0xcafebabe,%eax\n\tjne 1f\n\tcmpl $0x12345678,%ecx\n\tjne 1f\n\t"
+  "cmpl $0x87654321,%edx\n\tjne 1f\n\tpopl %eax\n\tpopl %ebx\n\tret\n\t"
+  "1: addl $4,%esp\n\tpopl %ebx\n\tmovl $-1,%eax\n\tret");
+}
+extern "C" void native_gizmo_turret_bridge(void);
+__attribute__((naked)) static uint32_t invoke_gizmo_turret(unsigned char *) {
+ __asm__ volatile("pushl %ebx\n\tmovl 8(%esp),%ebx\n\tmovl $0x12345678,%ecx\n\tmovl $0x87654321,%edx\n\t"
+  "cmpl %ecx,%ecx\n\tstc\n\tcall _native_gizmo_turret_bridge\n\tpushfl\n\t"
+  "cmpl $0x1234,%eax\n\tjne 1f\n\tcmpl $0x12345678,%ecx\n\tjne 1f\n\tcmpl $0x87654321,%edx\n\tjne 1f\n\t"
+  "popl %eax\n\tpopl %ebx\n\tret\n\t1: addl $4,%esp\n\tpopl %ebx\n\tmovl $-1,%eax\n\tret");
+}
 extern "C" uint32_t __attribute__((thiscall)) native_fire_visibility_input(const void *);
 extern "C" uint32_t __cdecl native_pack_attack(const unsigned char *,uint32_t);
 extern "C" void __cdecl native_pack_attack_seed(const unsigned char *);
@@ -51,6 +69,7 @@ static const void *turret_pilot;
 static uint32_t turret_pilot_generation=17;
 extern "C" int entities_slot(const void *actor) { return actor==turret_pilot ? 12 : -1; }
 extern "C" uint32_t entities_generation(const void *actor) { return actor==turret_pilot ? turret_pilot_generation : 0; }
+extern "C" int entities_bind_native_actor(const SyncFrame *,const void *) {return 0;}
 extern "C" volatile uint32_t clonewars_native_tick_failure[16],clonewars_native_tick_correction[6];
 extern "C" uint32_t game_sync_preload_flow_input(void *,uint32_t request) { return request; }
 extern "C" int game_sync_preload_level(void) { return -1; }
@@ -396,5 +415,100 @@ int main(){
  assert(engine_rng==0x9876abcd && faults==local_only_faults);
  native_pack_mode(first_member,&entry);
  assert(first_member[0x60]==5 && entry==0 && native_tick_finish() && frame->tick_gate_count==0);
+ unsigned char weapon_actor[0x1440]{};
+ turret_pilot=weapon_actor;
+ weapon_actor[0x8ea]=3;weapon_actor[0x8fa]=41;weapon_actor[0x8fb]=254;weapon_actor[0x8fc]=255;
+ weapon_actor[0x8f9]=0xa5;weapon_actor[0x8fd]=0x5a;
+ next(true);native_weapon_commands(weapon_actor);
+ assert(native_tick_finish() && frame->tick_gate_count==3 && native_tick_stream_valid(frame->tick_gates,3));
+ assert(!native_tick_stream_valid(frame->tick_gates,2) && !native_tick_stream_valid(frame->tick_gates+1,2));
+ begin(false);weapon_actor[0x8fa]=254;SetLastError(987);
+ native_weapon_commands(weapon_actor);
+ assert(native_tick_finish() && weapon_actor[0x8ea]==3 && weapon_actor[0x8fa]==41 && weapon_actor[0x8fb]==254 && weapon_actor[0x8fc]==255);
+ assert(weapon_actor[0x8f9]==0xa5 && weapon_actor[0x8fd]==0x5a && GetLastError()==987);
+ for(unsigned mutation=0;mutation<5;++mutation) {
+  next(true);native_weapon_commands(weapon_actor);assert(native_tick_finish());
+  if(mutation==0)frame->tick_gates[0].value++;
+  if(mutation==1)frame->tick_gates[1].value++;
+  if(mutation==2)frame->tick_gates[2].clock++;
+  if(mutation==3)frame->tick_gate_count=2;
+  if(mutation==4)frame->tick_gates[2].site=NATIVE_TICK_FIRE_VISIBILITY;
+  begin(false);weapon_actor[0x8fa]=254;const auto before_reject=faults;
+  native_weapon_commands(weapon_actor);
+  assert(!native_tick_finish() && faults==before_reject+1 && weapon_actor[0x8fa]==254);
+ }
+ next(true);weapon_actor[0x8fa]=254;native_weapon_commands(weapon_actor);assert(native_tick_finish());
+ begin(false);weapon_actor[0x8fa]=41;native_weapon_commands(weapon_actor);assert(native_tick_finish() && weapon_actor[0x8fa]==254);
+ native_tick_cancel(&bound);weapon_actor[0x8fa]=41;native_weapon_commands(weapon_actor);assert(weapon_actor[0x8fa]==41);
+ next(true);turret_pilot=nullptr;SetLastError(765);native_weapon_commands(weapon_actor);
+ assert(native_tick_finish() && !frame->tick_gate_count && weapon_actor[0x8fa]==41 && GetLastError()==765);
+ turret_pilot=weapon_actor;
+ assert(VirtualProtect(reinterpret_cast<void *>(0x45a930),1,PAGE_EXECUTE_READWRITE,&old));
+ *reinterpret_cast<unsigned char *>(0x45a930)=0xc3;
+ assert(FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<void *>(0x45a930),1));
+ for(unsigned char command:{static_cast<unsigned char>(0xff),static_cast<unsigned char>(0xfe),static_cast<unsigned char>(41)}) {
+  next(true);weapon_actor[0x8fb]=command;SetLastError(654);
+  double retained;uint16_t cw_before,cw_after;uint32_t mx_before,mx_after;
+  __asm__ volatile("fnstcw %0\n\tstmxcsr %1\n\tfld1":"=m"(cw_before),"=m"(mx_before));
+  const uint32_t flags=invoke_weapon_commands(weapon_actor);
+  __asm__ volatile("fstpl %0\n\tfnstcw %1\n\tstmxcsr %2":"=m"(retained),"=m"(cw_after),"=m"(mx_after));
+  assert(flags!=UINT32_MAX && native_tick_finish() && retained==1 && cw_before==cw_after && mx_before==mx_after && GetLastError()==654);
+  assert(((flags&0x40)!=0)==(command==0xff));
+  assert((((flags&0x40)!=0) || (((flags&0x80)!=0)!=((flags&0x800)!=0)))==(static_cast<int8_t>(command)<=-1));
+ }
+ unsigned char gizmo_world[0x22e8]={},gizmo_container[16]={},gizmo_registry[0x2c]={},gizmo_manager[0x28]={},gizmo[0x1bc]={};
+ void *gizmo_table[]={gizmo_manager};void *gizmo_handle=gizmo_table;
+ auto put_gizmo=[](void *p,unsigned offset,uintptr_t value){std::memcpy(static_cast<unsigned char *>(p)+offset,&value,4);};
+ put_gizmo(reinterpret_cast<void *>(0xfb4a20),0,reinterpret_cast<uintptr_t>(gizmo_world));
+ put_gizmo(reinterpret_cast<void *>(0xe90184),0,reinterpret_cast<uintptr_t>(gizmo_registry));
+ put_gizmo(gizmo_world,0x22e4,reinterpret_cast<uintptr_t>(gizmo_container));
+ put_gizmo(gizmo_container,12,reinterpret_cast<uintptr_t>(gizmo_world));
+ put_gizmo(gizmo_world,0x400,reinterpret_cast<uintptr_t>(&gizmo_handle));
+ std::memcpy(gizmo_world+0x81,"EngineWorld",12);put_gizmo(gizmo_registry,0x28,1);
+ put_gizmo(gizmo_manager,0,0xc4c1cc);put_gizmo(reinterpret_cast<void *>(0xc4c1cc),0x40,0x838260);
+ put_gizmo(gizmo_manager,0x24,reinterpret_cast<uintptr_t>(gizmo));put_gizmo(gizmo,0,0xc47e9c);
+ std::memcpy(gizmo+0x30,"AuthoredTurret",15);
+ auto &gizmo_game_seed=*reinterpret_cast<uint16_t *>(0xe637b4);
+ auto &gizmo_engine_seed=*reinterpret_cast<uint32_t *>(0xea178c);
+ for(unsigned mutation=0;mutation<8;++mutation) {
+  next(true);gizmo_game_seed=123;gizmo_engine_seed=456;put_gizmo(gizmo,0x154,0x3e800000);
+  SetLastError(432);native_gizmo_turret_input(gizmo);
+  assert(native_tick_finish() && frame->tick_gate_count==7 && native_tick_stream_valid(frame->tick_gates,7) && GetLastError()==432);
+  if(mutation==1)frame->tick_gates[0].value++;
+  if(mutation==2)frame->tick_gates[4].clock++;
+  if(mutation==3)frame->tick_gate_count=6;
+  if(mutation==4)frame->tick_gates[4].value=0x10000;
+  if(mutation==5)frame->tick_gates[6].value=0x7fc00000;
+  if(mutation==6)frame->tick_gates[2].site++;
+  if(mutation==7)gizmo[0x30]='X';
+  begin(false);gizmo_game_seed=321;gizmo_engine_seed=654;put_gizmo(gizmo,0x154,0x3f000000);
+  const auto previous_faults=faults;SetLastError(432);native_gizmo_turret_input(gizmo);
+  if(!mutation) {
+   assert(native_tick_finish() && faults==previous_faults && gizmo_game_seed==123 && gizmo_engine_seed==456);
+   uint32_t timer;std::memcpy(&timer,gizmo+0x154,4);assert(timer==0x3e800000);
+  } else {
+   assert(!native_tick_finish() && faults==previous_faults+1 && gizmo_game_seed==321 && gizmo_engine_seed==654);
+   uint32_t timer;std::memcpy(&timer,gizmo+0x154,4);assert(timer==0x3f000000);
+  }
+  assert(GetLastError()==432);gizmo[0x30]='A';
+ }
+ assert(VirtualProtect(reinterpret_cast<void *>(0x838281),1,PAGE_EXECUTE_READWRITE,&old));
+ *reinterpret_cast<unsigned char *>(0x838281)=0xc3;
+ assert(FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<void *>(0x838281),1));
+ gizmo[0x1ba]=0x34;gizmo[0x1bb]=0x12;next(true);SetLastError(876);
+ double gizmo_retained;uint16_t gizmo_cw_before,gizmo_cw_after;uint32_t gizmo_mx_before,gizmo_mx_after;
+ __asm__ volatile("fnstcw %0\n\tstmxcsr %1\n\tfld1":"=m"(gizmo_cw_before),"=m"(gizmo_mx_before));
+ const uint32_t gizmo_flags=invoke_gizmo_turret(gizmo);
+ __asm__ volatile("fstpl %0\n\tfnstcw %1\n\tstmxcsr %2":"=m"(gizmo_retained),"=m"(gizmo_cw_after),"=m"(gizmo_mx_after));
+ assert(gizmo_flags!=UINT32_MAX && (gizmo_flags&0x41)==0x41 && native_tick_finish() && GetLastError()==876);
+ assert(gizmo_retained==1 && gizmo_cw_before==gizmo_cw_after && gizmo_mx_before==gizmo_mx_after);
+ auto &elapsed=*reinterpret_cast<uint32_t *>(0xfb4ad4);
+ next(true);elapsed=0x3f800000;SetLastError(321);assert(native_tick_elapsed_input() && GetLastError()==321 && native_tick_finish());
+ assert(frame->tick_gate_count==1 && frame->tick_gates[0].site==NATIVE_TICK_GAME_TIME && native_tick_stream_valid(frame->tick_gates,1));
+ begin(false);elapsed=0x40000000;SetLastError(654);assert(native_tick_elapsed_input() && elapsed==0x3f800000 && GetLastError()==654 && native_tick_finish());
+ native_tick_cancel(&bound);elapsed=0x40400000;assert(!native_tick_elapsed_input() && elapsed==0x40400000);
+ ++frame->epoch;++bound.epoch;frame->tick_gates[0].clock++;begin(false);elapsed=0x40800000;
+ assert(!native_tick_elapsed_input() && elapsed==0x40800000 && !native_tick_finish());
+ next(true);elapsed=0x7fc00000;assert(!native_tick_elapsed_input() && !native_tick_finish());
  puts("Native world journal host/client correction, order, clock, count, retired lease and LastError checks passed.");
 }

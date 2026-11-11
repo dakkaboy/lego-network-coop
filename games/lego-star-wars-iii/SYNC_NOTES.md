@@ -261,3 +261,30 @@ in progress; no successful full-mission result or release is claimed yet.
 
 
 Protocol 95 publication (0.0.6 alpha): the user requested release of the current build before the remaining synchronization work. The latest combined build passes 27 CTests and the native ABI fixtures. A paired session completed natural Ambush A to B, three tanks and one blue Droideka without a sync fault through native B clock39050; full B ending was not completed. A separate run still produced a client-only action114 expiration hit and extra death breakup at A clock1556. Early B script selection can also diverge. Those issues remain open; publication does not imply full-mission or two-PC coverage.
+
+2026-11-11: native combat inputs and clocks (protocol 125)
+
+The client could discard an actor binding before its final native weapon command,
+or miss an actor created inside the current tick. Bindings now retain pending
+command references and resolve new actors from the game's producer, serial and
+character identity. Native queued weapon bytes are shared at their original
+consumer; Fire and character updates are not called again.
+
+Module pool generations are local allocation witnesses. Peer identity uses a
+unique live authored module ID; local generation checks still reject reuse.
+GizmoTurret inputs use the native world/manager registry and authored gizmo
+membership, with the actual game RNG streams and native countdown.
+
+SpellIt consumes the native call delta, countdown, RNG state, selected piece
+working position and last-attempt timestamp. Resource and POI identity binds the
+piece; coordinates are values, never lookup keys. Native elapsed time is also
+shared during preload and before every coherent world dispatch. Original native
+functions perform their calculations and side effects once.
+
+29 CTests pass, including actual x86 bridges, x87/MXCSR/EFLAGS preservation,
+transactional input rejection, allocation reuse and native time replay. Exact
+DLL161 completed the short CWHub -> DuelOfTheDroids_A -> CWHub -> HiddenEnemy_A
+entry/action route in two offscreen instances. Run ledger: hub-native-time161.
+Screens confirm native HUD, distinct views, visible players and textured geometry.
+This covers mission entry and short actions, not complete missions or two PCs.
+Space vehicle assignment and extended RTS/campaign regression remain unqualified.

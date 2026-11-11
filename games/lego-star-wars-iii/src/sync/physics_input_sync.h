@@ -14,6 +14,24 @@ int physics_world_input(SyncPhysicsChoice *,const CoherentFrameToken *);
 int physics_module_input(SyncPhysicsChoice *,const CoherentFrameToken *);
 static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
     if (!choice) return 0;
+    if(choice->kind==SYNC_PHYSICS_SPELLIT_STEP) {
+        const SyncPhysicsSpellItStepInput *s=&choice->spellit_step;
+        if(choice->site!=0x86101e || s->game_seed>UINT16_MAX || !isfinite(s->delta) || s->delta<0 || s->delta>.1f ||
+           !isfinite(s->timer) || !s->gizmo_class || s->gizmo_ordinal>=65536 ||
+           !(s->source_name[0]|s->source_name[1]|s->source_name[2]|s->source_name[3]))return 0;
+        for(unsigned i=0;i<9;++i)if(s->reserved[i])return 0;
+        return 1;
+    }
+    if(choice->kind==SYNC_PHYSICS_SPELLIT_POSE) {
+        const SyncPhysicsSpellItPoseInput *p=&choice->spellit_pose;
+        if(choice->site!=0x8406b2 || !p->gizmo_class || p->gizmo_ordinal>=65536 ||
+           !isfinite(p->last_time) ||
+           !(p->source_name[0]|p->source_name[1]|p->source_name[2]|p->source_name[3]) ||
+           !(p->resource_name[0]|p->resource_name[1]|p->resource_name[2]|p->resource_name[3]) ||
+           !(p->poi_name[0]|p->poi_name[1]|p->poi_name[2]|p->poi_name[3]))return 0;
+        for(unsigned i=0;i<3;++i)if(!isfinite(p->position[i]))return 0;
+        return 1;
+    }
     if (choice->kind==SYNC_PHYSICS_MODULE_SEED) {
         const SyncPhysicsModuleInput *m=&choice->module;
         if (choice->site!=0x4da6d0 || !m->module_id || !m->module_type || m->module_class!=0x6e6b3c ||
@@ -57,10 +75,26 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
 }
 static inline int physics_choice_same_source(const SyncPhysicsChoice *a,const SyncPhysicsChoice *b) {
     if (!physics_choice_valid(a) || !physics_choice_valid(b) || a->kind!=b->kind || a->site!=b->site) return 0;
+    if(a->kind==SYNC_PHYSICS_SPELLIT_STEP) {
+        if(a->spellit_step.clock!=b->spellit_step.clock)return 0;
+        const unsigned char *first=(const unsigned char *)&a->spellit_step,*second=(const unsigned char *)&b->spellit_step;
+        for(unsigned i=20;i<sizeof(a->spellit_step);++i)if(first[i]!=second[i])return 0;
+        return 1;
+    }
+    if(a->kind==SYNC_PHYSICS_SPELLIT_POSE) {
+        if(a->spellit_pose.clock!=b->spellit_pose.clock)return 0;
+        const unsigned char *first=(const unsigned char *)&a->spellit_pose,*second=(const unsigned char *)&b->spellit_pose;
+        for(unsigned i=16;i<76;++i)if(first[i]!=second[i])return 0;
+        return 1;
+    }
     if (a->kind>=SYNC_PHYSICS_SPELLIT_SEED) {
         if (a->world.clock!=b->world.clock) return 0;
         const unsigned char *first=(const unsigned char *)&a->world,*second=(const unsigned char *)&b->world;
-        for (unsigned i=8;i<sizeof(a->world);++i) if (first[i]!=second[i]) return 0;
+        for (unsigned i=8;i<sizeof(a->world);++i) {
+            // Native pool generations guard local allocation reuse; authored IDs identify peers.
+            if((a->kind==SYNC_PHYSICS_MODULE_SEED || a->kind==SYNC_PHYSICS_GUN_JAM_SEED) && i>=16 && i<20)continue;
+            if (first[i]!=second[i]) return 0;
+        }
         return 1;
     }
     if (

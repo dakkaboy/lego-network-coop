@@ -76,7 +76,7 @@ bool registered_module(unsigned char *object,uintptr_t type,size_t bytes,Witness
     if(!out.record.id||!out.type||out.record.kind!=4||out.record.object!=object||(out.record.flags&0xff)||
        field<uint32_t>(object,8)!=out.record.id||field<uint32_t>(object,0x6c)!=out.record.generation)return false;
     for(unsigned i=0;i<192;++i){Entry other;std::memcpy(&other,out.registry+8+i*sizeof(Entry),sizeof other);
-        if(other.kind==4&&!(other.flags&0xff)&&other.id==out.record.id&&other.generation==out.record.generation&&other.object&&other.object!=object)return false;
+        if(other.kind==4&&!(other.flags&0xff)&&other.id==out.record.id&&other.object&&other.object!=object)return false;
     }
     return true;
 }
@@ -155,7 +155,9 @@ extern "C" __attribute__((used,noinline)) void gun_jam_rng_checkpoint(unsigned c
     if(coherent_frame_get(&token,COHERENT_PHASE_BIT(COHERENT_DISPATCH))){
         SyncPhysicsChoice input,observed;
         if(!gun_jam_witness(object,candidates,input) || physics_module_input(&input,&token)!=1 ||
-           !gun_jam_witness(object,candidates,observed) || !physics_choice_same_source(&input,&observed) ||
+           !gun_jam_witness(object,candidates,observed) ||
+           input.gun_jam.module_generation!=observed.gun_jam.module_generation ||
+           !physics_choice_same_source(&input,&observed) ||
            !coherent_frame_valid(&token,COHERENT_PHASE_BIT(COHERENT_DISPATCH))){
             ++clonewars_gun_jam_rng_debug[2];game_sync_native_fault(15);
         } else {

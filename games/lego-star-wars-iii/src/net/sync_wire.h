@@ -13,7 +13,7 @@
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
 #define SYNC_LAYOUT_VERSION 50
-#define SYNC_WIRE_VERSION 122
+#define SYNC_WIRE_VERSION 125
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -46,6 +46,7 @@ typedef struct SyncPreloadInput {
     uint32_t clock,rng_game,rng_engine,rng_effects;
     float delta,engine_delta;
     uint32_t engine_mode;
+    float game_time;
 } SyncPreloadInput;
 #define SYNC_MAX_PRELOAD_FLOW_REQUESTS 64
 typedef struct SyncPreloadTrack {
@@ -368,7 +369,8 @@ typedef struct SyncSpawnTimerChoice {
 enum SyncPhysicsChoiceKind {
     SYNC_PHYSICS_AXIS_SPIN=1, SYNC_PHYSICS_ROTATION_SPIN=2, SYNC_PHYSICS_BREAKUP_LAUNCH=3,
     SYNC_PHYSICS_SPELLIT_SEED=4, SYNC_PHYSICS_SPELLIT_ENTITY=5, SYNC_PHYSICS_SPELLIT_ENABLED=6,
-    SYNC_PHYSICS_MODULE_SEED=7, SYNC_PHYSICS_GUN_JAM_SEED=8
+    SYNC_PHYSICS_MODULE_SEED=7, SYNC_PHYSICS_GUN_JAM_SEED=8, SYNC_PHYSICS_SPELLIT_POSE=9,
+    SYNC_PHYSICS_SPELLIT_STEP=10
 };
 typedef struct SyncPhysicsWorldInput {
     uint32_t clock,value;
@@ -389,6 +391,19 @@ typedef struct SyncPhysicsGunJamInput {
     float remaining,minimum,maximum;
     uint32_t reserved[9];
 } SyncPhysicsGunJamInput;
+typedef struct SyncPhysicsSpellItPoseInput {
+    uint32_t clock;
+    float position[3];
+    uint32_t source_name[4],gizmo_class,gizmo_ordinal;
+    uint32_t resource_name[4],poi_name[4];
+    uint16_t poi_ordinal,piece_ordinal;
+    float last_time;
+} SyncPhysicsSpellItPoseInput;
+typedef struct SyncPhysicsSpellItStepInput {
+    uint32_t clock,engine_seed;
+    float delta,timer;
+    uint32_t game_seed,source_name[4],gizmo_class,gizmo_ordinal,reserved[9];
+} SyncPhysicsSpellItStepInput;
 typedef struct SyncPhysicsChoice {
     uint32_t kind,site;
     union {
@@ -399,6 +414,8 @@ typedef struct SyncPhysicsChoice {
         SyncPhysicsWorldInput world;
         SyncPhysicsModuleInput module;
         SyncPhysicsGunJamInput gun_jam;
+        SyncPhysicsSpellItPoseInput spellit_pose;
+        SyncPhysicsSpellItStepInput spellit_step;
     };
 } SyncPhysicsChoice;
 

@@ -45,6 +45,7 @@ uint32_t &game_rng() {return *reinterpret_cast<uint32_t *>(0xe637b4);}
 extern "C" {
 __declspec(dllexport) volatile uint32_t clonewars_physics_input_debug[8];
 __declspec(dllexport) volatile uint32_t clonewars_physics_input_failure[12];
+__declspec(dllexport) SyncPhysicsChoice clonewars_physics_failure_local,clonewars_physics_failure_expected;
 __declspec(dllexport) volatile uint32_t clonewars_breakup_launch_debug[4],clonewars_breakup_launch_correction[8];
 __attribute__((used)) static volatile uintptr_t breakup_launch_native=0x966af0;
 }
@@ -54,6 +55,8 @@ int fail(unsigned reason,const SyncPhysicsChoice *local=nullptr,const SyncPhysic
     if (!live()) return 0;
     failed=true;
     if (!clonewars_physics_input_failure[0]) {
+        clonewars_physics_failure_local=local?*local:SyncPhysicsChoice{};
+        clonewars_physics_failure_expected=expected?*expected:SyncPhysicsChoice{};
         const uint32_t values[]={frame->epoch,frame->sequence,cursor,reason,
             local?local->kind:0,expected?expected->kind:0,
             local?(local->kind>=SYNC_PHYSICS_SPELLIT_SEED?local->world.source_name[0]:local->name_hash[0]):0,
@@ -209,7 +212,16 @@ static int physics_source_input(SyncPhysicsChoice *choice,const CoherentFrameTok
     } else {
         const auto *expected=cursor<frame->physics_choice_count?frame->physics_choices+cursor:nullptr;
         if (!expected || !physics_choice_same_source(expected,choice)) {fail(6,choice,expected);return -1;}
-        if (choice->kind==SYNC_PHYSICS_MODULE_SEED) choice->module.value=expected->module.value;
+        if(choice->kind==SYNC_PHYSICS_SPELLIT_STEP) {
+            choice->spellit_step.engine_seed=expected->spellit_step.engine_seed;
+            choice->spellit_step.game_seed=expected->spellit_step.game_seed;
+            choice->spellit_step.delta=expected->spellit_step.delta;
+            choice->spellit_step.timer=expected->spellit_step.timer;
+        } else if(choice->kind==SYNC_PHYSICS_SPELLIT_POSE) {
+            std::memcpy(choice->spellit_pose.position,expected->spellit_pose.position,sizeof choice->spellit_pose.position);
+            choice->spellit_pose.last_time=expected->spellit_pose.last_time;
+        }
+        else if (choice->kind==SYNC_PHYSICS_MODULE_SEED) choice->module.value=expected->module.value;
         else if (choice->kind==SYNC_PHYSICS_GUN_JAM_SEED) choice->gun_jam.value=expected->gun_jam.value;
         else choice->world.value=expected->world.value;
         ++cursor;++clonewars_physics_input_debug[1];
@@ -218,7 +230,8 @@ static int physics_source_input(SyncPhysicsChoice *choice,const CoherentFrameTok
 }
 int physics_world_input(SyncPhysicsChoice *choice,const CoherentFrameToken *token) {
     if (!active) return 0;
-    if (!choice || choice->kind<SYNC_PHYSICS_SPELLIT_SEED || choice->kind>SYNC_PHYSICS_SPELLIT_ENABLED) {
+    if (!choice || ((choice->kind<SYNC_PHYSICS_SPELLIT_SEED || choice->kind>SYNC_PHYSICS_SPELLIT_ENABLED) &&
+                   choice->kind!=SYNC_PHYSICS_SPELLIT_POSE && choice->kind!=SYNC_PHYSICS_SPELLIT_STEP)) {
         if (live()) fail(5,choice);
         return -1;
     }
