@@ -13,5 +13,8 @@ uint32_t game_sync_transition_entry(void);
 int game_sync_epoch_level(void);
 int game_sync_scene_ready(int level);
 int game_sync_scene_initialized(int level);
+uint32_t game_sync_preload_flow_input(void *flow,uint32_t request);
+int game_sync_preload_level(void);
+uint32_t game_sync_preload_track_input(const uint32_t witness[2],uint32_t time);
 
 void game_sync_native_fault(int code);

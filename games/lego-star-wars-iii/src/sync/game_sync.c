@@ -428,6 +428,9 @@ static void prep_fail(unsigned reason,void *expected_actor,void *actual_actor) {
     }
     if (!fault) fault=16;
 }
+static void actor_ai_native_update(void *actor) {
+    decision_observer_invoke_actor(2,actor,(void (*)(void *))0x8b0f90,0x9c53f7);
+}
 static void actor_ai_normal_impl(void *actor,int cached_player_gate,PrepLexical*context) {
     CoherentFrameToken original;int authority=core_capture_dispatch(&original);
     if(running&&!authority){coherent_frame_cancel_atomic(0x10000000);prep_restore(context);((void(*)(void*))0x8b0f90)(actor);prep_capture(context);return;}
@@ -440,7 +443,8 @@ static void actor_ai_normal_impl(void *actor,int cached_player_gate,PrepLexical*
         }
     }
     prep_restore(context);
-    decision_observer_invoke_actor(2,actor,(void (*)(void *))0x8b0f90,0x9c53f7);
+    if (authority && (actor==player(0) || actor==player(1))) tags_actor_update(actor,actor_ai_native_update);
+    else actor_ai_native_update(actor);
     prep_capture(context);
 }
 static void*__cdecl actor_ai_invoke(void*raw){PrepLexical*c=raw;actor_ai_normal_impl(c->actor,c->blocked,c);return NULL;}

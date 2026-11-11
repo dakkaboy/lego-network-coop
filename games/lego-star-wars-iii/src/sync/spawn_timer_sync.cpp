@@ -17,6 +17,18 @@ using ModuleTimerChoose = float (__attribute__((thiscall)) *)(char *);
 RtsOrderUpdate original_rts_order;
 RtsTimerSet original_rts_timer_set;
 ModuleTimerChoose original_module_timer_choose;
+__attribute__((used)) const uintptr_t rts_spawn_ground_query asm("rts_spawn_ground_query")=0x52a580;
+
+__attribute__((naked)) void rts_spawn_ground_query_hook() {
+    // The stock query only supplies XYZ. Both producer callers copy XYZW on
+    // success, so seed the query's W from their already initialized transform.
+    __asm__ volatile(
+        "pushl %edx\n\t"
+        "movl 0xa8(%esp), %edx\n\t"
+        "movl %edx, 0xc(%eax)\n\t"
+        "popl %edx\n\t"
+        "jmpl *rts_spawn_ground_query");
+}
 struct SpawnTimerFrame {
     SyncFrame *frame;
     char *teams[SYNC_MAX_RTS_TEAMS];
@@ -303,10 +315,29 @@ static bool install_module_timer_hook() {
     return VirtualProtect(site,sizeof(expected),protection,&protection) && flushed;
 }
 
+static bool install_pack_ground_query_hooks() {
+    constexpr unsigned char first_native[]={0x8d,0x44,0x24,0x40,0x50,0xe8,0x12,0x25,0xfe,0xff};
+    constexpr unsigned char second_native[]={0x8d,0x84,0x24,0xa0,0,0,0,0x50,0xe8,0xa0,0x1b,0xfe,0xff};
+    auto *first=reinterpret_cast<unsigned char *>(0x548064);
+    auto *second=reinterpret_cast<unsigned char *>(0x5489d3);
+    const auto span=reinterpret_cast<uintptr_t>(second)-reinterpret_cast<uintptr_t>(first)+sizeof(second_native);
+    DWORD protection;
+    if (!accessible(first,span) || std::memcmp(first,first_native,sizeof(first_native)) ||
+        std::memcmp(second,second_native,sizeof(second_native)) ||
+        !VirtualProtect(first,span,PAGE_EXECUTE_READWRITE,&protection)) return false;
+    for (auto *relative : {first+6,second+9}) {
+        const auto displacement=static_cast<int32_t>(
+            reinterpret_cast<uintptr_t>(&rts_spawn_ground_query_hook)-reinterpret_cast<uintptr_t>(relative+4));
+        std::memcpy(relative,&displacement,sizeof(displacement));
+    }
+    const bool flushed=FlushInstructionCache(GetCurrentProcess(),first,span);
+    return VirtualProtect(first,span,protection,&protection) && flushed;
+}
+
 int rts_spawn_timers_install(void) {
     constexpr unsigned char order_native[]={0x55,0x8b,0xec,0x83,0xe4,0xf0};
     constexpr unsigned char timer_native[]={0xd9,0x05,0x40,0x14,0xae,0x00};
     return install_rts_hook(0x55e2c0,order_native,&rts_order_hook,original_rts_order) &&
         install_rts_hook(0x50afc0,timer_native,&rts_timer_set_hook,original_rts_timer_set) &&
-        install_module_timer_hook();
+        install_module_timer_hook() && install_pack_ground_query_hooks();
 }

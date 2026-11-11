@@ -183,9 +183,8 @@ int lan_publish_preload_seal(uint32_t epoch,int level,uint32_t serial) {
     lock_queue();
     int accepted=lan_is_host()&&status==LAN_CONNECTED&&local_state.epoch==epoch&&local_state.level==level&&peer_state.epoch==epoch&&peer_state.level==level&&
         local_state.preload_receipt.serial==serial&&peer_state.preload_receipt.serial==serial&&
-        local_state.preload_receipt.world_calls==peer_state.preload_receipt.world_calls&&
-        local_state.preload_receipt.end_phase==peer_state.preload_receipt.end_phase&&
-        preload_world_ready_matches(&local_state.world_ready,&peer_state.world_ready)&&
+        !memcmp(&local_state.preload_receipt,&peer_state.preload_receipt,sizeof(SyncPreloadReceipt))&&
+        preload_world_roster_matches(&local_state.world_ready,&peer_state.world_ready)&&
         local_state.world_ready.completed_serial==serial&&
         local_state.preload_receipt.end_phase==local_state.world_ready.root_phase&&
         (local_state.world_ready.root_phase==0xd||local_state.world_ready.root_phase==0xe);

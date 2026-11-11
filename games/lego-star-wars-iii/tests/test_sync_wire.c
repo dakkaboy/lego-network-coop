@@ -13,7 +13,7 @@ _Static_assert(sizeof(SyncActor)==272,"Actor wire layout changed");
 _Static_assert(offsetof(SyncActor,rigid_body)==196,"Native rigid body wire offset changed");
 _Static_assert(offsetof(SyncActor,party_slot)==102,"Party slot must use defined padding");
 _Static_assert(sizeof(SyncTagIdentity)==16,"Tag identity wire layout changed");
-_Static_assert(sizeof(SyncTag)==100,"Tag command wire layout changed");
+_Static_assert(sizeof(SyncTag)==104,"Tag command wire layout changed");
 static void world_physics_inputs(void) {
     SyncFrame *frame=calloc(1,sizeof(*frame)),*decoded=calloc(1,sizeof(*decoded));
     unsigned char *wire=malloc(sizeof(*frame));
@@ -175,6 +175,16 @@ int main(void) {
     assert(output->actors[1].party_slot==1 && output->rng_game_after==123 && output->rng_engine_after==456);
     assert(output->tag_count==1 && output->tags[0].id==1 && output->tags[0].to_generation==8 && output->tags[0].phase==1);
     assert(!memcmp(&output->tags[0].from_identity,&input->tags[0].from_identity,2*sizeof(SyncTagIdentity)));
+    input->tags[0].source=SYNC_TAG_ACTOR_UPDATE;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->tags[0].phase=0;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));
+    assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(output->tags[0].source==SYNC_TAG_ACTOR_UPDATE);
+    input->tags[0].source=SYNC_TAG_ACTOR_UPDATE+1;
+    assert(!sync_frame_valid(input,sync_frame_size(input)));
+    input->tags[0].source=SYNC_TAG_UNSCOPED;
+    input->tags[0].phase=1;
     assert(output->actors[1].animation.current==100 && output->actors[1].animation.frames[3]==19.5f);
     assert(output->actors[1].animation.clips[2]==-1 && output->variables[0].value==1);
     assert(memcmp(output->variables,input->variables,3*sizeof(SyncVariable))==0);

@@ -8,11 +8,13 @@ typedef struct CoreFrameDraft {
  NativeOwnerScope*owner;unsigned owner_nonce,release,host,depth_accounted,opened,bound_mask;
  CoherentFrameToken token;char*engine;void*packet;unsigned main_calls,optional_calls,expected_calls,expected_plan,published,session,control_stale;
  unsigned preload,preload_world_calls;uint32_t preload_epoch;void *preload_world;
+ SyncPreloadReceipt preload_flow;
 } CoreFrameDraft;
 static CoreFrameDraft core;
 static NativePreloadState core_preload={.level=-1,.input={.level=-1}};
 __declspec(dllexport) volatile uint32_t clonewars_preload_debug[16];
 __declspec(dllexport) volatile uint32_t clonewars_preload_seed_debug[6];
+__declspec(dllexport) volatile uint32_t clonewars_preload_flow_debug[8];
 __declspec(dllexport) volatile uint32_t clonewars_load_barrier_debug[12];
 __declspec(dllexport) volatile uint32_t clonewars_sync_first_reject[8],clonewars_sync_first_fault[8];
 static volatile LONG core_failure_order;
@@ -209,16 +211,98 @@ static int core_preload_candidate(int level,uint32_t phase){
  int pending=*(int*)0xe6e61c;
  return preload_stage_eligible(phase,level,pending,game_network_world_targeted(level),core_preload_current(level))&&game_network_level_valid(level);
 }
-static int core_load_barrier(uint32_t phase,int level){
+__declspec(dllexport) volatile uint32_t clonewars_preload_track_debug[8];
+int game_sync_preload_level(void){return core.preload?core_preload.level:-1;}
+uint32_t game_sync_preload_track_input(const uint32_t witness[2],uint32_t time){
+ if(!core.preload)return time;
+ uint32_t serial=core_preload.input.serial,session=core.session,release=core.release;
+ unsigned ordinal=core.preload_flow.track_count;
+ char *root=*(char**)0xfb2e60;
+ clonewars_preload_track_debug[0]=interval.epoch;clonewars_preload_track_debug[1]=serial;
+ clonewars_preload_track_debug[2]=ordinal;clonewars_preload_track_debug[3]=time;
+ if(!witness||!serial||ordinal>=SYNC_MAX_PRELOAD_FLOW_REQUESTS||(time&0x7f800000u)==0x7f800000u){
+  core_reject_atomic(31,NULL);return time;
+ }
+ if(!lan_is_host()){
+  ULONGLONG started=GetTickCount64();
+  for(;;){
+   if(lan_status()!=LAN_CONNECTED||session!=lan_session_serial()||release!=coherent_frame_release()||
+      core.preload_epoch!=interval.epoch||core.preload_world!=*(void**)0xfb4a20||root!=*(char**)0xfb2e60||
+      !native_owner_scope_valid(core.owner,core.owner_nonce)||fault||core_reject_bits){core_reject_atomic(31,NULL);return time;}
+   SyncPreloadReceipt source={0};
+   if(lan_remote_preload_receipt(interval.epoch,core_preload.level,&source)){
+    int result=preload_track_read(&source,serial,ordinal,witness,&time);
+    if(result==1)break;
+    if(result<0){core_reject_atomic(31,NULL);return time;}
+   }
+   if(GetTickCount64()-started>300000){core_reject_atomic(31,NULL);return time;}
+   Sleep(1);++clonewars_preload_track_debug[5];
+  }
+ }
+ SyncPreloadTrack *track=&core.preload_flow.tracks[ordinal];
+ memcpy(track->witness,witness,sizeof track->witness);track->time=time;
+ core.preload_flow.track_count=ordinal+1;
+ clonewars_preload_track_debug[4]=time;++clonewars_preload_track_debug[6];
+ return time;
+}
+uint32_t game_sync_preload_flow_input(void *flow,uint32_t request){
+ if(!core.preload)return request;
+ char *root=*(char**)0xfb2e60;
+ if(!root||flow!=root+0x1b44)return request;
+ uint32_t serial=core_preload.input.serial,session=core.session,release=core.release;
+ unsigned ordinal=core.preload_flow.flow_count;
+ clonewars_preload_flow_debug[0]=interval.epoch;clonewars_preload_flow_debug[1]=serial;
+ clonewars_preload_flow_debug[2]=ordinal;clonewars_preload_flow_debug[3]=request;
+ if(!serial||ordinal>=SYNC_MAX_PRELOAD_FLOW_REQUESTS||(request!=UINT32_MAX&&request>20)){
+  core_reject_atomic(31,NULL);return request;
+ }
+ if(!lan_is_host()){
+  ULONGLONG started=GetTickCount64();
+  for(;;){
+   if(lan_status()!=LAN_CONNECTED||session!=lan_session_serial()||release!=coherent_frame_release()||
+      core.preload_epoch!=interval.epoch||core.preload_world!=*(void**)0xfb4a20||root!=*(char**)0xfb2e60||
+      !native_owner_scope_valid(core.owner,core.owner_nonce)||fault||core_reject_bits){core_reject_atomic(31,NULL);return request;}
+   SyncPreloadReceipt source={0};
+   if(lan_remote_preload_receipt(interval.epoch,core_preload.level,&source)){
+    clonewars_preload_flow_debug[7]=source.flow_count;
+    int result=preload_flow_request_read(&source,serial,ordinal,&request);
+    if(result==1)break;
+    if(result<0){core_reject_atomic(31,NULL);return request;}
+   }
+   if(GetTickCount64()-started>300000){core_reject_atomic(31,NULL);return request;}
+   Sleep(1);
+   ++clonewars_preload_flow_debug[5];
+  }
+ }
+ core.preload_flow.flow_requests[ordinal]=request;
+ clonewars_preload_flow_debug[4]=request;++clonewars_preload_flow_debug[6];
+ core.preload_flow.flow_count=ordinal+1;
+ return request;
+}
+static int core_load_barrier(uint32_t phase,int level,int *roster_matches){
  SyncWorldReady local={interval.epoch,level,phase,core_preload.applied.serial},peer={.level=-1};
+ *roster_matches=0;
  if(clonewars_load_barrier_debug[0]!=interval.epoch)memset((void*)clonewars_load_barrier_debug,0,sizeof clonewars_load_barrier_debug);
  clonewars_load_barrier_debug[0]=interval.epoch;clonewars_load_barrier_debug[1]=level;clonewars_load_barrier_debug[2]=phase;
  clonewars_load_barrier_debug[3]=0;clonewars_load_barrier_debug[4]=local.completed_serial;
  clonewars_load_barrier_debug[8]=*(volatile uint32_t*)0xeb0d18;clonewars_load_barrier_debug[9]=*(volatile uintptr_t*)0xeb0d20!=0;
  if(!game_native_loader_idle()){lan_invalidate_world_ready();++clonewars_load_barrier_debug[7];return 0;}
+ uint32_t slots=*(const uint32_t*)0xfb2e3c;
+ const char *pool=*(char**)0xfb2f60;
+ if(slots>SYNC_MAX_ACTORS || (slots && !valid(pool,slots*0x1440))){lan_invalidate_world_ready();return 0;}
+ for(uint32_t slot=0;slot<slots;++slot){
+  const char *actor=pool+slot*0x1440;
+  if((*(const uint32_t*)(actor+0x50)&3)!=3)continue;
+  uint32_t character=*(const uint16_t*)(actor+0xdc0);
+  uint32_t key=(character+1)*0x9e3779b1u;
+  local.collider_roster+=key^(key>>16);
+  ++local.collider_count;
+ }
+ if(!game_native_loader_idle()){lan_invalidate_world_ready();return 0;}
  if(!lan_publish_world_ready(&local))return 0;
  clonewars_load_barrier_debug[3]=1;
  int remote=lan_remote_world_ready(interval.epoch,level,&peer);
+ *roster_matches=remote&&preload_world_roster_matches(&local,&peer);
  clonewars_load_barrier_debug[5]=remote?peer.completed_serial:UINT32_MAX;clonewars_load_barrier_debug[6]=remote?peer.root_phase:0;
  if(lan_is_host()&&(!remote||!preload_world_ready_matches(&local,&peer))){++clonewars_load_barrier_debug[7];return 0;}
  return 1;
@@ -236,7 +320,13 @@ static int core_preload_prepare(void *receiver,void *packet,unsigned ready_snaps
  if(core_preload.session==session&&core_preload.epoch==interval.epoch&&core_preload.level==level&&core_preload.world&&(void*)core_preload.world!=world){lan_invalidate_world_ready();core_reject_atomic(31,NULL);return 0;}
  preload_state_bind(&core_preload,session,interval.epoch,level,(uintptr_t)world);
  int ready=ready_snapshot&&((phase==0xd||phase==0xe)||(core_preload.sealed_serial&&preload_phase_active(phase,1)))&&pending<0&&initialized_level==level&&((player(0)&&controller(1))||core_scene_without_party(level))&&lan_peer_ready()&&lan_remote_level()==level&&game_load_status()!=1&&!game_sync_coherent_blockers();
- if(core_preload.sealed_serial)return ready?2:0;
+ if(core_preload.sealed_serial){
+  if(!game_sync_sequence()){
+   int roster_matches;
+   if(!core_load_barrier(phase,level,&roster_matches)||!roster_matches)return 0;
+  }
+  return ready?2:0;
+ }
  if(!global_step_packet_valid(*(uint32_t*)packet,*(uint32_t*)((char*)packet+4),*(float*)((char*)packet+8))){lan_invalidate_world_ready();return 0;}
  SyncPreloadReceipt remote={0};
  if(lan_is_host()&&core_preload.input.serial){
@@ -245,14 +335,15 @@ static int core_preload_prepare(void *receiver,void *packet,unsigned ready_snaps
   if(received<0){core_reject_atomic(31,NULL);return 0;}
   if(!received){++clonewars_preload_debug[12];return 0;}
  }
- if(!core_load_barrier(phase,level))return 0;
+ int roster_matches;
+ if(!core_load_barrier(phase,level,&roster_matches))return 0;
  SyncPreloadInput source={.epoch=interval.epoch,.level=level,.root_phase=phase};
  if(lan_is_host()){
   if(core_preload.input.serial){
-   if(preload_initial_seal_ready(&core_preload,phase)){
+   if(roster_matches&&preload_initial_seal_ready(&core_preload,phase)){
     if(!ready)return 0;
     if(!preload_state_seal(&core_preload,remote.serial)||!lan_publish_preload_seal(interval.epoch,level,remote.serial)){core_reject_atomic(31,NULL);return 0;}
-    clonewars_preload_debug[14]=remote.serial;return 2;
+    clonewars_preload_debug[14]=remote.serial;return 0;
    }
   }
   if(core_preload.applied.serial==UINT32_MAX){core_reject_atomic(31,NULL);return 0;}
@@ -266,7 +357,7 @@ static int core_preload_prepare(void *receiver,void *packet,unsigned ready_snaps
   uint32_t seal=lan_remote_preload_seal(interval.epoch,level);
   if(seal){
    if(!preload_state_seal(&core_preload,seal)){core_reject_atomic(31,NULL);return 0;}
-   clonewars_preload_debug[14]=seal;return ready?2:0;
+   clonewars_preload_debug[14]=seal;return 0;
   }
   if(!lan_receive_preload(interval.epoch,level,&source)){++clonewars_preload_debug[2];return 0;}
   if(source.serial==core_preload.applied.serial){++clonewars_preload_debug[2];return 0;}
@@ -557,7 +648,8 @@ static void core_end(NativeOwnerScope*owner,unsigned nonce,NativeOwnerExit why,u
   char *root=*(char**)0xfb2e60;
   if(aborted||why==OWNER_UNWIND||core.release!=coherent_frame_release()||core.session!=lan_session_serial()||core.preload_epoch!=interval.epoch||core.preload_world!=*(void**)0xfb4a20||!valid(root,0x1b7c)||!game_network_world_valid(core_preload.level,core.preload_world)){++clonewars_preload_debug[7];core_reject_atomic(31,NULL);}
   else {
-   SyncPreloadReceipt receipt={core_preload.input.serial,core.preload_world_calls,*(uint32_t*)(root+0x1b78)};
+   SyncPreloadReceipt receipt=core.preload_flow;
+   receipt.serial=core_preload.input.serial;receipt.world_calls=core.preload_world_calls;receipt.end_phase=*(uint32_t*)(root+0x1b78);
    if(!preload_state_finish(&core_preload,&receipt)||!lan_publish_preload_receipt(interval.epoch,interval.level,&receipt)){++clonewars_preload_debug[7];core_reject_atomic(31,NULL);}
    else {++clonewars_preload_debug[lan_is_host()?0:1];clonewars_preload_debug[9]=receipt.serial;clonewars_preload_debug[10]=receipt.world_calls;clonewars_preload_debug[11]=receipt.end_phase;clonewars_preload_seed_debug[3]=*(uint32_t*)0xe637b4;clonewars_preload_seed_debug[4]=*(uint32_t*)0xea178c;clonewars_preload_seed_debug[5]=*(uint32_t*)0xe5f498;}
   }

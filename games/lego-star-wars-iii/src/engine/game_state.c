@@ -494,7 +494,7 @@ void game_poll(void) {
     if(transition_waiting)return;
     poll_profile();
     lan_publish_ready(game_sync_epoch() && game_network_profile_ready() && (playing||starting||game_sync_scene_ready(current)) &&
-                      (game_sync_scene_ready(current)||game_native_loader_idle()) &&
+                      ((game_sync_sequence()>0&&game_sync_scene_ready(current))||game_native_loader_idle()) &&
                       ((game_native_profile_ready() && game_actor_count()>0) ||
                        game_native_scene_input_capability(current,*(void **)0xfb4a20)==GAME_SCENE_NO_PARTY_INPUT) &&
                       game_network_level_authorized(current) && game_load_status()!=1 && pending_level<0 && !force_requested);

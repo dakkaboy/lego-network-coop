@@ -25,14 +25,42 @@ int preload_input_valid(const SyncPreloadInput *input) {
 }
 int preload_receipt_valid(const SyncPreloadReceipt *receipt) {
     if (!receipt) return 0;
-    return receipt->serial ? receipt->world_calls<=64 && receipt->end_phase<=20 :
-        !receipt->world_calls && !receipt->end_phase;
+    if (receipt->flow_count>SYNC_MAX_PRELOAD_FLOW_REQUESTS || receipt->track_count>SYNC_MAX_PRELOAD_FLOW_REQUESTS || receipt->world_calls>64 || receipt->end_phase>20) return 0;
+    if (!receipt->serial && (receipt->world_calls || receipt->end_phase || receipt->flow_count || receipt->track_count)) return 0;
+    for (unsigned i=0;i<SYNC_MAX_PRELOAD_FLOW_REQUESTS;++i) {
+        const auto request=receipt->flow_requests[i];
+        if (i<receipt->flow_count ? (request!=UINT32_MAX && request>20) : request!=0) return 0;
+        const auto &track=receipt->tracks[i];
+        float time;std::memcpy(&time,&track.time,4);
+        if (i<receipt->track_count ? !std::isfinite(time) : (track.time || track.witness[0] || track.witness[1])) return 0;
+    }
+    return 1;
+}
+int preload_flow_request_read(const SyncPreloadReceipt *receipt,uint32_t serial,uint32_t ordinal,uint32_t *request) {
+    if (!request || !serial || ordinal>=SYNC_MAX_PRELOAD_FLOW_REQUESTS || !preload_receipt_valid(receipt)) return -1;
+    if (receipt->serial<serial) return 0;
+    if (receipt->serial!=serial || ordinal>=receipt->flow_count) return -1;
+    *request=receipt->flow_requests[ordinal];return 1;
+}
+int preload_track_read(const SyncPreloadReceipt *receipt,uint32_t serial,uint32_t ordinal,const uint32_t witness[2],uint32_t *time) {
+    if (!witness || !time || !serial || ordinal>=SYNC_MAX_PRELOAD_FLOW_REQUESTS || !preload_receipt_valid(receipt)) return -1;
+    if (receipt->serial<serial) return 0;
+    if (receipt->serial!=serial || ordinal>=receipt->track_count) return -1;
+    const auto &track=receipt->tracks[ordinal];
+    if (std::memcmp(track.witness,witness,sizeof(track.witness))) return -1;
+    *time=track.time;return 1;
 }
 int preload_world_ready_valid(const SyncWorldReady *ready) {
     if (!ready) return 0;
-    if (!ready->epoch) return ready->level==-1 && !ready->root_phase && !ready->completed_serial;
-    return ready->level>=0 && ready->level<4096 &&
+    if (!ready->epoch) return ready->level==-1 && !ready->root_phase && !ready->completed_serial &&
+        !ready->collider_count && !ready->collider_roster;
+    return ready->level>=0 && ready->level<4096 && ready->collider_count<=SYNC_MAX_ACTORS &&
+        (ready->collider_count || !ready->collider_roster) &&
         preload_phase_active(ready->root_phase,ready->completed_serial!=0);
+}
+int preload_world_roster_matches(const SyncWorldReady *local,const SyncWorldReady *peer) {
+    return preload_world_ready_matches(local,peer) && local->collider_count==peer->collider_count &&
+        local->collider_roster==peer->collider_roster;
 }
 int preload_world_ready_matches(const SyncWorldReady *local,const SyncWorldReady *peer) {
     return preload_world_ready_valid(local) && preload_world_ready_valid(peer) && local->epoch &&
@@ -43,15 +71,17 @@ int preload_state_peer_receipt(const NativePreloadState *state,const SyncPreload
     if (!preload_bound(state) || !state->input.serial || !preload_receipt_valid(peer)) return -1;
     if (peer->serial<state->applied.serial) return 0;
     if (peer->serial!=state->input.serial || state->applied.serial!=peer->serial ||
-        peer->world_calls!=state->applied.world_calls || peer->end_phase!=state->applied.end_phase) return -1;
+        std::memcmp(peer,&state->applied,sizeof(*peer))) return -1;
     return 1;
 }
 int preload_initial_seal_ready(const NativePreloadState *state,uint32_t phase) {
+    // Phase 0xD still constructs mission entities after the asset loader is idle.
+    // Keep those native initialization ticks coordinated until playable phase 0xE.
     return preload_bound(state) && !state->sealed_serial && state->completed &&
-        (phase==0xd || phase==0xe) && preload_input_valid(&state->input) &&
-        state->input.epoch==state->epoch && state->input.level==state->level &&
+        phase==0xe && preload_input_valid(&state->input) &&
+        state->input.epoch==state->epoch && state->input.level==state->level && state->input.root_phase==phase &&
         state->input.serial && state->applied.serial==state->input.serial &&
-        preload_receipt_valid(&state->applied) && state->applied.end_phase==phase;
+        preload_receipt_valid(&state->applied) && state->applied.world_calls && state->applied.end_phase==phase;
 }
 void preload_state_bind(NativePreloadState *state,uint32_t session,uint32_t epoch,int level,uintptr_t world) {
     if (!state) return;
