@@ -8,7 +8,7 @@
 
 Иногда возможен рассинхрон. Исправления готовим к следующему обновлению.
 
-- [Скачать 0.0.10](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.10)
+- [Скачать 0.0.11](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.11)
 - [Nexus Mods](https://www.nexusmods.com/legostarwars3theclonewars/mods/28)
 
 ## Сборка
