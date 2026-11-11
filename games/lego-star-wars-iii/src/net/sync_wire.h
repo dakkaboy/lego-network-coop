@@ -13,7 +13,7 @@
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
 #define SYNC_LAYOUT_VERSION 50
-#define SYNC_WIRE_VERSION 126
+#define SYNC_WIRE_VERSION 127
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -370,7 +370,8 @@ enum SyncPhysicsChoiceKind {
     SYNC_PHYSICS_AXIS_SPIN=1, SYNC_PHYSICS_ROTATION_SPIN=2, SYNC_PHYSICS_BREAKUP_LAUNCH=3,
     SYNC_PHYSICS_SPELLIT_SEED=4, SYNC_PHYSICS_SPELLIT_ENTITY=5, SYNC_PHYSICS_SPELLIT_ENABLED=6,
     SYNC_PHYSICS_MODULE_SEED=7, SYNC_PHYSICS_GUN_JAM_SEED=8, SYNC_PHYSICS_SPELLIT_POSE=9,
-    SYNC_PHYSICS_SPELLIT_STEP=10, SYNC_PHYSICS_SPELLIT_SELECTION=11
+    SYNC_PHYSICS_SPELLIT_STEP=10, SYNC_PHYSICS_SPELLIT_SELECTION=11,
+    SYNC_PHYSICS_SPELLIT_BODY_BASIS=12, SYNC_PHYSICS_SPELLIT_BODY_MOTION=13
 };
 typedef struct SyncPhysicsWorldInput {
     uint32_t clock,value;
@@ -409,6 +410,11 @@ typedef struct SyncPhysicsSpellItSelectionInput {
     uint32_t clock,engine_seed,source_name[4],gizmo_class,gizmo_ordinal;
     uint32_t candidate_count,eligibility[4],piece_count,reserved[6];
 } SyncPhysicsSpellItSelectionInput;
+
+typedef struct SyncPhysicsSpellItBodyInput {
+    uint32_t clock,key[4],body_class,piece_ordinal,reserved;
+    float values[12];
+} SyncPhysicsSpellItBodyInput;
 typedef struct SyncPhysicsChoice {
     uint32_t kind,site;
     union {
@@ -422,6 +428,7 @@ typedef struct SyncPhysicsChoice {
         SyncPhysicsSpellItPoseInput spellit_pose;
         SyncPhysicsSpellItStepInput spellit_step;
         SyncPhysicsSpellItSelectionInput spellit_selection;
+        SyncPhysicsSpellItBodyInput spellit_body;
     };
 } SyncPhysicsChoice;
 

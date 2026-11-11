@@ -34,11 +34,24 @@ typedef struct NativeSpellItPiece {
     NativeResourceIdentity resource_identity;
 } NativeSpellItPiece;
 
+typedef struct NativeSpellItBody {
+    uint32_t key[4],name_key[4],body_class,piece_ordinal;
+    void *piece,*model,*receiver,*body,*dynamics,*name;
+} NativeSpellItBody;
+
+typedef struct NativeSpellItBodyState {
+    float basis[12],position[4],linear[4],angular[4];
+} NativeSpellItBodyState;
+
 int native_spellit_source_resolve(void *gizmo,NativeSpellItSource *out);
 int native_spellit_source_revalidate(const NativeSpellItSource *source);
 int native_spellit_piece_resolve(const NativeSpellItSource *source,void *piece,NativeSpellItPiece *out);
 int native_spellit_piece_revalidate(const NativeSpellItSource *source,const NativeSpellItPiece *piece);
 int native_spellit_selection_snapshot(const NativeSpellItSource *source,uint32_t *count,uint32_t eligibility[4]);
+int native_spellit_body_resolve(const NativeSpellItSource *source,void *piece,NativeSpellItBody *out);
+int native_spellit_body_matches(const NativeSpellItSource *source,const NativeSpellItBody *body);
+int native_spellit_body_read(const NativeSpellItSource *source,const NativeSpellItBody *body,NativeSpellItBodyState *state);
+int native_spellit_body_apply(const NativeSpellItSource *source,const NativeSpellItBody *body,const NativeSpellItBodyState *state,int (*live)(void *),void *context);
 
 #ifdef __cplusplus
 }

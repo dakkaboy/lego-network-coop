@@ -184,3 +184,69 @@ int native_spellit_selection_snapshot(const NativeSpellItSource *source,uint32_t
        !native_spellit_source_revalidate(source))return 0;
     *count=candidates;std::memcpy(eligibility,hash.word,sizeof hash.word);return 1;
 }
+
+int native_spellit_body_resolve(const NativeSpellItSource *source,void *value,NativeSpellItBody *out) {
+    LastError preserve;if(!source||!out)return -1;
+    NativeSpellItPiece piece{};if(!native_spellit_piece_resolve(source,value,&piece))return -1;
+    NativeSpellItBody body{};body.piece=value;body.model=piece.model;body.piece_ordinal=piece.key.piece_ordinal;
+    if(!(get<uint16_t>(body.model,0x5a)&0x200)){*out=body;return 0;}
+    body.receiver=pointer(body.model,0x3c);
+    if(!readable(body.receiver,0x1a4))return -1;
+    body.body=pointer(body.receiver,0x1a0);
+    if(!body.body||body.body==reinterpret_cast<void *>(UINTPTR_MAX)){body.body=nullptr;*out=body;return 0;}
+    if(!readable(body.body,0xa0)||!image_class(body.body,body.body_class))return -1;
+    body.dynamics=pointer(body.body,0x98);body.name=pointer(body.body,0x1c);
+    if(!body.dynamics){*out=body;return 0;}
+    if(!readable(body.dynamics,0x50))return -1;
+    Hash name;if(!hash_text(name,static_cast<Byte *>(body.name),128))return -1;
+    std::memcpy(body.name_key,name.word,sizeof body.name_key);
+    Hash key;key.bytes(&source->key,sizeof source->key);key.bytes(&piece.key,sizeof piece.key);
+    key.bytes(body.name_key,sizeof body.name_key);key.number(body.body_class);
+    std::memcpy(body.key,key.word,sizeof body.key);*out=body;return 1;
+}
+int native_spellit_body_matches(const NativeSpellItSource *source,const NativeSpellItBody *body) {
+    LastError preserve;
+    if(!source||!body||!readable(body->piece,0x104)||pointer(body->piece,0xfc)!=source->gizmo||
+       pointer(body->piece,0x100)!=body->model||!readable(body->model,0x5c))return 0;
+    if(!(get<uint16_t>(body->model,0x5a)&0x200))return !body->receiver&&!body->body&&!body->dynamics;
+    if(pointer(body->model,0x3c)!=body->receiver||!readable(body->receiver,0x1a4))return 0;
+    auto *current=pointer(body->receiver,0x1a0);
+    if(!current||current==reinterpret_cast<Byte *>(UINTPTR_MAX))return !body->body&&!body->dynamics;
+    uint32_t type;
+    if(current!=body->body||!readable(current,0xa0)||!image_class(current,type)||type!=body->body_class||
+       pointer(current,0x98)!=body->dynamics||pointer(current,0x1c)!=body->name)return 0;
+    if(!body->dynamics)return 1;
+    Hash name;return readable(body->dynamics,0x50)&&hash_text(name,static_cast<Byte *>(body->name),128)&&
+        !std::memcmp(name.word,body->name_key,sizeof body->name_key);
+}
+int native_spellit_body_read(const NativeSpellItSource *source,const NativeSpellItBody *body,NativeSpellItBodyState *state) {
+    LastError preserve;if(!state||!body||!body->dynamics||!native_spellit_body_matches(source,body))return 0;
+    std::memcpy(state->basis,static_cast<Byte *>(body->body)+0x40,sizeof state->basis);
+    std::memcpy(state->position,static_cast<Byte *>(body->body)+0x70,sizeof state->position);
+    std::memcpy(state->linear,static_cast<Byte *>(body->dynamics)+0x20,sizeof state->linear);
+    std::memcpy(state->angular,static_cast<Byte *>(body->dynamics)+0x30,sizeof state->angular);return 1;
+}
+int native_spellit_body_apply(const NativeSpellItSource *source,const NativeSpellItBody *body,const NativeSpellItBodyState *state,int (*live)(void *),void *context) {
+    LastError preserve;if(!state||!live||!live(context))return 0;
+    if(!body||!body->dynamics||!native_spellit_body_matches(source,body))return 0;
+    for(unsigned i=0;i<sizeof(*state)/4;++i){uint32_t bits;std::memcpy(&bits,reinterpret_cast<const Byte *>(state)+i*4,4);if((bits&0x7f800000u)==0x7f800000u)return 0;}
+    alignas(16) unsigned char machine[512];__asm__ volatile("fxsave %0":"=m"(machine)::"memory");
+    using Apply=void (__attribute__((thiscall)) *)(void *,const float *);
+    bool valid=true;
+    // These setters normalize the basis and refresh motion/sleep caches on both peers.
+    {
+        float matrix[16];std::memcpy(matrix,state->basis,sizeof state->basis);std::memcpy(matrix+12,state->position,sizeof state->position);
+        __asm__ volatile("fxrstor %0"::"m"(machine):"memory");
+        reinterpret_cast<Apply>(native(0xa29570))(body->body,matrix);
+        valid=live(context)&&native_spellit_body_matches(source,body);
+    }
+    if(valid){
+        __asm__ volatile("fxrstor %0"::"m"(machine):"memory");
+        reinterpret_cast<Apply>(native(0x8b5cd0))(body->model,state->linear);valid=live(context)&&native_spellit_body_matches(source,body);
+    }
+    if(valid){
+        __asm__ volatile("fxrstor %0"::"m"(machine):"memory");
+        reinterpret_cast<Apply>(native(0x8b5e00))(body->model,state->angular);valid=live(context)&&native_spellit_body_matches(source,body);
+    }
+    __asm__ volatile("fxrstor %0"::"m"(machine):"memory");return valid;
+}

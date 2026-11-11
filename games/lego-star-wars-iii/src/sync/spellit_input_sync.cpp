@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cstring>
 #include <cmath>
+#include <map>
+#include <vector>
 #include "spellit_input_sync.h"
 #include "physics_input_sync.h"
 #include "../engine/native_spellit_source.h"
@@ -14,6 +16,7 @@ __declspec(dllexport) volatile uint32_t clonewars_spellit_hop_failure[12];
 __declspec(dllexport) volatile uint32_t clonewars_spellit_hop_correction[12];
 __declspec(dllexport) volatile uint32_t clonewars_spellit_native_count;
 __declspec(dllexport) volatile uint32_t clonewars_spellit_native_batch[256][40];
+__declspec(dllexport) volatile uint32_t clonewars_spellit_body_debug[4],clonewars_spellit_body_correction[8];
 __attribute__((used)) static volatile uintptr_t spellit_target_resume=0x8406b8;
 }
 
@@ -45,6 +48,7 @@ static_assert(sizeof(SyncPhysicsWorldInput)==80 && sizeof(SyncPhysicsChoice)==88
 static_assert(sizeof(SyncPhysicsSpellItPoseInput)==80);
 static_assert(sizeof(SyncPhysicsSpellItStepInput)==80);
 static_assert(sizeof(SyncPhysicsSpellItSelectionInput)==80);
+static_assert(sizeof(SyncPhysicsSpellItBodyInput)==80 && sizeof(NativeSpellItBodyState)==96);
 bool probe_readable(void *pointer,size_t size) {
     MEMORY_BASIC_INFORMATION m;const auto address=reinterpret_cast<uintptr_t>(pointer);
     return pointer && VirtualQuery(pointer,&m,sizeof m) && m.State==MEM_COMMIT &&
@@ -91,6 +95,86 @@ void reject(const HopScope &s,unsigned reason,unsigned kind=0) {
         std::memcpy(const_cast<uint32_t *>(clonewars_spellit_hop_failure),values,sizeof(values));
     }
     game_sync_native_fault(15);
+}
+
+struct BodyCache {NativeSpellItSource source{};std::vector<NativeSpellItBody> bindings;};
+thread_local std::map<void *,BodyCache> body_cache;
+thread_local uint32_t body_cache_release,body_cache_epoch;
+bool same_bodies(const HopScope &s,const BodyCache &cache) {
+    if(std::memcmp(&s.source,&cache.source,sizeof s.source)||cache.bindings.size()!=s.source.piece_count)return false;
+    auto *piece=static_cast<unsigned char *>(s.source.piece_head);void *previous=nullptr;
+    for(const auto &body:cache.bindings){
+        if(!live(s)||piece!=body.piece||!probe_readable(piece,0x104))return false;
+        void *prior,*next;std::memcpy(&prior,piece,4);std::memcpy(&next,piece+4,4);
+        if(prior!=previous||!native_spellit_body_matches(&s.source,&body))return false;
+        previous=piece;piece=static_cast<unsigned char *>(next);
+    }
+    return !piece&&previous==s.source.piece_tail;
+}
+int body_guard(void *context){return live(*static_cast<HopScope *>(context));}
+bool body_inputs(HopScope &s) {
+    const auto failure=[&](){if(live(s)){++clonewars_spellit_body_debug[3];reject(s,20,SYNC_PHYSICS_SPELLIT_BODY_BASIS);}return false;};
+    if(!live(s))return false;
+    if(body_cache_release!=s.token.release||body_cache_epoch!=s.token.epoch){body_cache.clear();body_cache_release=s.token.release;body_cache_epoch=s.token.epoch;}
+    auto &cache=body_cache[s.gizmo];
+    if(!same_bodies(s,cache)){
+        BodyCache next;next.source=s.source;next.bindings.reserve(s.source.piece_count);
+        auto *piece=static_cast<unsigned char *>(s.source.piece_head);
+        for(uint32_t i=0;i<s.source.piece_count;++i){
+            if(!live(s)||!probe_readable(piece,0x104))return failure();
+            NativeSpellItBody body{};if(native_spellit_body_resolve(&s.source,piece,&body)<0)return failure();
+            if(!live(s))return false;
+            next.bindings.push_back(body);std::memcpy(&piece,piece+4,4);
+        }
+        if(!same_bodies(s,next))return failure();
+        cache=std::move(next);
+    }
+    const auto bindings=cache.bindings;
+    struct Input {NativeSpellItBody binding;NativeSpellItBodyState local,canonical;};
+    std::vector<Input> inputs;inputs.reserve(bindings.size());
+    for(const auto &body:bindings){
+        if(!body.dynamics)continue;
+        if(inputs.size()>=SYNC_MAX_PHYSICS_CHOICES/2)return failure();
+        Input input{};input.binding=body;
+        if(!live(s)||!native_spellit_body_read(&s.source,&body,&input.local))return failure();
+        input.canonical=input.local;
+        for(unsigned part=0;part<2;++part){
+            SyncPhysicsChoice choice{};choice.kind=part?SYNC_PHYSICS_SPELLIT_BODY_MOTION:SYNC_PHYSICS_SPELLIT_BODY_BASIS;choice.site=0x840660;
+            auto &values=choice.spellit_body;values.clock=s.clock;std::memcpy(values.key,body.key,sizeof values.key);
+            values.body_class=body.body_class;values.piece_ordinal=body.piece_ordinal;
+            std::memcpy(values.values,reinterpret_cast<const unsigned char *>(&input.local)+part*48,48);
+            if(!physics_choice_valid(&choice))return failure();
+            auto expected=choice;
+            if(!live(s)||physics_world_input(&choice,&s.token)!=1||!live(s))return failure();
+            std::memcpy(expected.spellit_body.values,values.values,48);
+            if(std::memcmp(&choice,&expected,sizeof choice)||!physics_choice_valid(&choice))return failure();
+            std::memcpy(reinterpret_cast<unsigned char *>(&input.canonical)+part*48,values.values,48);
+        }
+        inputs.push_back(input);
+    }
+    if(!live(s)||!native_spellit_source_revalidate(&s.source))return failure();
+    for(const auto &input:inputs){
+        NativeSpellItBodyState current{};
+        if(!live(s)||!native_spellit_body_read(&s.source,&input.binding,&current)||std::memcmp(&current,&input.local,sizeof current))return failure();
+    }
+    for(const auto &input:inputs){
+        if(!live(s))return false;
+        const bool corrected=std::memcmp(&input.local,&input.canonical,sizeof input.local)!=0;
+        // Native body normalization must use the game's precision, not the SEH helper's.
+        MachineState helper;helper.capture();s.machine.restore();
+        const int applied=native_spellit_body_apply(&s.source,&input.binding,&input.canonical,body_guard,&s);
+        helper.restore();if(!applied)return failure();
+        if(!live(s))return false;
+        ++clonewars_spellit_body_debug[0];
+        if(!corrected){++clonewars_spellit_body_debug[1];continue;}
+        ++clonewars_spellit_body_debug[2];
+        if(!clonewars_spellit_body_correction[0]){
+            const uint32_t values[]={s.token.epoch,s.token.sequence,s.clock,input.binding.piece_ordinal,input.binding.body_class,
+                input.binding.key[0],input.binding.key[1],s.source.key.gizmo_ordinal};
+            std::memcpy(const_cast<uint32_t *>(clonewars_spellit_body_correction),values,sizeof values);
+        }
+    }
+    return live(s);
 }
 SyncPhysicsChoice choice(const HopScope &s,unsigned kind,uint32_t value,const NativeSpellItPiece *piece=nullptr) {
     SyncPhysicsChoice result{};result.kind=kind;
@@ -148,6 +232,7 @@ void *__cdecl invoke_hop(void *raw) {
         if(before.spellit_step.engine_seed!=step.engine_seed || before.spellit_step.game_seed!=step.game_seed ||
            std::memcmp(&before.spellit_step.delta,&step.delta,8))++clonewars_spellit_hop_debug[2];
         ++clonewars_spellit_hop_debug[0];
+        if(!body_inputs(s))return nullptr;
     }
     uint32_t delta_bits;std::memcpy(&delta_bits,&s.delta,4);
     // The native stack argument is unchanged; integer marshalling preserves incoming XMM registers.

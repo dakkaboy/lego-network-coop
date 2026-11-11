@@ -311,5 +311,37 @@ textured geometry, stock HUD and different views. Ledger: hub-selection163.
 The game selected roaming NPC195 on both peers, matching the earlier -21 case.
 Neither -21 nor -16 recurred. Hardware write observation found no bit400 change
 in Hub; the first changes on both sides were normal native destruction at unload
-clock982. The original -21 flag writer was not separately reproduced, so this is
-regression evidence rather than a claim that every -21 source is closed.
+clock982. This was regression evidence, not proof that every -21 source was closed.
+Later captures established that model reason9 also covers other context fields:
+it cannot by itself identify a changed actor flag.
+
+## Native physical piece inputs (wire 127)
+
+The extended Hub route reproduced -21 with the same 0x400 bit on both peers.
+NPC188 started action0 at native clock769 on both. The host returned to FFFF at
+785 and the client at786 through the same native 8C5A4A call. Their action timer
+was bit-identical; the ground-contact predicate differed. Hardware observations
+at A381E0/A15FD0/A15D20 then found matching character physics inputs and numeric
+modes, but different transforms of nearby physical build pieces. The game named
+those bodies BridgeBuild_09 and BridgeBuild_010. Those names are evidence only;
+production code contains no level or piece-name filter.
+
+Before each original SpellIt update, physical pieces are now bound through the
+native linked list, resource/POI identity and live model -> receiver -> body ->
+dynamics links. Two typed inputs carry the native basis, position, linear
+velocity and angular velocity. Both peers feed the authoritative inputs through
+A29570, 8B5CD0 and 8B5E00 before the original update. The same native normalization
+and motion-cache updates must run on both even if their input bytes already match.
+Body/name replacement or a retired
+frame cancels further writes. Native calls receive the caller's original numeric
+environment, with helper state and LastError preserved separately. The original
+update still runs once; NPC action, grounded and 0x400 flags are not projected.
+
+Bindings are cached only within the same release, epoch and native source graph;
+current links and body names are revalidated on use. Network keys contain native
+source, resource, POI and body identity. Coordinates are payload values. Frame
+layout 50 and its 3882064-byte capacity remain unchanged.
+
+30 CTests pass, including native setter ABI, native/helper x87 precision,
+mid-call lease retirement, rebound bodies, rejected batch writes and both wire
+records. Candidate166 passed the two-instance offscreen hub-physical166 run: Hub attacks/jumps through sequence 945, then native catalog loading of ShadowOfMalevolence_A in the same session and firing by both players through sequence 639/645. Both terminal states remained sync=2, reject=0, with no recorded native fault. A hardware-breakpoint sample at the original SpellIt update entry compared 240 physical body states with bit-identical matrices and velocities. Later character-contact samples still contain small floating-point differences; this is not a claim of deterministic simulation everywhere. Saved flight frames show separate views, original HUD and textured geometry. This qualifies the tested short route, not full mission completion or separate-PC play.
