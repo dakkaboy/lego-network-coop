@@ -10,13 +10,18 @@ static unsigned mode,calls,faults;
 static unsigned original_calls;
 static unsigned selection_calls;
 static uint32_t expected_selection_seed;
+static bool bodies_enabled,body_proof=true;
+static unsigned body_mode,body_applies;
+static NativeSpellItBodyState local_body{},canonical_body{};
 static float authoritative[3]={340.76535f,44.27975f,47.423156f};
 extern "C" int coherent_frame_valid(const CoherentFrameToken *t,uint32_t) {return alive && t && t->sequence==44;}
 extern "C" int coherent_frame_get(CoherentFrameToken *t,uint32_t) {*t={};t->sequence=44;return alive;}
 extern "C" void game_sync_native_fault(int value){assert(value==15);++faults;}
 extern "C" void *constructor_lexical_seh(void *raw,ConstructorLexicalInvoke f,ConstructorLexicalAbort){return f(raw);}
 extern "C" int native_spellit_source_resolve(void *g,NativeSpellItSource *s) {
-    *s={};s->gizmo=g;s->key={{1,2,3,4},0x8480ac,3};return g==gizmo_memory;
+    *s={};s->gizmo=g;s->key={{1,2,3,4},0x8480ac,3};
+    if(bodies_enabled){s->piece_count=1;s->piece_head=s->piece_tail=piece_memory;}
+    return g==gizmo_memory;
 }
 extern "C" int native_spellit_source_revalidate(const NativeSpellItSource *){return proof;}
 extern "C" int native_spellit_piece_resolve(const NativeSpellItSource *,void *p,NativeSpellItPiece *out) {
@@ -24,11 +29,32 @@ extern "C" int native_spellit_piece_resolve(const NativeSpellItSource *,void *p,
     *out={};out->piece=p;out->key={{5,6,7,8},{9,10,11,12},265,672,0x820f64,8};return 1;
 }
 extern "C" int native_spellit_piece_revalidate(const NativeSpellItSource *,const NativeSpellItPiece *){return proof;}
+extern "C" int native_spellit_body_resolve(const NativeSpellItSource *,void *piece,NativeSpellItBody *body){
+    *body={};body->piece=piece;body->dynamics=&local_body;body->body_class=0x869eac;body->key[0]=123;
+    return body_proof?1:-1;
+}
+extern "C" int native_spellit_body_matches(const NativeSpellItSource *,const NativeSpellItBody *){return body_proof;}
+extern "C" int native_spellit_body_read(const NativeSpellItSource *,const NativeSpellItBody *,NativeSpellItBodyState *state){*state=local_body;return body_proof;}
+extern "C" int native_spellit_body_apply(const NativeSpellItSource *,const NativeSpellItBody *,const NativeSpellItBodyState *state,int(*live)(void *),void *context){
+    uint16_t control;__asm__ volatile("fnstcw %0":"=m"(control));assert(control==0x7f);
+    assert(body_proof&&live(context));++body_applies;local_body=*state;return 1;
+}
 extern "C" int native_spellit_selection_snapshot(const NativeSpellItSource *,uint32_t *count,uint32_t hash[4]) {
     *count=0;for(unsigned i=0;i<4;++i)hash[i]=i+1;return proof;
 }
 extern "C" int physics_world_input(SyncPhysicsChoice *p,const CoherentFrameToken *) {
     ++calls;assert(physics_choice_valid(p));
+    if(p->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||p->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION){
+        const unsigned part=p->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION;
+        std::memcpy(p->spellit_body.values,reinterpret_cast<const unsigned char *>(&canonical_body)+part*48,48);
+        if(body_mode==1)++p->spellit_body.key[0];
+        if(body_mode==2)alive=false;
+        if(body_mode==3)body_proof=false;
+        if(body_mode==4)local_body.position[1]+=1;
+        if(body_mode==5)p->spellit_body.values[0]=NAN;
+        if(body_mode==6&&part)return -1;
+        return 1;
+    }
     if(p->kind==SYNC_PHYSICS_SPELLIT_STEP) {
         p->spellit_step.engine_seed=12345;p->spellit_step.game_seed=23456;
         p->spellit_step.delta=.016f;p->spellit_step.timer=-.004f;return 1;
@@ -74,6 +100,24 @@ int main() {
     *reinterpret_cast<uint32_t *>(0xfb4b6c)=100;
     HopScope scope{};scope.gizmo=gizmo_memory;scope.bound=true;scope.clock=100;scope.token.sequence=44;
     assert(native_spellit_source_resolve(gizmo_memory,&scope.source));current=&scope;
+    bodies_enabled=true;assert(native_spellit_source_resolve(gizmo_memory,&scope.source));
+    uint16_t helper_control;const uint16_t native_control=0x7f;
+    __asm__ volatile("fnstcw %0\n\tfldcw %1":"=m"(helper_control):"m"(native_control));scope.machine.capture();
+    __asm__ volatile("fldcw %0"::"m"(helper_control));
+    for(body_mode=0;body_mode<=6;++body_mode){
+        body_cache.clear();alive=proof=body_proof=true;local_body={};canonical_body={};
+        canonical_body.basis[0]=canonical_body.basis[5]=canonical_body.basis[10]=1;
+        canonical_body.position[0]=340.25f;canonical_body.position[3]=1;canonical_body.linear[1]=.5f;canonical_body.angular[2]=.75f;
+        const auto before=body_applies;const bool applied=body_inputs(scope);
+        assert(applied==(body_mode==0));assert(body_applies==before+(body_mode==0));
+        if(!body_mode){
+            assert(!std::memcmp(&local_body,&canonical_body,sizeof local_body));
+            const auto normalized=body_applies;assert(body_inputs(scope));assert(body_applies==normalized+1);
+        }
+        else assert(local_body.position[0]==0);
+        uint16_t restored;__asm__ volatile("fnstcw %0":"=m"(restored));assert(restored==helper_control);
+    }
+    bodies_enabled=false;body_mode=0;body_proof=alive=proof=true;assert(native_spellit_source_resolve(gizmo_memory,&scope.source));
     for(mode=0;mode<=4;++mode) {
         alive=proof=true;*reinterpret_cast<uint32_t *>(0xea178c)=111;
         const auto before_faults=faults;selection_input(gizmo_memory,0x840790);

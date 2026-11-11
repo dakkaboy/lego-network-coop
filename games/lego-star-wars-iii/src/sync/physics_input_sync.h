@@ -1,5 +1,6 @@
 #pragma once
 #include <math.h>
+#include <string.h>
 #include "../net/sync_wire.h"
 
 #ifdef __cplusplus
@@ -14,6 +15,13 @@ int physics_world_input(SyncPhysicsChoice *,const CoherentFrameToken *);
 int physics_module_input(SyncPhysicsChoice *,const CoherentFrameToken *);
 static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
     if (!choice) return 0;
+    if(choice->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||choice->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION){
+        const SyncPhysicsSpellItBodyInput *body=&choice->spellit_body;
+        if(choice->site!=0x840660||!body->body_class||body->body_class>=0x1000000||body->piece_ordinal>=65536||body->reserved||
+           !(body->key[0]|body->key[1]|body->key[2]|body->key[3]))return 0;
+        for(unsigned i=0;i<12;++i)if(!isfinite(body->values[i]))return 0;
+        return 1;
+    }
     if(choice->kind==SYNC_PHYSICS_SPELLIT_SELECTION) {
         const SyncPhysicsSpellItSelectionInput *s=&choice->spellit_selection;
         if((choice->site!=0x8406a7 && choice->site!=0x840790 && choice->site!=0x840b93) || !s->gizmo_class || s->gizmo_ordinal>=65536 ||
@@ -84,6 +92,8 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
 }
 static inline int physics_choice_same_source(const SyncPhysicsChoice *a,const SyncPhysicsChoice *b) {
     if (!physics_choice_valid(a) || !physics_choice_valid(b) || a->kind!=b->kind || a->site!=b->site) return 0;
+    if(a->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||a->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION)
+        return !memcmp(&a->spellit_body,&b->spellit_body,32);
     if(a->kind==SYNC_PHYSICS_SPELLIT_STEP) {
         if(a->spellit_step.clock!=b->spellit_step.clock)return 0;
         const unsigned char *first=(const unsigned char *)&a->spellit_step,*second=(const unsigned char *)&b->spellit_step;

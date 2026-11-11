@@ -630,6 +630,17 @@ int main(void) {
     bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
     input->physics_choices[0].site=0x840b93;
     bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    for(unsigned kind=SYNC_PHYSICS_SPELLIT_BODY_BASIS;kind<=SYNC_PHYSICS_SPELLIT_BODY_MOTION;++kind){
+        input->physics_choices[0]=(SyncPhysicsChoice){.kind=kind,.site=0x840660,
+            .spellit_body={.clock=42,.key={1,2,3,4},.body_class=0x869eac,.piece_ordinal=8,.values={1,0,0,0,0,1,0,0,0,0,1,0}}};
+        bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes&&sync_frame_decode(output,wire,bytes));
+        assert(!memcmp(input->physics_choices,output->physics_choices,sizeof(SyncPhysicsChoice)));
+        output->physics_choices[0].spellit_body.values[0]+=1;assert(physics_choice_same_source(input->physics_choices,output->physics_choices));
+        output->physics_choices[0].spellit_body.key[0]++;assert(!physics_choice_same_source(input->physics_choices,output->physics_choices));
+        input->physics_choices[0].spellit_body.values[0]=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+        input->physics_choices[0].spellit_body.values[0]=1;input->physics_choices[0].spellit_body.reserved=1;
+        assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    }
     input->physics_choices[0]=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_MODULE_SEED,.site=0x4da6d0,
         .module={.clock=8965,.value=3387502361u,.module_id=1969741825,.module_type=516652984,
             .module_generation=24,.module_class=0x6e6b3c,.burst_min=3,.burst_max=5,

@@ -212,7 +212,9 @@ static int physics_source_input(SyncPhysicsChoice *choice,const CoherentFrameTok
     } else {
         const auto *expected=cursor<frame->physics_choice_count?frame->physics_choices+cursor:nullptr;
         if (!expected || !physics_choice_same_source(expected,choice)) {fail(6,choice,expected);return -1;}
-        if(choice->kind==SYNC_PHYSICS_SPELLIT_STEP) {
+        if(choice->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||choice->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION){
+            std::memcpy(choice->spellit_body.values,expected->spellit_body.values,sizeof choice->spellit_body.values);
+        } else if(choice->kind==SYNC_PHYSICS_SPELLIT_STEP) {
             choice->spellit_step.engine_seed=expected->spellit_step.engine_seed;
             choice->spellit_step.game_seed=expected->spellit_step.game_seed;
             choice->spellit_step.delta=expected->spellit_step.delta;
@@ -232,7 +234,8 @@ int physics_world_input(SyncPhysicsChoice *choice,const CoherentFrameToken *toke
     if (!active) return 0;
     if (!choice || ((choice->kind<SYNC_PHYSICS_SPELLIT_SEED || choice->kind>SYNC_PHYSICS_SPELLIT_ENABLED) &&
                    choice->kind!=SYNC_PHYSICS_SPELLIT_POSE && choice->kind!=SYNC_PHYSICS_SPELLIT_STEP &&
-                   choice->kind!=SYNC_PHYSICS_SPELLIT_SELECTION)) {
+                   choice->kind!=SYNC_PHYSICS_SPELLIT_SELECTION && choice->kind!=SYNC_PHYSICS_SPELLIT_BODY_BASIS &&
+                   choice->kind!=SYNC_PHYSICS_SPELLIT_BODY_MOTION)) {
         if (live()) fail(5,choice);
         return -1;
     }
