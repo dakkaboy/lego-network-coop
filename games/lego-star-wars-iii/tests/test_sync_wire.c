@@ -611,6 +611,25 @@ int main(void) {
     memset(input,0,sizeof(*input));
     input->epoch=9;input->sequence=1;input->level=7;
     input->physics_choice_count=1;
+    input->physics_choices[0]=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_SPELLIT_SELECTION,.site=0x840790,
+        .spellit_selection={.clock=587,.engine_seed=12345,.source_name={1,2,3,4},.gizmo_class=0x8480ac,
+            .gizmo_ordinal=3,.candidate_count=2,.eligibility={5,6,7,8},.piece_count=9}};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(!memcmp(input->physics_choices,output->physics_choices,sizeof(SyncPhysicsChoice)));
+    output->physics_choices[0].spellit_selection.engine_seed++;
+    assert(physics_choice_same_source(input->physics_choices,output->physics_choices));
+    output->physics_choices[0].spellit_selection.eligibility[0]++;
+    assert(!physics_choice_same_source(input->physics_choices,output->physics_choices));
+    input->physics_choices[0].spellit_selection.candidate_count=10;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->physics_choices[0].spellit_selection.candidate_count=2;
+    input->physics_choices[0].spellit_selection.reserved[5]=1;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->physics_choices[0].spellit_selection.reserved[5]=0;
+    input->physics_choices[0].site=0x8406a7;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    input->physics_choices[0].site=0x840b93;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
     input->physics_choices[0]=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_MODULE_SEED,.site=0x4da6d0,
         .module={.clock=8965,.value=3387502361u,.module_id=1969741825,.module_type=516652984,
             .module_generation=24,.module_class=0x6e6b3c,.burst_min=3,.burst_max=5,

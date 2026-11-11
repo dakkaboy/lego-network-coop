@@ -8,6 +8,8 @@ static unsigned char gizmo_memory[0x230],piece_memory[0x120],other_piece[0x120];
 static bool alive=true,proof=true;
 static unsigned mode,calls,faults;
 static unsigned original_calls;
+static unsigned selection_calls;
+static uint32_t expected_selection_seed;
 static float authoritative[3]={340.76535f,44.27975f,47.423156f};
 extern "C" int coherent_frame_valid(const CoherentFrameToken *t,uint32_t) {return alive && t && t->sequence==44;}
 extern "C" int coherent_frame_get(CoherentFrameToken *t,uint32_t) {*t={};t->sequence=44;return alive;}
@@ -22,11 +24,21 @@ extern "C" int native_spellit_piece_resolve(const NativeSpellItSource *,void *p,
     *out={};out->piece=p;out->key={{5,6,7,8},{9,10,11,12},265,672,0x820f64,8};return 1;
 }
 extern "C" int native_spellit_piece_revalidate(const NativeSpellItSource *,const NativeSpellItPiece *){return proof;}
+extern "C" int native_spellit_selection_snapshot(const NativeSpellItSource *,uint32_t *count,uint32_t hash[4]) {
+    *count=0;for(unsigned i=0;i<4;++i)hash[i]=i+1;return proof;
+}
 extern "C" int physics_world_input(SyncPhysicsChoice *p,const CoherentFrameToken *) {
     ++calls;assert(physics_choice_valid(p));
     if(p->kind==SYNC_PHYSICS_SPELLIT_STEP) {
         p->spellit_step.engine_seed=12345;p->spellit_step.game_seed=23456;
         p->spellit_step.delta=.016f;p->spellit_step.timer=-.004f;return 1;
+    }
+    if(p->kind==SYNC_PHYSICS_SPELLIT_SELECTION) {
+        p->spellit_selection.engine_seed=98765;
+        if(mode==1)++p->spellit_selection.eligibility[0];
+        if(mode==2)alive=false;
+        if(mode==3)proof=false;
+        return mode==4?-1:1;
     }
     assert(p->kind==SYNC_PHYSICS_SPELLIT_POSE);
     std::memcpy(p->spellit_pose.position,authoritative,sizeof authoritative);p->spellit_pose.last_time=.25f;
@@ -46,6 +58,10 @@ static void __attribute__((thiscall)) original_hop_fixture(void *gizmo,uint32_t 
     native_spellit_pose_input(gizmo);assert(!std::memcmp(piece_memory+0xd0,authoritative,sizeof authoritative));
     *reinterpret_cast<uint32_t *>(0xea178c)=54321;*reinterpret_cast<uint16_t *>(0xe637b4)=34567;SetLastError(4321);
 }
+static void *__attribute__((thiscall)) original_selection_fixture(void *gizmo) {
+    assert(gizmo==gizmo_memory && *reinterpret_cast<uint32_t *>(0xea178c)==expected_selection_seed);
+    ++selection_calls;++*reinterpret_cast<uint32_t *>(0xea178c);SetLastError(789);return piece_memory;
+}
 __attribute__((naked)) static uint32_t invoke_bridge(void *) {
     __asm__ volatile("pushl %ebx\n\tmovl 8(%esp),%ebx\n\tmovl $0xcafebabe,%eax\n\tmovl $0x87654321,%edx\n\t"
         "cmpl %eax,%eax\n\tstc\n\tcall _native_spellit_pose_bridge\n\tpushfl\n\t"
@@ -58,6 +74,35 @@ int main() {
     *reinterpret_cast<uint32_t *>(0xfb4b6c)=100;
     HopScope scope{};scope.gizmo=gizmo_memory;scope.bound=true;scope.clock=100;scope.token.sequence=44;
     assert(native_spellit_source_resolve(gizmo_memory,&scope.source));current=&scope;
+    for(mode=0;mode<=4;++mode) {
+        alive=proof=true;*reinterpret_cast<uint32_t *>(0xea178c)=111;
+        const auto before_faults=faults;selection_input(gizmo_memory,0x840790);
+        assert(*reinterpret_cast<uint32_t *>(0xea178c)==(mode?111:98765));
+        assert(faults==before_faults+(mode!=0));
+    }
+    alive=proof=true;
+    DWORD selection_old;assert(VirtualProtect(reinterpret_cast<void *>(0x7da280),5,PAGE_EXECUTE_READWRITE,&selection_old));
+    auto *selection_code=reinterpret_cast<unsigned char *>(0x7da280);selection_code[0]=0xe9;
+    int32_t selection_relative=static_cast<int32_t>(reinterpret_cast<uintptr_t>(original_selection_fixture)-0x7da285);
+    std::memcpy(selection_code+1,&selection_relative,4);
+    const uintptr_t selection_sites[]={0x8406a7,0x840790,0x840b93};
+    for(uintptr_t selection_site:selection_sites) {
+    auto *callsite=reinterpret_cast<unsigned char *>(selection_site);
+    assert(VirtualProtect(callsite,6,PAGE_EXECUTE_READWRITE,&selection_old));callsite[0]=0xe8;
+    selection_relative=static_cast<int32_t>(reinterpret_cast<uintptr_t>(selection_hook)-selection_site-5);
+    std::memcpy(callsite+1,&selection_relative,4);callsite[5]=0xc3;
+    assert(FlushInstructionCache(GetCurrentProcess(),nullptr,0));
+    for(unsigned bound=0;bound<2;++bound)for(mode=0;mode<=1;++mode) {
+        current=bound?&scope:nullptr;alive=proof=true;*reinterpret_cast<uint32_t *>(0xea178c)=222;
+        expected_selection_seed=bound&&!mode?98765:222;const auto before=selection_calls;
+        void *result;double retained;__asm__ volatile("fld1");
+        result=reinterpret_cast<void *(__attribute__((thiscall)) *)(void *)>(callsite)(gizmo_memory);
+        __asm__ volatile("fstpl %0":"=m"(retained));
+        assert(retained==1 && result==piece_memory && selection_calls==before+1 && GetLastError()==789);
+        assert(*reinterpret_cast<uint32_t *>(0xea178c)==expected_selection_seed+1);
+    }
+    }
+    current=&scope;
     for(mode=0;mode<=5;++mode) {
         alive=proof=true;void *selected=piece_memory;std::memcpy(gizmo_memory+0x21c,&selected,4);
         const float local_time=-.25f;std::memcpy(piece_memory+0xf4,&local_time,4);

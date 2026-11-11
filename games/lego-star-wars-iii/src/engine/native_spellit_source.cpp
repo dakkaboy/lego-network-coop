@@ -169,3 +169,18 @@ int native_spellit_piece_revalidate(const NativeSpellItSource *source,const Nati
     LastError preserve;if (!source || !piece) return 0;NativeSpellItPiece current{};
     return native_spellit_piece_resolve(source,piece->piece,&current) && !std::memcmp(piece,&current,sizeof(current));
 }
+int native_spellit_selection_snapshot(const NativeSpellItSource *source,uint32_t *count,uint32_t eligibility[4]) {
+    LastError preserve;
+    if(!source || !count || !eligibility || !native_spellit_source_revalidate(source))return 0;
+    auto *node=static_cast<Byte *>(source->piece_head);Byte *previous=nullptr;
+    Hash hash;uint32_t index=0,candidates=0;
+    while(node && index<source->piece_count) {
+        if(!readable(node,0x114) || pointer(node)!=previous || pointer(node,0xfc)!=source->gizmo)return 0;
+        const bool eligible=get<uint32_t>(node,0x110)!=3;
+        hash.number(index);hash.number(eligible);candidates+=eligible;
+        previous=node;node=pointer(node,4);++index;
+    }
+    if(node || index!=source->piece_count || previous!=source->piece_tail ||
+       !native_spellit_source_revalidate(source))return 0;
+    *count=candidates;std::memcpy(eligibility,hash.word,sizeof hash.word);return 1;
+}

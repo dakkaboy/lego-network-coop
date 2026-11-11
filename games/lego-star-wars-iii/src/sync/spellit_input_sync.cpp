@@ -44,6 +44,7 @@ static_assert(sizeof(NativeSpellItSourceKey)==24 && sizeof(NativeSpellItPieceKey
 static_assert(sizeof(SyncPhysicsWorldInput)==80 && sizeof(SyncPhysicsChoice)==88);
 static_assert(sizeof(SyncPhysicsSpellItPoseInput)==80);
 static_assert(sizeof(SyncPhysicsSpellItStepInput)==80);
+static_assert(sizeof(SyncPhysicsSpellItSelectionInput)==80);
 bool probe_readable(void *pointer,size_t size) {
     MEMORY_BASIC_INFORMATION m;const auto address=reinterpret_cast<uintptr_t>(pointer);
     return pointer && VirtualQuery(pointer,&m,sizeof m) && m.State==MEM_COMMIT &&
@@ -232,6 +233,41 @@ uint32_t query(void *target,NativeQuery original,unsigned kind) {
 uint32_t __attribute__((fastcall)) entity_hook(void *record,void *) {
     return query(record,native_entity,SYNC_PHYSICS_SPELLIT_ENTITY);
 }
+void selection_input(void *gizmo,uint32_t site) {
+    HopScope *scope=current;
+    if(scope && scope->bound) {
+        SyncPhysicsChoice input{};input.kind=SYNC_PHYSICS_SPELLIT_SELECTION;
+        input.site=site;
+        auto &selection=input.spellit_selection;
+        if(scope->gizmo!=gizmo || !live(*scope) ||
+           !native_spellit_selection_snapshot(&scope->source,&selection.candidate_count,selection.eligibility)) {
+            reject(*scope,13,input.kind);return;
+        }
+        selection.clock=scope->clock;selection.engine_seed=*reinterpret_cast<uint32_t *>(0xea178c);
+        std::memcpy(selection.source_name,scope->source.key.name,sizeof selection.source_name);
+        selection.gizmo_class=scope->source.key.gizmo_class;selection.gizmo_ordinal=scope->source.key.gizmo_ordinal;
+        selection.piece_count=scope->source.piece_count;const auto before=input;
+        if(physics_world_input(&input,&scope->token)!=1) {reject(*scope,14,input.kind);return;}
+        uint32_t candidates,eligibility[4];
+        if(!live(*scope) || !native_spellit_selection_snapshot(&scope->source,&candidates,eligibility) ||
+           candidates!=before.spellit_selection.candidate_count ||
+           std::memcmp(eligibility,before.spellit_selection.eligibility,sizeof eligibility) ||
+           !physics_choice_same_source(&before,&input) ||
+           *reinterpret_cast<uint32_t *>(0xea178c)!=before.spellit_selection.engine_seed) {
+            reject(*scope,15,input.kind);return;
+        }
+        *reinterpret_cast<uint32_t *>(0xea178c)=selection.engine_seed;
+        ++clonewars_spellit_hop_debug[1];
+        if(selection.engine_seed!=before.spellit_selection.engine_seed)++clonewars_spellit_hop_debug[2];
+    }
+}
+void *__attribute__((fastcall)) selection_hook(void *gizmo,void *) {
+    MachineState machine;machine.capture();
+    selection_input(gizmo,reinterpret_cast<uintptr_t>(__builtin_return_address(0))-5);
+    using Selection=void *(__attribute__((thiscall)) *)(void *);
+    machine.restore();void *result=reinterpret_cast<Selection>(0x7da280)(gizmo);machine.capture();
+    machine.restore();return result;
+}
 uint32_t __attribute__((fastcall)) enabled_hook(void *receiver,void *table) {
     NativeQuery original;std::memcpy(&original,static_cast<unsigned char *>(table)+0x1c,4);
     return query(receiver,original,SYNC_PHYSICS_SPELLIT_ENABLED);
@@ -246,13 +282,17 @@ int spellit_input_install(void) {
         {0x861019,{0xe8,0x42,0xf6,0xfd,0xff},reinterpret_cast<void *>(hop_hook),0,5},
         {0x8407cf,{0xe8,0x6c,0xa8,0xf6,0xff},reinterpret_cast<void *>(entity_hook),0,5},
         {0x840856,{0x8b,0x42,0x1c,0xff,0xd0},reinterpret_cast<void *>(enabled_hook),0,5},
-        {0x8406b2,{0x8b,0x8b,0x1c,0x02,0,0},reinterpret_cast<void *>(native_spellit_pose_bridge),0,6}
+        {0x8406b2,{0x8b,0x8b,0x1c,0x02,0,0},reinterpret_cast<void *>(native_spellit_pose_bridge),0,6},
+        {0x8406a7,{0xe8,0xd4,0x9b,0xf9,0xff},reinterpret_cast<void *>(selection_hook),0,5},
+        {0x840790,{0xe8,0xeb,0x9a,0xf9,0xff},reinterpret_cast<void *>(selection_hook),0,5},
+        {0x840b93,{0xe8,0xe8,0x96,0xf9,0xff},reinterpret_cast<void *>(selection_hook),0,5}
     };
     for (const auto &patch:patches) if (std::memcmp(reinterpret_cast<void *>(patch.address),patch.expected,patch.size)) return 0;
     unsigned acquired=0;DWORD ignored;
-    for (;acquired<4;++acquired) if (!VirtualProtect(reinterpret_cast<void *>(patches[acquired].address),patches[acquired].size,
+    constexpr unsigned patch_count=sizeof patches/sizeof *patches;
+    for (;acquired<patch_count;++acquired) if (!VirtualProtect(reinterpret_cast<void *>(patches[acquired].address),patches[acquired].size,
         PAGE_EXECUTE_READWRITE,&patches[acquired].protection)) break;
-    if (acquired!=4) {
+    if (acquired!=patch_count) {
         while (acquired) {--acquired;auto &p=patches[acquired];VirtualProtect(reinterpret_cast<void *>(p.address),p.size,p.protection,&ignored);}
         return 0;
     }

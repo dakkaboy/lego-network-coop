@@ -38,6 +38,7 @@ int native_spellit_source_resolve(void *gizmo,NativeSpellItSource *out);
 int native_spellit_source_revalidate(const NativeSpellItSource *source);
 int native_spellit_piece_resolve(const NativeSpellItSource *source,void *piece,NativeSpellItPiece *out);
 int native_spellit_piece_revalidate(const NativeSpellItSource *source,const NativeSpellItPiece *piece);
+int native_spellit_selection_snapshot(const NativeSpellItSource *source,uint32_t *count,uint32_t eligibility[4]);
 
 #ifdef __cplusplus
 }

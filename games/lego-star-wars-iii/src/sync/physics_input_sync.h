@@ -14,6 +14,15 @@ int physics_world_input(SyncPhysicsChoice *,const CoherentFrameToken *);
 int physics_module_input(SyncPhysicsChoice *,const CoherentFrameToken *);
 static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
     if (!choice) return 0;
+    if(choice->kind==SYNC_PHYSICS_SPELLIT_SELECTION) {
+        const SyncPhysicsSpellItSelectionInput *s=&choice->spellit_selection;
+        if((choice->site!=0x8406a7 && choice->site!=0x840790 && choice->site!=0x840b93) || !s->gizmo_class || s->gizmo_ordinal>=65536 ||
+           s->piece_count>65536 || s->candidate_count>s->piece_count ||
+           !(s->source_name[0]|s->source_name[1]|s->source_name[2]|s->source_name[3]) ||
+           !(s->eligibility[0]|s->eligibility[1]|s->eligibility[2]|s->eligibility[3]))return 0;
+        for(unsigned i=0;i<6;++i)if(s->reserved[i])return 0;
+        return 1;
+    }
     if(choice->kind==SYNC_PHYSICS_SPELLIT_STEP) {
         const SyncPhysicsSpellItStepInput *s=&choice->spellit_step;
         if(choice->site!=0x86101e || s->game_seed>UINT16_MAX || !isfinite(s->delta) || s->delta<0 || s->delta>.1f ||
