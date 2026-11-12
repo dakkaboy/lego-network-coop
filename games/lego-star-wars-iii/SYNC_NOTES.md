@@ -392,3 +392,28 @@ No gameplay source change was justified by this run. Several failed approach
 attempts were harness issues (vehicle inertia, a released ring button, using a
 visual lever offset, and treating human transfer as a missing vehicle); their
 original traces were retained alongside the successful native-state evidence.
+
+Renderer numeric-state boundaries (candidate167, 2026-11-12): added Present,
+Reset and per-view capture work now preserves FX state and LastError. Incoming
+state is restored before the original Present/Reset call; original outgoing
+state survives post-Reset helpers and frame capture. The wrapper does not force
+a CW constant or erase numeric effects produced by the original game call.
+
+The source-extracted x86 ABI fixture passed four rounding modes, helper-induced
+CW/MXCSR/LastError changes, distinct native incoming/outgoing modes, successful
+and failed Reset, a foreign device, and three capture-helper return paths.
+All30 CTests pass. The two offscreen hub-flight-render167 instances passed native
+ring traversal, PadA human transfer, same-session Hub return and flight reentry.
+Both landing model-failure records remained zero, and session1 survived reentry.
+Final host/client frames were visually reviewed; the owned pair closed normally.
+The exact qualified DLL SHA256 is
+282B4F92FC9A87D7DFFCC3DB055A873C40373FB3C9C206169DD0498DA96A4E9E.
+
+The preceding instrumented166 run failed model context validation only on x87
+precision (33F versus3F) for the attached pilot; NPC flags and actions matched.
+Its new watchpoint tool unnecessarily repinned the host1276 times, with zero
+actual write exceptions. A clean166 control subsequently passed the same native
+landing. The renderer boundaries were a concrete preservation gap, but the
+specific writer behind that earlier precision divergence remains unproven.
+This qualification does not establish that every rare -21 or campaign mission
+is fixed. Native torpedo hit progression remains a separate pending check.

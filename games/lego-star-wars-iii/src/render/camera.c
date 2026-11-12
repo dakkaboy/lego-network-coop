@@ -282,8 +282,7 @@ static HRESULT WINAPI camera_set_state(IDirect3DDevice9 *device,D3DRENDERSTATETY
     return result;
 }
 
-static HRESULT WINAPI present_hook(IDirect3DDevice9 *device, const RECT *source, const RECT *dest,
-                                    HWND window, const RGNDATA *dirty) {
+__attribute__((noinline)) static void present_added_work(IDirect3DDevice9 *device) {
     if (device == game_device) {
         clonewars_camera_threads[0]=GetCurrentThreadId();
         network_window_update();
@@ -349,10 +348,23 @@ static HRESULT WINAPI present_hook(IDirect3DDevice9 *device, const RECT *source,
             rate_started = tick;
         }
     }
+}
+
+static HRESULT WINAPI present_hook(IDirect3DDevice9 *device, const RECT *source, const RECT *dest,
+                                    HWND window, const RGNDATA *dirty) {
+    unsigned char incoming_fx[512] __attribute__((aligned(16)));
+    __asm__ volatile("fxsave %0":"=m"(incoming_fx)::"memory");
+    DWORD error=GetLastError();
+    present_added_work(device);
+    SetLastError(error);
+    __asm__ volatile("fxrstor %0"::"m"(incoming_fx):"memory");
     return original_present(device,source,dest,window,dirty);
 }
 
 static HRESULT WINAPI reset_hook(IDirect3DDevice9 *device, D3DPRESENT_PARAMETERS *parameters) {
+    unsigned char native_fx[512] __attribute__((aligned(16)));
+    __asm__ volatile("fxsave %0":"=m"(native_fx)::"memory");
+    DWORD error=GetLastError();
     camera_render_reset_state();
     capture_reset();
     release_trace_surfaces();
@@ -360,11 +372,17 @@ static HRESULT WINAPI reset_hook(IDirect3DDevice9 *device, D3DPRESENT_PARAMETERS
     if (camera_surface) { IDirect3DSurface9_Release(camera_surface); camera_surface=NULL; }
     if (tap_surface) { IDirect3DSurface9_Release(tap_surface); tap_surface=NULL; }
     if (device == game_device) coop_fonts_lost();
+    SetLastError(error);
+    __asm__ volatile("fxrstor %0"::"m"(native_fx):"memory");
     HRESULT result = original_reset(device,parameters);
+    __asm__ volatile("fxsave %0":"=m"(native_fx)::"memory");
+    error=GetLastError();
     if (device == game_device && SUCCEEDED(result)) {
         coop_fonts_reset();
         install_renderer();
     }
+    SetLastError(error);
+    __asm__ volatile("fxrstor %0"::"m"(native_fx):"memory");
     return result;
 }
 
@@ -857,7 +875,7 @@ __attribute__((used,noinline)) static void camera_compositor_sample(void *view,v
     clonewars_camera_compositor_count=(LONG)(index+1);
 }
 
-static void capture_view_frame(void *view,void *parent) {
+__attribute__((noinline)) static void capture_view_frame_impl(void *view,void *parent) {
     char *v=view;
     if (!readable(v,0xb4) || *(uintptr_t *)v!=0xc3dc94) return;
     int view_player=*(short *)(v+0xac);
@@ -920,6 +938,14 @@ static void capture_view_frame(void *view,void *parent) {
         }
     }
  }
+static void capture_view_frame(void *view,void *parent) {
+    unsigned char native_fx[512] __attribute__((aligned(16)));
+    __asm__ volatile("fxsave %0":"=m"(native_fx)::"memory");
+    DWORD error=GetLastError();
+    capture_view_frame_impl(view,parent);
+    SetLastError(error);
+    __asm__ volatile("fxrstor %0"::"m"(native_fx):"memory");
+}
 static void (__attribute__((cdecl)) *original_view_finish)(void *);
 static void __attribute__((cdecl)) camera_view_finish(void *view) {
     original_view_finish(view);
