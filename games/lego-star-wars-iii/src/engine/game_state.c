@@ -250,6 +250,25 @@ static void host_publication(int current,int playing,int pending) {
 }
 
 int game_load_status(void) { return InterlockedCompareExchange(&load_status,0,0); }
+int game_native_join_party_player(int slot,void *actor,void *controller) {
+    if (slot<0 || slot>=2 || !accessible(actor,0x1440) || !accessible(controller,0x60) ||
+        ((void **)0xfb4940)[slot]!=actor || *(void **)((char *)actor+0x6cc)!=controller ||
+        !*(unsigned char *)(0xeb1a74+slot*8)) return 0;
+    const char *framework=*(const char **)0xfb0afc;
+    void **devices=*(void ***)0xfb2e40;
+    if (!accessible(framework,0x888) || *(unsigned *)(framework+0x884)<=(unsigned)slot ||
+        !accessible(devices,(slot+1)*sizeof(void *))) return 0;
+    void *device=devices[slot];
+    if (!accessible(device,0xb0) || *(int *)device!=slot ||
+        !(*(uint32_t *)((char *)device+0x88)&4)) return 0;
+    static const unsigned char prefix[]={0x55,0x8b,0xec,0x83,0xe4,0xf0,0x83,0xec,0x1c};
+    if (memcmp((const void *)0x90bc70,prefix,sizeof prefix)) return 0;
+    typedef void (__cdecl *JoinPlayer)(void *,int,void *);
+    ((JoinPlayer)0x90bc70)(actor,slot,device);
+    return ((void **)0xfb4940)[slot]==actor &&
+           *(void **)((char *)actor+0x6cc)==controller && *(void **)controller==device &&
+           (*(uint32_t *)((char *)actor+0x50)&0x200)!=0;
+}
 int game_network_profile_ready(void) {
     int level=game_network_target_level();
     const ProfileBootstrapContext context={lan_session_serial(),game_sync_epoch(),level};

@@ -199,10 +199,11 @@ static void release_assignment(int slot) {
         actor=owner;allocation=owner_allocation;
     }
     int owns=entities_allocation_live(actor,allocation) && *(char **)(actor+0x6cc)==c;
-    if (owns && valid(c,4) && *(void **)c==remote_device[slot]) *(void **)c=saved_device[slot];
-    if (owns) {
-        if (actor==player(slot)) *(uint32_t *)(actor+0x50)=(*(uint32_t *)(actor+0x50)&~0x200u)|saved_human[slot];
-
+    const int owns_device=owns && valid(c,4) && *(void **)c==remote_device[slot];
+    if (owns_device) {
+        *(void **)c=saved_device[slot];
+        if (actor==player(slot))
+            *(uint32_t *)(actor+0x50)=(*(uint32_t *)(actor+0x50)&~0x200u)|saved_human[slot];
     }
     changed_controller[slot]=changed_actor[slot]=NULL;
     changed_generation[slot]=0;++assignment_lease_serial;
@@ -362,10 +363,9 @@ static int write_input(int slot, const SyncInput *input) {
     if (!c || !p) return input_assignment_failed(1,slot,p,c,0);
     uint32_t allocation=entities_local_generation(p);
     if (!allocation) return input_assignment_failed(2,slot,p,c,allocation);
-    unsigned char *joined=(unsigned char *)(0xfb484d+slot*0x20);
-    *joined=1;
     if(slot==1 && *(int*)0xeb1a78<0)return input_assignment_failed(3,slot,p,c,allocation);
-    if (changed_controller[slot]!=c || changed_actor[slot]!=p || changed_generation[slot]!=allocation) {
+    if (changed_controller[slot]!=c || changed_actor[slot]!=p || changed_generation[slot]!=allocation ||
+        *(void **)c!=remote_device[slot]) {
         const NativeInputDeviceSource original={saved_device[slot],saved_device_session[slot]};
         const uint32_t source_session=lan_session_serial();
         release_assignment(slot);
@@ -373,12 +373,20 @@ static int write_input(int slot, const SyncInput *input) {
         // Native section loading can retain the controller after retiring its actor allocation.
         int source_error=native_input_device_source(*(void **)c,remote_device[slot],remote_device[1-slot],original,source_session,&source);
         if (source_error) return input_assignment_failed(source_error,slot,p,c,allocation);
+        // A synthetic human flag cannot replace the stock join: its native device binding must survive loading.
+        if (!source) {
+            if (!game_native_join_party_player(slot,p,c)) return 1;
+            if (!core_live() || lan_session_serial()!=source_session || !entities_allocation_live(p,allocation) ||
+                player(slot)!=p || *(char **)(p+0x6cc)!=c) return 0;
+            source=*(void **)c;
+        }
         if (!core_live() || lan_session_serial()!=source_session) return 0;
         memset(remote_device[slot],0,sizeof(remote_device[slot]));
         if (valid(source,0xb0)) memcpy(remote_device[slot],source,0xb0);
         saved_device[slot]=source;saved_device_session[slot]=source_session; changed_controller[slot]=c;
         changed_actor[slot]=p; changed_generation[slot]=allocation; saved_human[slot]=*(uint32_t *)(p+0x50)&0x200;++assignment_lease_serial;
     }
+    *(unsigned char *)(0xfb484d+slot*0x20)=1;
     *(void **)c=remote_device[slot];
     *(uint32_t *)(p+0x50)|=0x200;
     uint32_t held=input->held|input->pressed;
