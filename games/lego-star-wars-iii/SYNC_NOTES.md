@@ -345,3 +345,22 @@ layout 50 and its 3882064-byte capacity remain unchanged.
 30 CTests pass, including native setter ABI, native/helper x87 precision,
 mid-call lease retirement, rebound bodies, rejected batch writes and both wire
 records. Candidate166 passed the two-instance offscreen hub-physical166 run: Hub attacks/jumps through sequence 945, then native catalog loading of ShadowOfMalevolence_A in the same session and firing by both players through sequence 639/645. Both terminal states remained sync=2, reject=0, with no recorded native fault. A hardware-breakpoint sample at the original SpellIt update entry compared 240 physical body states with bit-identical matrices and velocities. Later character-contact samples still contain small floating-point differences; this is not a claim of deterministic simulation everywhere. Saved flight frames show separate views, original HUD and textured geometry. This qualifies the tested short route, not full mission completion or separate-PC play.
+
+Extended two-instance check (2026-11-12, hub-flight166-extended): both players
+moved and attacked in CWHub, then loaded ShadowOfMalevolence_A in the same
+session. Four cycles of steering and firing by each player, followed by neutral
+simulation, reached flight sequence 2241/2252; terminal states were sync=2 and
+reject=0 at 2267/2272. All 22 sampled native mission variables matched. No
+sampled mission-variable progress occurred, so this is combat/steering coverage,
+not objective or mission-completion coverage. Final frames show separate views,
+original HUD, ships and textured geometry. The owned offscreen pair was closed
+and installed candidate166's hash was verified afterward.
+
+A read-only actor rigid-body sampler exposed a host-only tooling mistake: host
+entity metadata is published differently from client bindings. That sample has
+no comparable host records and proves nothing about rigid-body equality. The
+sampler was corrected to use the authoritative roster for the next check; the
+client-only rigid-transform restoration remains an audit candidate, not a
+reproduced failure. A diagnostic-only follow-up reports the first body key word
+correctly for physics kinds 12/13; the installed gameplay DLL remains the exact
+runtime-qualified candidate166.
