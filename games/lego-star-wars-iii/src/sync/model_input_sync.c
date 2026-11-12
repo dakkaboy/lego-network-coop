@@ -17,14 +17,14 @@
 #include "../debug/intent_frame_observer.h"
 #include "../debug/intent_scope_observer.h"
 #endif
-_Static_assert(SYNC_LAYOUT_VERSION==50,"actual layout50");
+_Static_assert(SYNC_LAYOUT_VERSION==54,"actual layout54");
 _Static_assert(sizeof(SyncModelInputContext)==124,"context");
 _Static_assert(sizeof(SyncModelInput)==188,"request");
 _Static_assert(offsetof(SyncModelInput,input_mode)==40,"mode");
 _Static_assert(offsetof(SyncModelInput,context)==56,"context offset");
 _Static_assert(offsetof(SyncFrame,actors)==208,"header");
-_Static_assert(offsetof(SyncFrame,model_inputs)==2433360,"model input offset");
-_Static_assert(sizeof(SyncFrame)==3882064,"capacity");
+_Static_assert(offsetof(SyncFrame,model_inputs)==2466128,"model input offset");
+_Static_assert(sizeof(SyncFrame)==3914832,"capacity");
 typedef struct ModelInputOutcome {uint32_t committed,sequence,ordinal,slot,generation,valid,reason,actor_local,controller_local,clock,qpc[2];uint32_t actor_heading,controller_heading,magnitude,direction[2],previous_heading,previous_magnitude,last_heading,last_magnitude;uint32_t action,substate,clip,timer,life_54,flags_50,hero_role;float position[3];} ModelInputOutcome;
 typedef struct ProjectionRecord {
  uint32_t committed,id,epoch,sequence,ordinal,slot,generation,thread,clock,qpc[2],actor_local,controller_local,provider_local,native_frame;

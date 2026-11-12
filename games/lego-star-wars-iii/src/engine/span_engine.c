@@ -1,8 +1,10 @@
 #include "span_engine.h"
+#include "native_owner_internal.h"
+#include "native_numeric_input.h"
 #include "native_span_thunk.proposed.h"
 #include "../sync/coherent_marker.h"
 #include <string.h>
-typedef struct ScopeState {struct ScopeState*parent;NativeOwnerScope*scope;void*receiver;unsigned nonce,serial,main,optional;unsigned char qualified,entered,run,closed,deny,finishing;uint32_t control_release;SpanControlContext control;} ScopeState;
+typedef struct ScopeState {struct ScopeState*parent;NativeOwnerScope*scope;void*receiver;unsigned nonce,serial,main,optional;unsigned char qualified,entered,run,closed,deny,finishing;uint32_t control_release;SpanControlContext control;NativeNumericScope numeric;} ScopeState;
 typedef char state_size[sizeof(ScopeState)<=64?1:-1];
 static SpanEngineAdapter*adapter;static __thread ScopeState*top;
 void*native_span_run_resume,*native_span_skip_target,*native_span_exit_resume,*optional_target,*main_target;
@@ -18,11 +20,37 @@ static void begin(NativeOwnerScope*s,const NativeOwnerInput*i,void*storage){Scop
  SpanQualification q={adapter->installer.generation,GetCurrentThreadId(),1,0,1,0};
  if(adapter->callbacks.install_safe((void*)(uintptr_t)i->regs[6],i,adapter->callbacks.user)){q.quiescent=1;if(span_installer_code(&adapter->installer,&q)==1){if(!adapter->sticky&&adapter->callbacks.dependencies_ready(adapter->callbacks.user)&&adapter->callbacks.main_confirmed(GetCurrentThreadId(),adapter->callbacks.user)){q.main_confirmed=1;span_installer_confirm(&adapter->installer,&q);}else InterlockedExchange(&adapter->installer.ready,0);}}
 }
-static void end(NativeOwnerScope*s,NativeOwnerExit x,void*storage){ScopeState*p=storage;if(top==p)top=p->parent;if(p->entered)adapter->callbacks.end(s,p->nonce,x,(p->serial!=serial_read())||((p->run&&!p->closed)||p->finishing),adapter->callbacks.user);}
+static void end(NativeOwnerScope*s,NativeOwnerExit x,void*storage){ScopeState*p=storage;native_numeric_restore(&p->numeric,s->out_fx);if(top==p)top=p->parent;if(p->entered)adapter->callbacks.end(s,p->nonce,x,(p->serial!=serial_read())||((p->run&&!p->closed)||p->finishing),adapter->callbacks.user);}
 static void reject(NativeOwnerScope*s,NativeOwnerScope*p,NativeOwnerReject reason,void*storage){(void)s;(void)p;(void)storage;revoke(SPAN_REJECT_OWNER_DEPTH+(unsigned)reason,1);}
 static ScopeState*bound(uintptr_t stack){ScopeState*p=top;NativeOwnerScope*s=native_owner_current();if(!p||s!=p->scope||!p->qualified||p->serial!=serial_read()||!native_owner_scope_valid(s,p->nonce))return NULL;uintptr_t d=native_owner_scope_delegate_esp(s,p->nonce);if(!d||stack!=d-0x4c){InterlockedIncrement(&adapter->bad_stack);return NULL;}return p;}
-__attribute__((used,noinline)) unsigned native_span_enter(OwnerU32*b,const void*fx){if(top&&top->deny)return 2;ScopeState*p=bound((uintptr_t)b+36);if(!p){if(active_parent()){revoke(SPAN_REJECT_UNWRAPPED_CHILD,0);return 2;}if(top&&top->qualified){if(top->serial!=serial_read())return 2;NativeOwnerScope*s=native_owner_current();if(s==top->scope&&native_owner_scope_valid(s,top->nonce)){revoke(SPAN_REJECT_UNWRAPPED_CHILD,0);return 2;}revoke(SPAN_REJECT_SCOPE,1);return 2;}return 0;}if((void*)(uintptr_t)b[1]!=p->receiver){InterlockedIncrement(&adapter->bad_stack);revoke(SPAN_REJECT_UNWRAPPED_CHILD,0);return 2;}if(adapter->sticky)return 2;if(p->entered){InterlockedIncrement(&adapter->duplicates);revoke(SPAN_REJECT_UNWRAPPED_CHILD,0);return 2;}unsigned ready=span_engine_ready(adapter);p->entered=1;unsigned plan=adapter->callbacks.enter(p->scope,p->nonce,(void*)((uintptr_t)b+36+0x28),(void*)(uintptr_t)b[1],b,fx,ready,adapter->callbacks.user);if(plan>2){InterlockedIncrement(&adapter->invalid_plan);revoke(SPAN_REJECT_INVALID_PLAN,0);plan=2;}if(plan==1&&(!ready||!span_engine_ready(adapter))){revoke(SPAN_REJECT_UNREADY_RUN,0);plan=2;}if(p->serial!=serial_read()||!native_owner_scope_valid(p->scope,p->nonce)){p->closed=1;return 2;}p->run=plan==1;p->closed=plan!=1;return plan;}
-__attribute__((used,noinline)) void native_span_exit(OwnerU32*b,const void*fx){(void)fx;ScopeState*p=bound((uintptr_t)b+36);if(p&&(void*)(uintptr_t)b[1]!=p->receiver){InterlockedIncrement(&adapter->bad_stack);revoke(SPAN_REJECT_MARKER,0);return;}if(p&&p->run&&!p->closed){p->closed=1;p->finishing=1;adapter->callbacks.finish(p->scope,p->nonce,adapter->callbacks.user);p->finishing=0;}}
+__attribute__((used,noinline)) unsigned native_span_enter(OwnerU32*b,void*fx){
+ if(top&&top->deny)return 2;
+ ScopeState*p=bound((uintptr_t)b+36);
+ if(!p){
+  if(active_parent()){revoke(SPAN_REJECT_UNWRAPPED_CHILD,0);return 2;}
+  if(top&&top->qualified){
+   if(top->serial!=serial_read())return 2;
+   NativeOwnerScope*s=native_owner_current();
+   if(s==top->scope&&native_owner_scope_valid(s,top->nonce)){revoke(SPAN_REJECT_UNWRAPPED_CHILD,0);return 2;}
+   revoke(SPAN_REJECT_SCOPE,1);return 2;
+  }
+  return 0;
+ }
+ if((void*)(uintptr_t)b[1]!=p->receiver){InterlockedIncrement(&adapter->bad_stack);revoke(SPAN_REJECT_UNWRAPPED_CHILD,0);return 2;}
+ if(adapter->sticky)return 2;
+ if(p->entered){InterlockedIncrement(&adapter->duplicates);revoke(SPAN_REJECT_UNWRAPPED_CHILD,0);return 2;}
+ unsigned ready=span_engine_ready(adapter);p->entered=1;
+ NativeNumericInput local_numeric=native_numeric_read(fx);
+ unsigned plan=adapter->callbacks.enter(p->scope,p->nonce,(void*)((uintptr_t)b+36+0x28),(void*)(uintptr_t)b[1],b,fx,ready,adapter->callbacks.user);
+ native_numeric_borrow(&p->numeric,local_numeric,fx);
+ if(plan>2){InterlockedIncrement(&adapter->invalid_plan);revoke(SPAN_REJECT_INVALID_PLAN,0);plan=2;}
+ if(plan==1&&(!ready||!span_engine_ready(adapter))){revoke(SPAN_REJECT_UNREADY_RUN,0);plan=2;}
+ if(p->serial!=serial_read()||!native_owner_scope_valid(p->scope,p->nonce)){p->closed=1;native_numeric_restore(&p->numeric,fx);return 2;}
+ p->run=plan==1;p->closed=plan!=1;
+ if(!p->run)native_numeric_restore(&p->numeric,fx);
+ return plan;
+}
+__attribute__((used,noinline)) void native_span_exit(OwnerU32*b,void*fx){ScopeState*p=bound((uintptr_t)b+36);if(p&&(void*)(uintptr_t)b[1]!=p->receiver){InterlockedIncrement(&adapter->bad_stack);revoke(SPAN_REJECT_MARKER,0);return;}if(p&&p->run&&!p->closed){p->closed=1;p->finishing=1;adapter->callbacks.finish(p->scope,p->nonce,adapter->callbacks.user);native_numeric_restore(&p->numeric,fx);p->finishing=0;}}
 static void marker(OwnerU32*b,unsigned kind,unsigned pushed){ScopeState*p=bound((uintptr_t)b+36+4+pushed);if(p&&(void*)(uintptr_t)b[1]!=p->receiver){InterlockedIncrement(&adapter->bad_stack);revoke(SPAN_REJECT_MARKER,0);return;}if(p&&kind==1&&(*(OwnerU32*)((uintptr_t)b+40)!=(uintptr_t)b+44+0x28||(uintptr_t)b[6]!=(uintptr_t)p->receiver+0x10)){InterlockedIncrement(&adapter->bad_stack);revoke(SPAN_REJECT_MARKER,0);return;}if(p&&p->run&&!p->closed){if(kind==1){++p->main;InterlockedIncrement(&adapter->main_count);}else{++p->optional;InterlockedIncrement(&adapter->optional_count);}adapter->callbacks.marker(p->scope,p->nonce,kind,adapter->callbacks.user);}}
 __attribute__((used,noinline)) void optional_enter(OwnerU32*b,const void*fx){(void)fx;marker(b,2,0);}
 __attribute__((used,noinline)) void main_enter(OwnerU32*b,const void*fx){(void)fx;marker(b,1,4);}
@@ -31,7 +59,7 @@ __attribute__((naked)) static void exit_thunk(void){__asm__ volatile(NATIVE_SPAN
 __attribute__((naked)) static void optional_thunk(void){__asm__ volatile(COHERENT_MARKER_ASM("_optional_enter","_optional_target"));}
 __attribute__((naked)) static void main_thunk(void){__asm__ volatile(COHERENT_MARKER_ASM("_main_enter","_main_target"));}
 static void patch(SpanPatch*p,unsigned char*where,unsigned n,const unsigned char*old,void*target,unsigned opcode){p->address=where;p->length=n;memcpy(p->original,old,n);memset(p->replacement,0x90,n);p->replacement[0]=(unsigned char)opcode;int32_t rel=(int32_t)((uintptr_t)target-(uintptr_t)where-5);memcpy(p->replacement+1,&rel,4);}
-int span_engine_prepare(SpanEngineAdapter*a,unsigned char*image,void*volatile*slot,void*vt,void*volatile*global,DWORD main,unsigned generation,const SpanEngineCallbacks*cb){if(adapter||!a||!image||!slot||!vt||!global||!main||!generation||!cb||cb->version!=4||!cb->reject_atomic||!cb->install_safe||!cb->dependencies_ready||!cb->main_confirmed||!cb->control_context||!cb->enter||!cb->marker||!cb->finish||!cb->end||slot!=(void*volatile*)((char*)vt+0x1c)||!readable(image+0x1380,7)||memcmp(image+0x1380,"\x6a\xff\x68\xe0\xdb\xaa\x00",7))return 0;memset(a,0,sizeof *a);a->callbacks=*cb;a->image760000=image;a->expected_vt=vt;a->root_global=global;a->window_thread=main;a->serial=1;
+int span_engine_prepare(SpanEngineAdapter*a,unsigned char*image,void*volatile*slot,void*vt,void*volatile*global,DWORD main,unsigned generation,const SpanEngineCallbacks*cb){if(adapter||!a||!image||!slot||!vt||!global||!main||!generation||!cb||cb->version!=5||!cb->reject_atomic||!cb->install_safe||!cb->dependencies_ready||!cb->main_confirmed||!cb->control_context||!cb->enter||!cb->marker||!cb->finish||!cb->end||slot!=(void*volatile*)((char*)vt+0x1c)||!readable(image+0x1380,7)||memcmp(image+0x1380,"\x6a\xff\x68\xe0\xdb\xaa\x00",7))return 0;memset(a,0,sizeof *a);a->callbacks=*cb;a->image760000=image;a->expected_vt=vt;a->root_global=global;a->window_thread=main;a->serial=1;
  SpanInstaller*s=&a->installer;s->slot=slot;s->original_target=image+0x1380;s->owner_target=native_owner_entry;s->code_page=image+0x1000;s->code_size=0x1000;s->forbidden=image+0x1380;s->forbidden_size=7;s->main_thread=main;s->generation=generation;
  patch(&s->sites[0],image+0x1557,8,(const unsigned char*)"\xf6\x40\x4d\x02\x89\x6c\x24\x48",entry_thunk,0xe9);
  patch(&s->sites[1],image+0x15a2,5,(const unsigned char*)"\xe8\xc9\xec\xff\xff",optional_thunk,0xe8);

@@ -4,6 +4,7 @@
 #include "sync_wire.h"
 extern "C" {
 #include "../sync/geometry_sync.h"
+#include "../engine/native_numeric_input.h"
 #include "../sync/reaction_sync.h"
 #include "../sync/model_input_sync.h"
 #include "../sync/physics_input_sync.h"
@@ -42,7 +43,7 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
     if (bytes < offsetof(SyncFrame,actors) || frame->actor_count > SYNC_MAX_ACTORS || frame->variable_count>SYNC_MAX_VARIABLES ||
         bytes != sync_frame_size(frame) || (frame->native_span_plan & ~SYNC_NATIVE_SPAN_PLAN_MASK) || (frame->native_span_calls & ~SYNC_NATIVE_SPAN_CALLS_MASK) || !frame->epoch || !frame->sequence || frame->level < 0 || frame->level >= 4096 ||
         !isfinite(frame->delta) || frame->delta < 0 || frame->delta > 0.1f ||
-        !isfinite(frame->engine_delta) || frame->engine_delta<0 || frame->engine_delta>.1f || frame->engine_mode>16 || frame->world_calls>64 || frame->tick_calls>64 || frame->combat_ready>1 || frame->actor_input_reserved || frame->cadence_reserved || frame->reaction_reserved || frame->model_input_reserved || frame->actor_input_count>SYNC_MAX_ACTORS || frame->cadence_count>SYNC_MAX_ACTORS || frame->geometry_count>SYNC_MAX_ACTORS || frame->geometry_calls>64 || frame->reaction_count>SYNC_MAX_ACTORS || frame->model_input_count>SYNC_MAX_ACTORS) return 0;
+        !isfinite(frame->engine_delta) || frame->engine_delta<0 || frame->engine_delta>.1f || frame->engine_mode>16 || frame->world_calls>64 || frame->tick_calls>64 || frame->combat_ready>1 || !native_numeric_valid(NativeNumericInput{frame->numeric_cw,frame->numeric_mxcsr}) || frame->reaction_reserved || frame->model_input_reserved || frame->actor_input_count>SYNC_MAX_ACTORS || frame->cadence_count>SYNC_MAX_ACTORS || frame->geometry_count>SYNC_MAX_ACTORS || frame->geometry_calls>64 || frame->reaction_count>SYNC_MAX_ACTORS || frame->model_input_count>SYNC_MAX_ACTORS) return 0;
     if (frame->tick_gate_reserved) return 0;
     for (uint32_t i=0;i<frame->projectile_retire_count;++i) {
         const SyncProjectileRetireRequest &request=frame->projectile_retires[i];
@@ -206,7 +207,7 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
         for (int j=0; j<3; ++j) {
             if (!isfinite(actor->spawn_position[j]) || !isfinite(actor->position[j]) || !isfinite(actor->previous_position[j]) ||
                 !isfinite(actor->render_position[j]) || !isfinite(actor->previous_render_position[j]) ||
-                !isfinite(actor->velocity[j])) return 0;
+                !isfinite(actor->velocity[j]) || !isfinite(actor->motion_origin[j])) return 0;
         }
     }
     for (uint32_t i=0;i<frame->variable_count;++i) {

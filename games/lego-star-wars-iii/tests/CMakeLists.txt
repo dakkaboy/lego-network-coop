@@ -9,6 +9,11 @@ add_library(clonewars-network-test-core STATIC
     ../src/sync/model_input_journal.c
     ../src/sync/reaction_journal.c
 )
+
+add_executable(test_native_numeric test_native_numeric.cpp)
+target_compile_features(test_native_numeric PRIVATE cxx_std_23)
+add_test(NAME clonewars-native_numeric COMMAND test_native_numeric)
+set_tests_properties(clonewars-native_numeric PROPERTIES TIMEOUT 15)
 target_include_directories(clonewars-network-test-core PUBLIC ../src ../../../common)
 target_compile_features(clonewars-network-test-core PRIVATE cxx_std_23)
 target_compile_options(clonewars-network-test-core PRIVATE -fms-extensions)
@@ -40,6 +45,12 @@ target_compile_features(test_breakup_launch PRIVATE cxx_std_23)
 target_compile_options(test_breakup_launch PRIVATE -fms-extensions)
 add_test(NAME clonewars-breakup_launch COMMAND test_breakup_launch)
 set_tests_properties(clonewars-breakup_launch PROPERTIES TIMEOUT 15)
+
+add_executable(test_vehicle_rng_thunk test_vehicle_rng_thunk.cpp)
+target_compile_features(test_vehicle_rng_thunk PRIVATE cxx_std_23)
+target_compile_options(test_vehicle_rng_thunk PRIVATE -fms-extensions)
+add_test(NAME clonewars-vehicle_rng_thunk COMMAND test_vehicle_rng_thunk)
+set_tests_properties(clonewars-vehicle_rng_thunk PROPERTIES TIMEOUT 15)
 
 add_executable(test_rigid_body_binding test_rigid_body_binding.cpp ../src/engine/rigid_body_binding.cpp)
 target_compile_features(test_rigid_body_binding PRIVATE cxx_std_23)
@@ -180,3 +191,9 @@ target_compile_options(test_spellit_body PRIVATE -fms-extensions)
 target_link_options(test_spellit_body PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
 add_test(NAME clonewars-spellit_body COMMAND test_spellit_body)
 set_tests_properties(clonewars-spellit_body PROPERTIES TIMEOUT 15)
+
+add_executable(test_projectile_pool test_projectile_pool.c ../src/engine/constructor_lexical_seh.c)
+target_compile_options(test_projectile_pool PRIVATE -fms-extensions -ffunction-sections -fdata-sections)
+target_link_options(test_projectile_pool PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x10000000" "SHELL:-Xlinker /opt:ref")
+add_test(NAME clonewars-projectile_pool COMMAND test_projectile_pool)
+set_tests_properties(clonewars-projectile_pool PROPERTIES TIMEOUT 15)

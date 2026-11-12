@@ -23,6 +23,7 @@ int preload_world_ready_valid(const SyncWorldReady *ready);
 int preload_world_ready_matches(const SyncWorldReady *local,const SyncWorldReady *peer);
 int preload_world_roster_matches(const SyncWorldReady *local,const SyncWorldReady *peer);
 int preload_state_peer_receipt(const NativePreloadState *state,const SyncPreloadReceipt *peer);
+int preload_transition_pending(const NativePreloadState *state,uint32_t session,uint32_t epoch,int level,const SyncPreloadReceipt *peer);
 int preload_initial_seal_ready(const NativePreloadState *state,uint32_t phase);
 static inline int native_jobs_idle(uint32_t queued_before,uintptr_t active_before,uint32_t queued_after,uintptr_t active_after) {
     return !queued_before && !active_before && !queued_after && !active_after;

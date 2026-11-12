@@ -83,6 +83,14 @@ int preload_initial_seal_ready(const NativePreloadState *state,uint32_t phase) {
         state->input.serial && state->applied.serial==state->input.serial &&
         preload_receipt_valid(&state->applied) && state->applied.world_calls && state->applied.end_phase==phase;
 }
+int preload_transition_pending(const NativePreloadState *state,uint32_t session,uint32_t epoch,int level,const SyncPreloadReceipt *peer) {
+    if (!preload_bound(state) || state->session!=session || state->epoch!=epoch || state->level!=level ||
+        !state->input.serial || state->sealed_serial) return 0;
+    if (!preload_input_valid(&state->input) || state->input.epoch!=epoch || state->input.level!=level) return -1;
+    if (state->applied.serial!=state->input.serial || !peer) return 1;
+    const int received=preload_state_peer_receipt(state,peer);
+    return received<0 ? -1 : !received;
+}
 void preload_state_bind(NativePreloadState *state,uint32_t session,uint32_t epoch,int level,uintptr_t world) {
     if (!state) return;
     if (state->session==session && state->epoch==epoch && state->level==level && state->world==world) return;

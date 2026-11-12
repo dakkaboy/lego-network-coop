@@ -29,7 +29,7 @@ int npc_input_begin(NpcInputJournal *journal,SyncFrame *frame,int host) {
     if(frame!=journal->cohort.frame||journal->started){journal->cancelled=1;coherent_frame_cancel_atomic(0x40000u);return 0;}
     if(journal->nonce==UINT32_MAX){journal->disabled=1;coherent_frame_cancel_atomic(0x80000u);return 0;}
     ++journal->nonce;journal->frame=frame;journal->cursor=0;journal->host=host;journal->failed=journal->cancelled=0;journal->started=1;
-    if (host) frame->actor_input_count=frame->actor_input_reserved=0;
+    if (host) frame->actor_input_count=0;
     return 1;
 }
 int npc_input_record(NpcInputJournal *journal,const SyncActorInput *entry) {

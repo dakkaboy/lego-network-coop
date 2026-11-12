@@ -13,10 +13,11 @@ __attribute__((used)) static uintptr_t entry;
 __attribute__((used)) static double fpu_values[2]={1.25,2.5};
 __attribute__((used)) static uint32_t mxcsr_value=0x3f80;
 static unsigned projections;
-void __cdecl physics_apply_breakup_launch(void *descriptor,void *handle) {
+void __cdecl physics_apply_breakup_launch(void *descriptor,void *handle,void *matrix,void *scale) {
  const DWORD error=GetLastError();
  assert(descriptor==reinterpret_cast<void *>(0x66666666));
  assert(handle==reinterpret_cast<void *>(iterator<40?0x11223344:0));
+ assert(matrix==reinterpret_cast<void *>(0x8899aabb) && scale==reinterpret_cast<void *>(0x99aabbcc));
  ++projections;projected=1;
  __asm__ volatile("fninit\n\tpcmpeqd %xmm0,%xmm0\n\tpxor %xmm7,%xmm7");
  SetLastError(error);
@@ -32,6 +33,7 @@ __attribute__((naked)) static void invoke_thunk(void) {
  "fldl _fpu_values\n\tfldl _fpu_values+8\n\tldmxcsr _mxcsr_value\n\t"
  "pcmpeqd %xmm0,%xmm0\n\tpcmpeqd %xmm7,%xmm7\n\tpslld $7,%xmm7\n\t"
  "movl _iterator,%ecx\n\tmovl %ecx,0x3c(%esp)\n\tmovl $0x11223344,0x398(%esp,%ecx,4)\n\t"
+ "movl $0x8899aabb,0x2c(%esp)\n\tmovl $0x99aabbcc,0x34(%esp)\n\t"
  "movl $0x12345678,(%esp)\n\t"
  "pushl $0x646\n\tpopfl\n\tmovl $0x11111111,%eax\n\tmovl $0x22222222,%ecx\n\t"
  "movl $0x33333333,%edx\n\tmovl $0x44444444,%ebx\n\tmovl $0x55555555,%ebp\n\t"

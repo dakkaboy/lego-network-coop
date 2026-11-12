@@ -16,7 +16,9 @@
     "fninit\n\t" \
     "movl $0x1f80,516(%esp)\n\t" \
     "ldmxcsr 516(%esp)\n\t" \
-    "subl $8,%esp\n\t" \
+    "movl 512(%esp),%eax\n\t" \
+    "pushl 0x5c(%eax)\n\t" \
+    "pushl 0x54(%eax)\n\t" \
     "pushl %edx\n\t" \
     "pushl %esi\n\t" \
     "cld\n\t" \

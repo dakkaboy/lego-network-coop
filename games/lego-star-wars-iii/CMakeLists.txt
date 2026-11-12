@@ -75,6 +75,7 @@ add_library(clonewars-camera SHARED
     src/sync/object_progress_sync.cpp
     src/sync/spellit_input_sync.cpp
     src/sync/module_rng_input_sync.cpp
+    src/sync/vehicle_rng_input_sync.cpp
     src/sync/preload_state.cpp
     src/sync/profile_bootstrap_state.cpp
     src/sync/physics_input_sync.cpp

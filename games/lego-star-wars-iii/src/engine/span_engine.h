@@ -12,7 +12,7 @@ typedef struct SpanEngineCallbacks {
  int (*dependencies_ready)(void*);
  int (*main_confirmed)(DWORD,void*);
  int (*control_context)(SpanControlContext*,void*);
- unsigned (*enter)(NativeOwnerScope*,unsigned,void*,void*,const OwnerU32*,const void*,unsigned,void*);
+ unsigned (*enter)(NativeOwnerScope*,unsigned,void*,void*,const OwnerU32*,void*,unsigned,void*);
  void (*marker)(NativeOwnerScope*,unsigned,unsigned,void*);
  void (*finish)(NativeOwnerScope*,unsigned,void*);
  void (*end)(NativeOwnerScope*,unsigned,NativeOwnerExit,unsigned,void*);

@@ -1,3 +1,4 @@
+#include "../engine/native_numeric_input.h"
 #ifdef CLONEWARS_HIT_ENTRY_OBSERVER
 #include "../debug/hit_entry_observer.h"
 #define HIT_ENTRY_BOUNDARY(original) hit_entry_poll(original)
@@ -13,6 +14,8 @@ typedef struct CoreFrameDraft {
 static CoreFrameDraft core;
 static NativePreloadState core_preload={.level=-1,.input={.level=-1}};
 __declspec(dllexport) volatile uint32_t clonewars_preload_debug[16];
+__declspec(dllexport) volatile uint32_t clonewars_preload_transition_drain_debug[6];
+__declspec(dllexport) volatile uint32_t clonewars_native_numeric_debug[8];
 __declspec(dllexport) volatile uint32_t clonewars_preload_seed_debug[6];
 __declspec(dllexport) volatile uint32_t clonewars_preload_flow_debug[8];
 __declspec(dllexport) volatile uint32_t clonewars_load_barrier_debug[12];
@@ -97,6 +100,22 @@ static int core_session_projectile(ProjectileSessionContext*out,void*user){
  (void)user;TagSessionContext t;if(!out||!core_session_tag(&t))return 0;
  out->epoch=t.epoch;out->level=t.level;out->host=lan_is_host();out->session=t.session;
  switch(t.classification){case TAG_SESSION_OFFLINE:out->classification=PROJECTILE_SESSION_OFFLINE;break;case TAG_SESSION_BOOTSTRAP:out->classification=PROJECTILE_SESSION_BOOTSTRAP;break;case TAG_SESSION_TRANSITION:out->classification=PROJECTILE_SESSION_TRANSITION;break;case TAG_SESSION_ESTABLISHED:out->classification=PROJECTILE_SESSION_ESTABLISHED;break;default:out->classification=PROJECTILE_SESSION_FAULT;break;}return 1;
+}
+static int core_preload_transition_waiting(void){
+ if(!lan_is_host())return 0;
+ SyncPreloadReceipt peer={0};
+ const SyncPreloadReceipt *received=lan_remote_preload_receipt(interval.epoch,interval.level,&peer)?&peer:NULL;
+ int pending=preload_transition_pending(&core_preload,lan_session_serial(),interval.epoch,interval.level,received);
+ if(pending<0){core_reject_atomic(31,NULL);return 1;}
+ if(pending){
+  ++clonewars_preload_transition_drain_debug[0];
+  clonewars_preload_transition_drain_debug[1]=core_preload.session;
+  clonewars_preload_transition_drain_debug[2]=core_preload.epoch;
+  clonewars_preload_transition_drain_debug[3]=core_preload.input.serial;
+  clonewars_preload_transition_drain_debug[4]=core_preload.applied.serial;
+  clonewars_preload_transition_drain_debug[5]=received?peer.serial:0;
+ }
+ return pending;
 }
 static void core_projectile_reject(unsigned why,const ProjectileRejectContext*context,void*user){(void)context;core_reject_atomic(why,user);}
 static int core_patch_call(uintptr_t address,uintptr_t original,void*replacement){
@@ -405,8 +424,8 @@ static int core_preload_tick(void *flow){
   Sleep(1);
  }
 }
-static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,void*receiver,const OwnerU32*b,const void*fx,unsigned ready_snapshot,void*user){
- (void)fx;(void)user;(void)ready_snapshot;if(core.owner){core_reject_atomic(28,NULL);return CORE_SPAN_SKIP;}
+static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,void*receiver,const OwnerU32*b,void*fx,unsigned ready_snapshot,void*user){
+ (void)user;(void)ready_snapshot;if(core.owner){core_reject_atomic(28,NULL);return CORE_SPAN_SKIP;}
  core=(CoreFrameDraft){.owner=owner,.owner_nonce=nonce,.engine=receiver,.packet=packet,.depth_accounted=1};++outer_depth;
  if(!main_boundary_serial||main_boundary_serial!=UINT32_MAX){if(main_boundary_serial==UINT32_MAX-1){core_reject_atomic(26,NULL);return CORE_SPAN_SKIP;}++main_boundary_serial;}
  main_boundary=(CoreMainBoundary){owner,nonce,GetCurrentThreadId(),coherent_frame_release(),main_boundary_serial};main_boundary_active=1;
@@ -446,7 +465,7 @@ static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,v
    return CORE_SPAN_SKIP;
   }
   memset(&working,0,sizeof working);working.epoch=interval.epoch;working.sequence=++sequence;working.level=level;interval.sequence=sequence;interval_started=1;
-  working.clock=*(uint32_t*)0xfb4b6c;working.rng_game=*(uint32_t*)0xe637b4;working.rng_engine=*(uint32_t*)0xea178c;working.delta=*(float*)0xfb4b74;working.engine_delta=*(float*)((char*)packet+8);working.engine_mode=*(uint32_t*)(engine+0xe30);
+  NativeNumericInput numeric=native_numeric_read(fx);working.numeric_cw=numeric.cw;working.numeric_mxcsr=numeric.mxcsr;working.clock=*(uint32_t*)0xfb4b6c;working.rng_game=*(uint32_t*)0xe637b4;working.rng_engine=*(uint32_t*)0xea178c;working.delta=*(float*)0xfb4b74;working.engine_delta=*(float*)((char*)packet+8);working.engine_mode=*(uint32_t*)(engine+0xe30);
  }else{
   if(!lan_receive_frame(&working)){++clonewars_coherent_waits[1];return CORE_SPAN_SKIP;}
   if(sync_epoch_apply(&interval,level,working.epoch,working.level,working.sequence)<=0){fault=4;return CORE_SPAN_SKIP;}expected=working.sequence;interval_started=1;
@@ -526,6 +545,12 @@ static unsigned core_prepare(NativeOwnerScope*owner,unsigned nonce,void*packet,v
  HIT_ENTRY_BOUNDARY(&core.token);
  if(!core_live()||!coherent_frame_valid(&core.token,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return CORE_SPAN_SKIP;
 #endif
+ NativeNumericInput local_numeric=native_numeric_read(fx);
+ ++clonewars_native_numeric_debug[core.host?0:1];
+ if(local_numeric.cw!=working.numeric_cw||local_numeric.mxcsr!=working.numeric_mxcsr)++clonewars_native_numeric_debug[2];
+ clonewars_native_numeric_debug[3]=local_numeric.cw;clonewars_native_numeric_debug[4]=working.numeric_cw;
+ clonewars_native_numeric_debug[5]=local_numeric.mxcsr;clonewars_native_numeric_debug[6]=working.numeric_mxcsr;clonewars_native_numeric_debug[7]=working.sequence;
+ if(!native_numeric_apply(fx,(NativeNumericInput){working.numeric_cw,working.numeric_mxcsr})){core_reject_atomic(32,NULL);return CORE_SPAN_SKIP;}
  ++core_run_count;return CORE_SPAN_RUN;
 }
 static void core_marker(NativeOwnerScope*owner,unsigned nonce,unsigned kind,void*unused){(void)unused;if(owner!=core.owner||nonce!=core.owner_nonce||!core_live())return;if(kind==1)++core.main_calls;else if(kind==2)++core.optional_calls;clonewars_coherent_debug[14]=core.main_calls;clonewars_coherent_debug[15]=core.optional_calls;if(core.main_calls>1||core.optional_calls>1)core_reject_atomic(27,NULL);}
@@ -675,7 +700,7 @@ int game_sync_prepare_worker(DWORD window_thread){
  char setting[8];neutral_background_input=GetEnvironmentVariableA("CLONEWARS_BACKGROUND_CAPTURE",setting,sizeof setting)==1&&setting[0]=='1';enabled=!(GetEnvironmentVariableA("CLONEWARS_ENABLE_EXPERIMENTAL_SYNC",setting,sizeof setting)==1&&setting[0]=='0');if(!enabled)return -1;core_window_thread=window_thread;
  /* No build flag/installer is supplied. Missing cohort and restore policies cannot be bypassed. */
 
- SpanEngineCallbacks cb={.version=4,.user=NULL,.reject_atomic=core_reject_atomic,.install_safe=core_install_safe,.dependencies_ready=core_dependencies_ready,.main_confirmed=core_main_confirmed,.control_context=core_control_context,.enter=core_prepare,.marker=core_marker,.finish=core_finish,.end=core_end};
+ SpanEngineCallbacks cb={.version=5,.user=NULL,.reject_atomic=core_reject_atomic,.install_safe=core_install_safe,.dependencies_ready=core_dependencies_ready,.main_confirmed=core_main_confirmed,.control_context=core_control_context,.enter=core_prepare,.marker=core_marker,.finish=core_finish,.end=core_end};
  if(!lan_set_session_invalidator(core_lan_invalidate,NULL))return 0;
  if(!window_thread||!span_engine_prepare(&core_adapter,(unsigned char*)0x760000,(void*volatile*)0xadc268,(void*)0xadc24c,(void*volatile*)0xfb0afc,window_thread,1,&cb))return 0;
  return span_engine_publish_bootstrap(&core_adapter);
