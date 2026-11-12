@@ -364,3 +364,31 @@ client-only rigid-transform restoration remains an audit candidate, not a
 reproduced failure. A diagnostic-only follow-up reports the first body key word
 correctly for physics kinds 12/13; the installed gameplay DLL remains the exact
 runtime-qualified candidate166.
+
+Native flight objectives and reentry qualification (2026-11-12): candidate166
+passed the offscreen two-instance hub-flight-objectives166 route. P2 used the
+original ring states to move from the upper flight path to the lower one while
+P1 stayed above. Native landing transferred P2 from the vehicle to character184;
+LandingZoneA_Docked became1 on both peers. The lower generator lever completed
+with state6 and flags0x2180 on both. Reboarding and pickup then used normal input:
+t_pup2 loaded native torpedo ammo from0 to1 on each peer. Goal positions, radii,
+capabilities and weapon state were read from the game's live registries and
+resource definitions; no game state or ammunition was forced.
+
+The same pair subsequently returned to CWHub and reentered
+ShadowOfMalevolence_A. Session1 survived, with matching epochs2->3->4. Both
+players accepted input after each load, final native variables matched, and the
+flight reentry checkpoints reached sequence395/401 with sync=2 and reject=0.
+Saved final frames show textured geometry, vehicles, separate cameras and the
+original HUD. The owned pair closed after verification; installed candidate166
+retained SHA256 4457E04A1282FFE8FC6630EC9A38E034D51A6B7A471F0182E3570E1EDD6C1405.
+
+The first torpedo shot remains unqualified: ammo was0 again at shot preflight,
+so the driver stopped before firing. Both peers agreed. Native code has several
+legitimate ammo drop/reset paths, including some damage-threshold and transport
+transitions; the writer responsible for this particular loss was not captured.
+No torpedo hit, completed flight mission or campaign-wide readiness is claimed.
+No gameplay source change was justified by this run. Several failed approach
+attempts were harness issues (vehicle inertia, a released ring button, using a
+visual lever offset, and treating human transfer as a missing vehicle); their
+original traces were retained alongside the successful native-state evidence.
