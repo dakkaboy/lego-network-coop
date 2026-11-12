@@ -652,3 +652,27 @@ native generation74 retired with two torpedoes; generation75 reused its actor
 slot with a new model and secondary-state allocation and zero ammo. Preserve
 the original allocation/lifetime semantics when investigating apparent ammo
 loss; this evidence does not justify carrying ammunition across destruction.
+
+## Party ownership at world teardown
+
+Native teardown888A50 calls9B8B50 to save the outgoing party before rebuilding
+the next world. Store9B8BBE copies actor+50 bit200 into the native joined byte.
+The allocation and resource setup then use that saved party, before network
+input resumes. A main-thread data watch on FB486D captured the post-store
+PC9B8BC1 clearing P2 on both peers during the failing route.
+
+A second watch on actor+50 identified the earlier writer: native794D10
+detected an unbound controller,7EE7E3 called the normal90BE70 leave path, and
+88D0F6 cleared human bit200. Both peers saw the same store at native clock44.
+The network input lease had borrowed P2 while its native device was still
+null and restored that null binding before loading. Preserving the human
+flag alone did not prevent the native leave path.
+
+An unbound network participant now enters through native90BC70, using the
+active user's device from the native FB2E40 registry. Its original virtual
+admission check decides whether joining is allowed. Until it accepts, the
+network input adapter leaves the native controller and human state alone.
+The adapter also recaptures a native device reassignment and restores human
+state only while it still owns the proxy binding. Native teardown, roster
+reconstruction and mission code then consume the actual joined state. No
+mission ID, character ID or position selects the fix or creates a vehicle.

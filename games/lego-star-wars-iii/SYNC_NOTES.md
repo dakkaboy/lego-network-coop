@@ -451,3 +451,37 @@ reentry produced both vehicles, but the cause has not been isolated. Earlier
 entry with the same preparation helper succeeded, so missing Hub input alone
 is not a demonstrated explanation. The torpedo result does not qualify that
 initial entry or completion of the flight mission.
+
+First flight entry (candidate170, 2026-11-12): P2 had been treated as human by
+the network input adapter while its original controller device remained null.
+On release, native794D10 detected the missing device;7EE7E3 called90BE70,
+and88D0F6 removed human ownership. Native9B8B50 then saved a one-player party.
+Hardware watches identified both native stores on host and client. Keeping
+the human bit across a queued load did not fix that native disconnect path.
+
+The adapter now uses the original90BC70 join with the active user's device
+from FB2E40 before borrowing an unbound controller. It respects the original
+admission check, recaptures native device changes, and restores human state
+only while it still owns the proxy device. The ship constructor, mission
+scripts and actor update run in their existing native paths. No ship, mission,
+coordinate or timing exception selects this behavior.
+
+Exact candidate170 passed two fresh offscreen two-instance runs,
+flight-first-entry170 and flight-first-entry170-r2. They left the initial Hub
+after32 and8 coherent frames respectively. On both first entries, native
+clock1 already contained both ships391/406, before network input resumed.
+Both native vehicle components/bodies were present afterward, both players
+accepted movement and attack input, native mission variables matched, and
+first-fault/reject records stayed zero. The second pair also returned to Hub
+and reentered flight in the same session1, epochs2->3->4; both physical player
+vehicles remained valid, with final sequences98/100 and sync2.
+
+Paired frames from both first entries and reentry were reviewed for separate
+cameras, original HUD, visible ships and textured geometry. Each local run
+contains native-party-entry-proof.json, the per-peer loading trace and route
+verification results. A source-extracted x86 release fixture reproduces the
+native-binding rollback on old code and passes the new ownership, native
+reassignment and retired-allocation cases. All30 CTests pass. Exact DLL SHA256:
+9E14C27E772DFE93872A6126B79B6303247D0957A2C9ECDD91872DFE38399EF6.
+Both owned pairs closed normally. This qualifies initial flight entry and
+the checked reentry route; it does not claim full flight-mission completion.

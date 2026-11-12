@@ -11,6 +11,7 @@ void game_poll(void);
 void game_native_tick(void);
 void * __attribute__((thiscall)) game_native_scene_entry(void *manager,int level,int selector);
 int game_transition_waiting(void);
+int game_native_join_party_player(int slot,void *actor,void *controller);
 void game_request_level(int level);
 void game_request_reload(int level);
 int game_can_return_to_hub(void);
