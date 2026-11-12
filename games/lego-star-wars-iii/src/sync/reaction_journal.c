@@ -20,3 +20,19 @@ int reaction_journal_apply(ReactionJournal *journal,const SyncReactionChoice *en
     *clip=(uint32_t)entry->clip;++journal->cursor;return 1;
 }
 int reaction_journal_finish(const ReactionJournal *journal) { return !journal->failed && (journal->host || journal->cursor==journal->frame->reaction_count); }
+int reaction_journal_complete_no_clip(ReactionJournal *journal,uint32_t begin,uint32_t slot,uint32_t generation,uint32_t source_id,const SyncReactionHitOutcome *actual) {
+    if (!journal || journal->host || journal->failed || !source_id || !generation || begin>journal->cursor) return 0;
+    for (uint32_t i=begin;i<journal->cursor;++i) {
+        const SyncReactionChoice *entry=journal->frame->reactions+i;
+        if (entry->kind==SYNC_REACTION_CLIP && entry->slot==slot && entry->generation==generation &&
+            entry->source_id==source_id) {
+            if (entry->hit.completed && !reaction_hit_outcome_same(&entry->hit,actual)) {journal->failed=11;return -1;}
+            return 0;
+        }
+    }
+    const SyncReactionChoice *entry=reaction_journal_peek(journal);
+    if (!entry || !reaction_entry_valid(entry) || entry->kind!=SYNC_REACTION_CLIP || entry->clip!=-1 ||
+        entry->arena_attacker_generation || entry->slot!=slot || entry->generation!=generation || entry->source_id!=source_id || !entry->hit.completed) return 0;
+    if (!reaction_hit_outcome_same(&entry->hit,actual)) {journal->failed=11;return -1;}
+    ++journal->cursor;return 1;
+}

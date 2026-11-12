@@ -10,6 +10,8 @@
 #include "../engine/force_target_thunk.h"
 #include "../engine/force_geometry_thunk.h"
 #include "../engine/character_motion_thunk.h"
+#include "../engine/character_support_input.h"
+#include "physics_input_sync.h"
 #include "../engine/primary_perception_thunk.h"
 #include "../engine/spellit_query_thunk.h"
 #include "../engine/native_authored_poi.h"
@@ -25,7 +27,9 @@
 static CadenceJournal journal;
 __attribute__((used)) static volatile uintptr_t character_velocity_native=0xa08380;
 __declspec(dllexport) volatile uint32_t clonewars_character_motion_debug[4],clonewars_character_motion_correction[16];
-_Static_assert(sizeof(SyncCharacterMotionState)==28,"native motion input");
+__declspec(dllexport) volatile uint32_t clonewars_character_support_debug[8];
+__declspec(dllexport) volatile uint32_t clonewars_character_support_local[10],clonewars_character_support_host[10];
+_Static_assert(sizeof(SyncCharacterMotionState)==68,"native motion and support input");
 static uint32_t fire_task_cursor;
 static int active;
 static int cancelled;
@@ -184,7 +188,9 @@ static int apply_actor_gate(void *actor,uint32_t kind,uint16_t flags,uint16_t ac
             if (matches && kind==SYNC_ACTOR_FORCE_GEOMETRY && memcmp(&gate->force_geometry,state,4*sizeof(uint32_t))) {
                 journal.failed=13;++debug[3];failed(&op,actor,NULL,13);return failure_value;
             }
-            if (matches && kind==SYNC_ACTOR_CHARACTER_MOTION && memcmp(&gate->character_motion,state,2*sizeof(uint32_t))) {
+            if (matches && kind==SYNC_ACTOR_CHARACTER_MOTION &&
+                (memcmp(&gate->character_motion,state,2*sizeof(uint32_t)) ||
+                 !character_support_same_source(&gate->character_motion,(const SyncCharacterMotionState *)state))) {
                 journal.failed=16;++debug[3];failed(&op,actor,NULL,16);return failure_value;
             }
             if (matches && kind==SYNC_ACTOR_SPELLIT_QUERY && memcmp(&gate->spellit,state,3*sizeof(uint32_t))) {
@@ -750,17 +756,53 @@ __attribute__((used,noinline)) void cadence_character_motion_input(unsigned char
     if (!cadence_image_offset(*(void **)body,&input.body_class)) goto invalid;
     input.rest_counter=*(uint16_t *)((unsigned char *)body+0xc8);
     memcpy(input.velocity,velocity,sizeof(input.velocity));
+    void *support=NULL;uint32_t support_source[2]={0};
+    if (valid(body,0x140)) {
+        support=*(void **)((unsigned char *)body+0xec);
+        if (valid(support,0x1a) && (((unsigned char *)support)[0x19]&0x60)==0x40 &&
+            physics_effect_body_source(support,support_source)) {
+            input.support_frame=support_source[0];input.support_event=support_source[1];
+            memcpy(input.support_anchor,(unsigned char *)body+0x110,sizeof input.support_anchor);
+            memcpy(input.support_normal,(unsigned char *)body+0xf0,sizeof input.support_normal);
+            input.support_material_flags=*(uint16_t *)((unsigned char *)body+0x102) |
+                ((*(uint32_t *)((unsigned char *)body+0xc0)&1u)<<16);
+        }
+    }
+    if (!character_support_input_valid(&input)) goto invalid;
     for (unsigned i=0;i<4;++i) if ((bits(input.velocity[i])&0x7f800000u)==0x7f800000u) goto invalid;
     entities_update();if (!op_live(&op)) goto done;
     const uint32_t allocation=entities_observed_generation(actor);
     if (!allocation || !entities_allocation_live(actor,allocation)) goto invalid;
     const SyncCharacterMotionState local=input;
+    if (journal.host && input.support_frame) ++clonewars_character_support_debug[0];
     apply_actor_gate(actor,SYNC_ACTOR_CHARACTER_MOTION,0,0,0,&input,clonewars_character_motion_debug);
     if (!op_live(&op) || !active || journal.failed || journal.host) goto done;
     uint32_t body_class;
     if (!entities_allocation_live(actor,allocation) || *(unsigned char **)(actor+8)!=model || !valid(model,0x3c) ||
         *(void **)(model+0x38)!=body || !valid(body,0xca) || !cadence_image_offset(*(void **)body,&body_class) ||
-        body_class!=input.body_class || input.clock!=*(uint32_t *)0xfb4b6c || input.rest_counter>UINT16_MAX) goto invalid;
+        body_class!=input.body_class || input.clock!=*(uint32_t *)0xfb4b6c || input.rest_counter>UINT16_MAX ||
+        !character_support_same_source(&local,&input)) goto invalid;
+    if (input.support_frame) {
+        uint32_t current_source[2]={0};
+        if (!valid(body,0x140) || *(void **)((unsigned char *)body+0xec)!=support ||
+            !physics_effect_body_source(support,current_source) ||
+            memcmp(current_source,support_source,sizeof current_source)) goto invalid;
+        if (memcmp(local.support_anchor,input.support_anchor,sizeof input.support_anchor) ||
+            memcmp(local.support_normal,input.support_normal,sizeof input.support_normal) ||
+            local.support_material_flags!=input.support_material_flags) {
+            ++clonewars_character_support_debug[2];
+            if (!clonewars_character_support_debug[3]) {
+                clonewars_character_support_debug[3]=input.clock;
+                clonewars_character_support_debug[4]=input.support_frame;
+                clonewars_character_support_debug[5]=input.support_event;
+                memcpy((void *)clonewars_character_support_local,&local.support_frame,40);
+                memcpy((void *)clonewars_character_support_host,&input.support_frame,40);
+            }
+        }
+        /* A31D30 consumes the previous support's local anchor and normal before the new contact query. */
+        if (!character_support_replay(body,&local,&input)) goto invalid;
+    }
+    if (input.support_frame) ++clonewars_character_support_debug[1];
     if (memcmp(local.velocity,input.velocity,sizeof(input.velocity)) || local.rest_counter!=input.rest_counter) {
         ++clonewars_character_motion_debug[2];
         if (!clonewars_character_motion_correction[0]) {

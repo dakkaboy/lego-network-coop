@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "sync_wire.h"
+#include "../engine/character_support_input.h"
 extern "C" {
 #include "../sync/geometry_sync.h"
 #include "../engine/native_numeric_input.h"
@@ -146,6 +147,7 @@ int sync_frame_valid(const SyncFrame *frame, uint32_t bytes) {
         }
         case SYNC_ACTOR_CHARACTER_MOTION:
             if (gate.flags || gate.action || gate.value || !gate.character_motion.body_class || gate.character_motion.rest_counter>UINT16_MAX) return 0;
+            if (!character_support_input_valid(&gate.character_motion)) return 0;
             for (float value : gate.character_motion.velocity) if (!isfinite(value)) return 0;
             break;
         case SYNC_ACTOR_SPELLIT_NODE:

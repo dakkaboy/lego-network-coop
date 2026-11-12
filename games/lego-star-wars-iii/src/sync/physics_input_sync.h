@@ -14,6 +14,7 @@ void physics_input_cancel(void);
 int physics_world_input(SyncPhysicsChoice *,const CoherentFrameToken *);
 int physics_module_input(SyncPhysicsChoice *,const CoherentFrameToken *);
 int physics_vehicle_rng_input(SyncPhysicsChoice *,const void *,const CoherentFrameToken *);
+int physics_effect_body_source(const void *,uint32_t source[2]);
 static inline int physics_vehicle_rng_site(uint32_t site) {
     switch (site) {
     case 0x997f03:case 0x997f14:case 0x997f25:case 0x99803e:case 0x998085:case 0x9980b4:
@@ -23,6 +24,13 @@ static inline int physics_vehicle_rng_site(uint32_t site) {
 }
 static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
     if (!choice) return 0;
+    if (choice->kind==SYNC_PHYSICS_EFFECT_BIRTH) {
+        if (choice->site!=0x7427d8 || !(choice->flags&0x40000000u) || choice->model>UINT16_MAX ||
+            !(choice->name_hash[0]|choice->name_hash[1]) || choice->rng) return 0;
+        for (unsigned i=0;i<6;++i) if (choice->recipe[i]) return 0;
+        for (unsigned i=56;i<sizeof(*choice);++i) if (((const unsigned char *)choice)[i]) return 0;
+        return 1;
+    }
     if (choice->kind==SYNC_PHYSICS_BREAKUP_BASIS) {
         const SyncPhysicsBreakupBasisInput *p=&choice->breakup_basis;
         if (choice->site!=0x905f38 || p->model>UINT16_MAX || !(p->name_hash[0]|p->name_hash[1])) return 0;
@@ -128,7 +136,7 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
 static inline int physics_choice_same_source(const SyncPhysicsChoice *a,const SyncPhysicsChoice *b) {
     if (!physics_choice_valid(a) || !physics_choice_valid(b) || a->kind!=b->kind || a->site!=b->site) return 0;
     if (a->kind==SYNC_PHYSICS_BREAKUP_BASIS) return !memcmp(&a->breakup_basis,&b->breakup_basis,16);
-    if (a->kind==SYNC_PHYSICS_BREAKUP_SCALE) return a->flags==b->flags && a->model==b->model &&
+    if (a->kind==SYNC_PHYSICS_BREAKUP_SCALE || a->kind==SYNC_PHYSICS_EFFECT_BIRTH) return a->flags==b->flags && a->model==b->model &&
         a->clock==b->clock && !memcmp(a->name_hash,b->name_hash,sizeof(a->name_hash));
     if(a->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||a->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION)
         return !memcmp(&a->spellit_body,&b->spellit_body,32);

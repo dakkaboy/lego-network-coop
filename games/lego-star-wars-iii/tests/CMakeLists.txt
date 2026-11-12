@@ -197,3 +197,14 @@ target_compile_options(test_projectile_pool PRIVATE -fms-extensions -ffunction-s
 target_link_options(test_projectile_pool PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x10000000" "SHELL:-Xlinker /opt:ref")
 add_test(NAME clonewars-projectile_pool COMMAND test_projectile_pool)
 set_tests_properties(clonewars-projectile_pool PROPERTIES TIMEOUT 15)
+
+add_executable(test_character_support test_character_support.cpp)
+target_compile_features(test_character_support PRIVATE cxx_std_23)
+target_compile_options(test_character_support PRIVATE -fms-extensions)
+target_link_options(test_character_support PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
+add_test(NAME clonewars-character_support COMMAND test_character_support)
+set_tests_properties(clonewars-character_support PROPERTIES TIMEOUT 15)
+
+add_executable(test_reaction_receipt test_reaction_receipt.c ../src/sync/reaction_journal.c)
+add_test(NAME clonewars-reaction_receipt COMMAND test_reaction_receipt)
+set_tests_properties(clonewars-reaction_receipt PROPERTIES TIMEOUT 15)

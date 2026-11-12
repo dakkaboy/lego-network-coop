@@ -10,6 +10,7 @@
 #include "game_sync.h"
 #include "../engine/module_cohort_binding.h"
 static ReactionJournal reaction_journal;
+_Static_assert(sizeof(SyncReactionChoice)==96 && sizeof(SyncReactionHitOutcome)==36,"native reaction wire layout");
 static int active;
 static int cancelled;
 static ModuleCohortBinding binding;
@@ -44,6 +45,8 @@ __declspec(dllexport) volatile SyncReactionChoice clonewars_item_range_failure[2
 __declspec(dllexport) volatile uint32_t clonewars_item_range_failure_stride=sizeof(SyncReactionChoice);
 __declspec(dllexport) volatile uint32_t clonewars_reaction_failure[14];
 __declspec(dllexport) volatile uint32_t clonewars_reaction_first_correction[12];
+__declspec(dllexport) volatile uint32_t clonewars_reaction_receipt_debug[10];
+__declspec(dllexport) volatile SyncReactionHitOutcome clonewars_reaction_hit_actual,clonewars_reaction_hit_expected;
 #ifdef REACTION_SYNC_TEST
 extern int reaction_test_valid(const void *,unsigned);
 extern uint32_t reaction_test_word(uintptr_t);
@@ -80,6 +83,23 @@ __attribute__((used,noinline)) void reaction_apply_choice(void *actor,uint32_t *
     if (reaction_journal.failed) return;
     if (!valid(actor,0x1440) || !valid(clip,4)) { reaction_journal.failed=5;failed(&op,actor,NULL,0,0,5,UINT32_MAX);return; }
     int old_action=*(int16_t *)((char *)actor+0x2f4);uint32_t source_id=combat_damage_source_id();if(!op_live(&op))return;uint32_t local_clip=*clip;
+    if (!arena_attacker && local_clip==UINT32_MAX) {
+        if (reaction_journal.host && !source_id) {++clonewars_reaction_receipt_debug[0];return;}
+        if (!reaction_journal.host) {
+            const SyncReactionChoice *next=reaction_journal_peek(&reaction_journal);
+            SyncActor reference={0};
+            if (next && next->kind==SYNC_REACTION_CLIP && next->clip>=-1 && !next->arena_attacker_generation &&
+                next->old_action==old_action && next->source_id==source_id) {
+                reference.slot=next->slot;reference.generation=next->generation;reference.spawn_tag=next->spawn_tag;
+                reference.spawn_source=next->spawn_source;reference.character=next->character;memcpy(reference.spawn_position,next->origin,12);
+                if (entities_resolve_reference(&reference)==actor && op_live(&op)) goto apply_choice;
+                if (!op_live(&op)) return;
+            }
+            /* Native -1 branches directly to 96A3FF; damage receipts close at the original HIT boundary. */
+            ++clonewars_reaction_receipt_debug[1];return;
+        }
+    }
+apply_choice:
     if (reaction_journal.host) {
         entities_update();if(!op_live(&op))return;SyncActor identity={0};entities_describe(&identity,actor);if(!op_live(&op))return;
         int actor_slot=entities_slot(actor);if(!op_live(&op))return;
@@ -115,6 +135,62 @@ __attribute__((used,noinline)) void reaction_apply_choice(void *actor,uint32_t *
         clonewars_reaction_debug[10]=local_clip;clonewars_reaction_debug[11]=*clip;clonewars_reaction_debug[12]=source_id;clonewars_reaction_debug[13]=(uint32_t)old_action;clonewars_reaction_debug[14]=reaction_journal.cursor;
     }
     clonewars_reaction_debug[7]=reaction_journal.frame->sequence;
+}
+void reaction_damage_begin(ReactionDamageReceipt *receipt,const void *actor,uint32_t source_id) {
+    const DWORD error=GetLastError();memset(receipt,0,sizeof *receipt);
+    if (source_id && reaction_frame_lease_get(&receipt->lease) && op_live(&receipt->lease) && active &&
+        !reaction_journal.failed && valid(actor,0x1440) &&
+        entities_observed_identity(actor,&receipt->slot,&receipt->generation) && op_live(&receipt->lease)) {
+        receipt->local_generation=entities_observed_generation(actor);
+        if (entities_allocation_retained(actor,receipt->local_generation)) {
+            receipt->cursor=reaction_journal.host?reaction_journal.frame->reaction_count:reaction_journal.cursor;
+            receipt->source_id=source_id;receipt->actor=actor;receipt->valid=1;
+            receipt->hit.completed=1;receipt->hit.health_before=*(const int8_t *)(receipt->actor+0xdde);
+            receipt->hit.life_before=(*(const uint32_t *)(receipt->actor+0x50)&3u)|((uint32_t)receipt->actor[0x54]<<8);
+            receipt->hit.action_before=*(const int16_t *)(receipt->actor+0x2f4);memcpy(&receipt->hit.timer_before,receipt->actor+0xd3c,4);
+        }
+    }
+    SetLastError(error);
+}
+void reaction_damage_complete(const ReactionDamageReceipt *receipt) {
+    const DWORD error=GetLastError();
+    if (!receipt->valid || !active || !op_live(&receipt->lease)) goto done;
+    SyncReactionHitOutcome actual=receipt->hit;
+    if (entities_allocation_retained(receipt->actor,receipt->local_generation) && valid(receipt->actor,0x1440)) {
+        actual.health_after=*(const int8_t *)(receipt->actor+0xdde);
+        actual.life_after=(*(const uint32_t *)(receipt->actor+0x50)&3u)|((uint32_t)receipt->actor[0x54]<<8);
+        actual.action_after=*(const int16_t *)(receipt->actor+0x2f4);memcpy(&actual.timer_after,receipt->actor+0xd3c,4);
+    }
+    if (reaction_journal.host) {
+        if (reaction_hit_outcome_valid(&actual)) for (uint32_t i=receipt->cursor;i<reaction_journal.frame->reaction_count;++i) {
+            SyncReactionChoice *entry=reaction_journal.frame->reactions+i;
+            if (entry->kind==SYNC_REACTION_CLIP && entry->clip==-1 && !entry->arena_attacker_generation &&
+                entry->slot==receipt->slot && entry->generation==receipt->generation && entry->source_id==receipt->source_id) entry->hit=actual;
+        }
+        goto done;
+    }
+    const SyncReactionChoice *expected=reaction_journal_peek(&reaction_journal);
+    for (uint32_t i=receipt->cursor;i<reaction_journal.cursor;++i) {
+        const SyncReactionChoice *entry=reaction_journal.frame->reactions+i;
+        if (entry->kind==SYNC_REACTION_CLIP && entry->hit.completed && entry->slot==receipt->slot &&
+            entry->generation==receipt->generation && entry->source_id==receipt->source_id && !reaction_hit_outcome_same(&entry->hit,&actual)) {expected=entry;break;}
+    }
+    const int accepted=reaction_journal_complete_no_clip(&reaction_journal,receipt->cursor,receipt->slot,receipt->generation,receipt->source_id,&actual);
+    if (accepted<0) {
+        ++clonewars_reaction_receipt_debug[8];clonewars_reaction_hit_actual=actual;
+        if (expected) clonewars_reaction_hit_expected=expected->hit;
+        failed(&receipt->lease,NULL,expected,0,receipt->source_id,11,UINT32_MAX);goto done;
+    }
+    if (accepted>0) {
+        ++clonewars_reaction_receipt_debug[2];
+        if (!clonewars_reaction_receipt_debug[3]) {
+            clonewars_reaction_receipt_debug[3]=receipt->lease.cohort.epoch;
+            clonewars_reaction_receipt_debug[4]=receipt->lease.cohort.sequence;
+            clonewars_reaction_receipt_debug[5]=receipt->slot;clonewars_reaction_receipt_debug[6]=receipt->generation;
+            clonewars_reaction_receipt_debug[7]=receipt->source_id;
+        }
+    }
+done:SetLastError(error);
 }
 static uint32_t damage_draw(void *victim,uint32_t native_draw) {
     ReactionFrameLease op;

@@ -13,7 +13,7 @@
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
 #define SYNC_LAYOUT_VERSION 54
-#define SYNC_WIRE_VERSION 131
+#define SYNC_WIRE_VERSION 134
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -222,6 +222,13 @@ typedef struct SyncItemRange {
     float actor_position[3],target_position[3];
     float actor_radius,target_radius,reach;
 } SyncItemRange;
+typedef struct SyncReactionHitOutcome {
+    uint32_t completed;
+    int32_t health_before,health_after;
+    uint32_t life_before,life_after;
+    int32_t action_before,action_after;
+    float timer_before,timer_after;
+} SyncReactionHitOutcome;
 typedef struct SyncReactionChoice {
     uint32_t slot,generation,spawn_tag;
     int32_t character;
@@ -234,6 +241,7 @@ typedef struct SyncReactionChoice {
             union { int32_t clip; uint32_t damage_draw; };
             uint32_t source_id;
             uint32_t arena_attacker_slot,arena_attacker_generation;
+            SyncReactionHitOutcome hit;
         };
         SyncItemRange range;
     };
@@ -321,6 +329,9 @@ typedef struct SyncCharacterMotionState {
     uint32_t clock,body_class;
     float velocity[4];
     uint32_t rest_counter;
+    uint32_t support_frame,support_event;
+    float support_anchor[4],support_normal[3];
+    uint32_t support_material_flags;
 } SyncCharacterMotionState;
 
 typedef struct SyncSpellItNodeState {
@@ -373,7 +384,8 @@ enum SyncPhysicsChoiceKind {
     SYNC_PHYSICS_MODULE_SEED=7, SYNC_PHYSICS_GUN_JAM_SEED=8, SYNC_PHYSICS_SPELLIT_POSE=9,
     SYNC_PHYSICS_SPELLIT_STEP=10, SYNC_PHYSICS_SPELLIT_SELECTION=11,
     SYNC_PHYSICS_SPELLIT_BODY_BASIS=12, SYNC_PHYSICS_SPELLIT_BODY_MOTION=13,
-    SYNC_PHYSICS_VEHICLE_RNG=14, SYNC_PHYSICS_BREAKUP_BASIS=15, SYNC_PHYSICS_BREAKUP_SCALE=16
+    SYNC_PHYSICS_VEHICLE_RNG=14, SYNC_PHYSICS_BREAKUP_BASIS=15, SYNC_PHYSICS_BREAKUP_SCALE=16,
+    SYNC_PHYSICS_EFFECT_BIRTH=17
 };
 typedef struct SyncPhysicsWorldInput {
     uint32_t clock,value;
