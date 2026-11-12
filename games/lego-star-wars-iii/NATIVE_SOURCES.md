@@ -632,3 +632,23 @@ use the same seed at the original RNG call. The game selects and applies the
 request and advances its own stream. A controlled repeat with the old client
 seed reproduced the input difference and both peers chose the same actor,
 timer and animation after the correction.
+
+## Native flight torpedo state
+
+The actor's secondary weapon state is at actor+6EC. Ammo is the byte at+0C;
+reading a word also includes flags and gives a false count. The weapon
+descriptor supplies the secondary resource ID and capacity. Native pickup
+7CE4E0 increments ammo at7CE55F. Original secondary fire reaches7EC1B0 and
+decrements at7EC291 after requesting the projectile. Paired runtime watches
+observed the post-store PCs7CE562 and7EC294 at matching native clocks.
+
+Lock targets come from the native gizmo provider and resource definition flag
+8000. Native damage869FA0 updates the hit byte at86A086 and increments FB312C
+at86A17C for these targets. The lower-target runtime check observed matching
+destruction flags and counter0->1->2 on both peers after two original shots.
+
+An actor address alone does not identify a surviving ship. In the same run,
+native generation74 retired with two torpedoes; generation75 reused its actor
+slot with a new model and secondary-state allocation and zero ammo. Preserve
+the original allocation/lifetime semantics when investigating apparent ammo
+loss; this evidence does not justify carrying ammunition across destruction.

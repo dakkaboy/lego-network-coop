@@ -417,3 +417,37 @@ landing. The renderer boundaries were a concrete preservation gap, but the
 specific writer behind that earlier precision divergence remains unproven.
 This qualification does not establish that every rare -21 or campaign mission
 is fixed. Native torpedo hit progression remains a separate pending check.
+
+Native torpedo hits (candidate167, 2026-11-12): the offscreen hub-torpedo167-r3
+pair completed the lower ring, PadA landing, generator lever, reboarding and
+pickup after returning through CWHub in session1, epoch4. Original secondary
+input destroyed TARGET12 and TARGET11 on both peers. Each target changed from
+enabled19/state0 to disabled0/state12, and native counter FB312C advanced
+0->1->2 on both. The target hit byte had already returned to1 in the later
+snapshots; the claim relies on the matching destruction state and native
+counter, not on an unobserved persistent zero hit byte.
+
+The main-thread hardware watch recorded identical ammo writes on both peers:
+0->1->2->3->4 at native clocks3983/3985/3987/3989, immediately after native
+pickup store7CE55F; then4->3 and3->2 at clocks4015/4160, immediately after
+native secondary-fire store7EC291. There was no other recorded change in that
+ship allocation. At clock4678 the loaded generation74 retired; generation75
+appeared at4709 with HP5, a different model and secondary-state allocation,
+and ammo0. Both peers agreed. This observed loss follows native ship lifetime
+replacement; it does not identify the uncaptured writer from the earlier166
+run. Allocation initialization before watchpoint repinning is outside coverage.
+
+Saved evidence includes torpedo-bilateral-proof.json, the full per-peer
+ammo-write logs, torpedo-target-states-reentry.jsonl, route results and paired
+hit frames under the local hub-torpedo167-r3 run. Final sync remained2 with
+zero first-fault/reject records. The input driver used normal controls only;
+no ammo, health, position or target state was forced. No gameplay source change
+was needed for these two hits.
+
+Initial flight entry remains an open issue: the first entry in this session
+left P2 as a human without a vehicle on both peers. Neutral, tag and attack
+did not repair it. Hub return, ordinary input for both players and flight
+reentry produced both vehicles, but the cause has not been isolated. Earlier
+entry with the same preparation helper succeeded, so missing Hub input alone
+is not a demonstrated explanation. The torpedo result does not qualify that
+initial entry or completion of the flight mission.
