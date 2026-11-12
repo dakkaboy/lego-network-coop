@@ -485,3 +485,31 @@ reassignment and retired-allocation cases. All30 CTests pass. Exact DLL SHA256:
 9E14C27E772DFE93872A6126B79B6303247D0957A2C9ECDD91872DFE38399EF6.
 Both owned pairs closed normally. This qualifies initial flight entry and
 the checked reentry route; it does not claim full flight-mission completion.
+
+Full Shadow of Malevolence route (2026-11-12, same candidate170 hash above):
+flight-source170-r5 completed the mission on two offscreen local instances.
+Normal inputs activated both torpedo generators, destroyed the three shield
+dishes with primary blasters, and destroyed all12 external torpedo targets.
+Both FINAL_TARGET instances changed at native clock27050 and reached the
+same disabled/destroyed state at27051. No health, ammunition, actor position,
+hit or objective state was forced.
+
+Both peers then naturally loaded ShadowOfMalevolence_OUTRO and
+ShadowOfMalevolence_Status. The results showed the same4460 studs,0/10
+minikits and4/130 gold bricks. An ordinary native Enter input selected
+Continue Story; both returned to CWHub in session1,epoch5. Both players
+accepted attack input after return. All107 native Hub variables matched;
+first-fault/reject records remained zero. Paired gameplay, goal destruction,
+results and Hub frames, native transition traces and asserted13-goal proof
+are saved in the local full-mission-qualification/verification.json.
+This qualifies the complete checked mission route on one PC, not the campaign
+or smooth play over a remote connection.
+
+Separate longer battle runs still exposed unresolved faults on this DLL:
+flight-completion170 rejected with -16 at native clock29588, leaving36
+recorded physical choices unconsumed; flight-combat-source170-r3 first
+rejected with -15 at native clock15453 because a geometry reference to
+slot6/generation219 could not resolve. The successful complete route does
+not close either failure. The latter run's fault exports were saved before
+a diagnostic teardown crash; its later terminal capture is invalid. No
+production change has yet been justified by those source traces.
