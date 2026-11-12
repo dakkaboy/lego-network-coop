@@ -51,6 +51,12 @@ __attribute__((used)) static volatile uintptr_t breakup_launch_native=0x966af0;
 }
 
 namespace {
+uint32_t failure_source_word(const SyncPhysicsChoice *choice) {
+    if (!choice) return 0;
+    if (choice->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS || choice->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION)
+        return choice->spellit_body.key[0];
+    return choice->kind>=SYNC_PHYSICS_SPELLIT_SEED?choice->world.source_name[0]:choice->name_hash[0];
+}
 int fail(unsigned reason,const SyncPhysicsChoice *local=nullptr,const SyncPhysicsChoice *expected=nullptr) {
     if (!live()) return 0;
     failed=true;
@@ -59,8 +65,7 @@ int fail(unsigned reason,const SyncPhysicsChoice *local=nullptr,const SyncPhysic
         clonewars_physics_failure_expected=expected?*expected:SyncPhysicsChoice{};
         const uint32_t values[]={frame->epoch,frame->sequence,cursor,reason,
             local?local->kind:0,expected?expected->kind:0,
-            local?(local->kind>=SYNC_PHYSICS_SPELLIT_SEED?local->world.source_name[0]:local->name_hash[0]):0,
-            expected?(expected->kind>=SYNC_PHYSICS_SPELLIT_SEED?expected->world.source_name[0]:expected->name_hash[0]):0,
+            failure_source_word(local),failure_source_word(expected),
             local?(local->kind>=SYNC_PHYSICS_SPELLIT_SEED?local->world.clock:local->clock):0,
             expected?(expected->kind>=SYNC_PHYSICS_SPELLIT_SEED?expected->world.clock:expected->clock):0,
             local?local->site:0,expected?expected->site:0};
