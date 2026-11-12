@@ -676,3 +676,196 @@ The adapter also recaptures a native device reassignment and restores human
 state only while it still owns the proxy binding. Native teardown, roster
 reconstruction and mission code then consume the actual joined state. No
 mission ID, character ID or position selects the fix or creates a vehicle.
+
+## Native fragment launch inputs
+
+Native9689A0 builds the descriptor consumed by9059D0. Offsets8/C are part
+masks;10 is launch spread, and14/18/1C are inherited velocity. The latter
+comes from actorF10/F14/F18, with the native multipliers and additions.
+The existing905F33 bridge precedes original966AF0, which generates a random
+direction. After return at905F38, the caller scales that direction by spread
+and adds the descriptor's inherited velocity. The game RNG stream remains
+the native16-bit state atE637B4.
+
+In flight-physical-source170-r6, the first -16 atclock1322 had identical
+part hashes, masks, model382, flags, clock, RNG and resource topology on
+both peers. Only the two almost-zero X/Z velocity words differed:
+host2FB4E17A/AF672829 versus client2F34E17A/AEE72829. The journal had
+mistaken those native motion inputs for source identity. The replay now
+validates the part identity and masks, then supplies the host's exact finite
+spread/velocity to the existing descriptor before the original call.
+Other physics kinds retain their existing exact recipe checks. No tolerance,
+coordinate rule or second native update selects this behavior.
+
+This identifies the captured launch-input mismatch. It does not establish
+the cause of the separate missing-emission -16 or unresolved-reference -15.
+
+## Native damaged-flight randomness
+
+The native Type4 vehicle update997C90 draws from EA178C through573100
+(float) and573160 (integer). Both advance the original LCG by19660D and
+3C6EF35F. Its11 draw sites supply damaged-flight angular/linear motion,
+death duration and the low-byte branch that can shorten the duration to0.01.
+The countdown subsequently clears health at9983BB and requests native death
+through991CE0. Synchronizing fragment emissions alone cannot align these
+earlier owner lifetimes.
+
+Sparse execution breakpoints in flight-native-launch171-r5 captured equal
+health, owner flags, original delta and floating-point modes immediately
+before the duration draw at native clock5418. The EA178C inputs differed.
+At9981CF, the host's original integer draw returned2113932970 (low byteAA),
+while the client's returned1302312724 (low byte14). Only the client took
+the native0.01-duration branch. At5419 it retired that NPC while the host
+still referenced it, producing -15. This is a native RNG-input mismatch,
+not permission to bind a destroyed actor or substitute a nearby actor.
+
+The vehicle RNG journal records the original seed before each of those11
+calls, scoped by native clock, registered component and portable actor birth
+identity. The client supplies that seed to the existing RNG call; the
+original return value, seed advance, branch, countdown and death path remain
+native. The call shim preserves integer registers, flags, x87 and XMM state,
+including the original float or integer return. No extra vehicle update is
+issued. The new input kind requires wire128/layout51 on both peers.
+
+During the native death update an actor can have flags81: allocation bit1
+remains set while activity bit2 is clear. At flight-vehicle-rng173-r3
+clock1189, the original997F03 call still had the same actor generation26,
+model, character381 and registered component/driver/body. Requiring activity
+at that RNG boundary incorrectly rejected the host before its original call.
+The RNG owner lease now requires the retained allocation and the registered
+physical owner; geometry and hit references still require an active actor.
+Freed slots, replacement generations/models and ambiguous birth identities
+remain rejected.
+
+
+## Native numeric environment at the simulation boundary
+
+A paired flight run rejected a model request at native clock4689 with matching
+actor, action55 and actor4C400=1. After excluding the canonical unused fields,
+the only context difference was x87 precision: host033F, client003F. The later
+-21 status followed the first model-input fault20; it did not identify a timer
+writer or an actor-flag disagreement. A separate x86 fixture retained x87
+precision and stack values in384 hardware-observer checks, including a failed
+UTF-8 read. This does not identify which native call changed the game mode.
+
+The coherent boundary already receives the original FXSAVE area, but previously
+discarded it while carrying native clocks, delta and RNG seeds. Frame numeric_cw
+and numeric_mxcsr now carry the host control bits from that area. They replace
+two reserved header words without changing frame offsets or capacity. Wire129
+and layout52 reject older clients. Original update calls execute once using
+these inputs. A lexical adapter scope restores the borrowed local controls at
+span exit, with an owner-end fallback. x87 registers, tags, status and MXCSR
+exception-status bits remain untouched. An unchanged input does not suppress
+native changes to the outgoing environment. No default precision is forced.
+
+The existing model-context comparison remains strict. Runtime qualification
+must still establish whether the boundary correction resolves this route; a
+mode changed differently inside the native span would require its own source
+investigation. The separate pickup-timing and final missing-projectile cases
+are not established as fixed by the numeric-input change.
+
+
+## Native projectile pool release
+
+The flight failure at native clock5695 contained two identities for the same
+client allocation: shot3787 still referred to the address reused by shot3792.
+The resource changed from33 to41 and native object+8 changed from3794 to3799.
+The host also retained older aliases. This was not a missing creation call.
+
+The four846460 callers were already observed. Native capacity cleanup in
+864300 takes a different path: it reads the authored limit atE63880, walks
+manager+28, excludes resource74/object164 bit800000, and releases eligible
+objects through6756F0/69C9B0 at864412/864424. That bypassed the old tracker.
+The only two direct69C9B0 calls in the native projectile-manager range are
+8464CF and864424. Both now retain the original request and all three arguments
+and invoke the original release exactly once.
+
+Before release, the adapter captures network identity, local instance serial
+and the original object+8 allocation stamp. It verifies the actual backing
+pool from the manager. After release it checks native membership and stamp,
+then clears only the captured metadata whose identity and serial still match.
+A new allocation at the same address survives this cleanup, including reuse
+with the same resource. Cancellation prevents writes into a retired cohort.
+Host capture and client correction also reject a replaced allocation instead
+of treating readable recycled memory as the old projectile. Selection, limits,
+hits and world-object deletion remain native.
+
+The isolated source test includes the production projectile implementation.
+It checks original argument/return/LastError preservation, host/client cleanup,
+address reuse, a retained allocation, cancellation and reset, plus1000 cycles.
+It passed7087 checks. Full paired mission qualification is still required.
+
+### Character motion origin
+
+The native integrator at9C41ED reads the actor's previous solver position at
+E2C when deriving motion from its current position. The post-tick correction
+copied position and velocity but left that origin local. In the captured
+landing failure, both actors had identical corrected position and render
+anchor while their E2C values differed. The native C80 movement branch using
+this origin was enabled on both sides. The host subsequently allowed a
+SpellIt interaction query while the client skipped it; their contact flags
+also differed. These late snapshots establish an inconsistent solver input,
+but do not establish the first contact writer.
+
+SyncActor now carries the host's exact native motion origin. The client
+restores it with the same allocation's authoritative pose. It does not infer
+the origin from position, change the ground-contact flag, or call another
+physics update. The wire test preserves the captured three words through
+encoding and decoding and rejects non-finite origins. This changes the wire
+version to130 and the frame layout to53. The movement regression still needs
+runtime qualification.
+
+### Outgoing preload receipt
+
+During the complete flight route, all13 native targets were destroyed on both
+sides. The host then completed preload tick259 in the outro and published the
+next epoch. The client had accepted tick259 but had completed only258. A
+preload flow callback needed the host's final receipt; publishing the next
+epoch cleared that receipt from the transport state before the client could
+consume it. The existing transition drain covered gameplay frame sequence
+acknowledgments, which are zero in this unsealed scene.
+
+Transition publication now also waits for the matching outgoing preload
+receipt. It retains only captured cohort metadata and never dereferences a
+retired world. A sealed preload stream already has the required acknowledgment.
+The state test covers the captured259/258 race, an unfinished local tick,
+missing and mismatched receipts, and unrelated session/epoch/level bindings.
+The original level request and loading functions remain responsible for the
+transition. Paired outro/results/Hub qualification is pending.
+
+
+## Native character breakup geometry
+
+Candidate177's second flight run captured the first interaction fork at native
+clock4574. Both actors still had the same action before the check. The client's
+native character step lost support (`DAC=0`, then ground byte56=0); the host kept
+support and subsequently called SpellIt. The client's next character motion
+entry therefore met an unexpected query in the ordered journal. This is earlier
+than the action differences in the late fault snapshots.
+
+The prior support was a native rigid body named `LeftLeg_Blowup_HIGH`, outside
+the registered actor vehicle bodies. Its native body and dynamics were retained
+for inspection. Differences in unused shape padding or upper dynamics flags
+are not established physics inputs and are not copied.
+
+`9059D0` obtains each part's matrix from the model's native bone matrices and
+its scale from the native part recipe. The temporary matrix and scale arrays
+advance by64 and12 bytes at `9063A8`/`9063AD`. The original `741F90` physical
+emitter constructor consumes these inputs. Synchronizing the breakup seed,
+spread and inherited velocity did not cover these transforms.
+
+Candidate178 carries the complete16-float matrix and3-float scale alongside
+the existing physical breakup launch input. Only temporary constructor operands
+are updated, before the original `966AF0` draw and `741F90` creation. The native
+part name, character resource, clock and ordered source qualify both records;
+nonfinite operands or mismatched sources reject the frame. Original animation,
+emitter construction, contact solving and interaction eligibility still run.
+No ground flag, action, body pose or hit result is forced by this change.
+
+Wire131/layout54 retains the88-byte physics choice and3914832-byte frame.
+Tests cover both encoded records, finite-value rejection, source mismatches
+without partial writes, and3000 native thunk comparisons preserving the original
+call, arguments, CPU/FPU state and LastError. All33 tests pass. The paired flight route completed all13 goals, native OUTRO,
+Status and Continue Story to Hub in one session. All390 geometry records had
+equal original operands; no correction was observed. The earlier contact fork
+therefore remains open. See the12 November verification in SYNC_NOTES.md.

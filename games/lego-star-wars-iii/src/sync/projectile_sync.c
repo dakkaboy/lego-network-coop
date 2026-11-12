@@ -33,6 +33,7 @@ typedef struct Tracked {
     SyncShot birth;
     char *object;
     void *resource;
+    uint32_t native_stamp;
 } Tracked;
 static Tracked tracked[SYNC_MAX_PROJECTILES];
 static uint32_t instance_serial[SYNC_MAX_PROJECTILES],creation_count[SYNC_MAX_PROJECTILES],next_instance_serial;
@@ -162,6 +163,7 @@ static char *legacy[SYNC_MAX_PROJECTILES];
 static uint64_t legacy_version[SYNC_MAX_PROJECTILES],next_legacy_version;
 static int legacy_set(const ProjectileOperation*op,unsigned i,char*object){if(!operation_live(op))return 0;if(next_legacy_version==UINT64_MAX){operation_exception(op);return 0;}legacy_version[i]=++next_legacy_version;legacy[i]=object;dispatch_changed(op);return operation_live(op);}
 __declspec(dllexport) volatile uint32_t clonewars_projectile_debug[12];
+__declspec(dllexport) volatile uint32_t clonewars_projectile_pool_release_debug[8];
 __declspec(dllexport) volatile uint32_t clonewars_fire_debug[8];
 enum { PROJECTILE_CAST_ORIGIN=0xec, PROJECTILE_AGE=0x12c, PROJECTILE_EXPIRES_AT=0x134, PROJECTILE_CAST_COUNTDOWN=0x144 };
 static const unsigned flight_offsets[]={PROJECTILE_AGE,0x130,PROJECTILE_EXPIRES_AT,0x138,0x154,0x158,0x15c,0x128,0x13c,0x140,PROJECTILE_CAST_COUNTDOWN,0x148,0x14c,0x150};
@@ -470,6 +472,7 @@ int projectiles_observe_live(const void *object,ProjectileIdentityView *view) {
  for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)candidates[i]=(ProjectileIdentityCandidate){(uintptr_t)tracked[i].object,(uintptr_t)tracked[i].resource,tracked[i].birth.id};
  uint32_t id=0;view->status=projectile_identity_select(candidates,SYNC_MAX_PROJECTILES,(uintptr_t)object,(uintptr_t)resource,&id);if(view->status!=SHOT_LIVE||!operation_live(&op))return view->status=SHOT_UNTRACKED;
  Tracked *e=find(id);if(!e||e->object!=object||e->resource!=resource||!operation_live(&op)||*(void**)((const char*)object+0x14)!=resource)return view->status=SHOT_RESOURCE_MISMATCH;
+ if(*(const uint32_t*)((const char*)object+8)!=e->native_stamp)return view->status=SHOT_REPLACED;
  view->id=id;view->owner=e->birth.owner;view->owner_generation=e->birth.owner_generation;view->weapon=e->birth.weapon;view->resource_local=(uint32_t)(uintptr_t)resource;unsigned i=(unsigned)(e-tracked);view->instance_serial=instance_serial[i];view->creation_count=creation_count[i];return view->status;
 }
 static Tracked *remember(const ProjectileOperation*op,const SyncShot *shot,char *object) {
@@ -479,7 +482,7 @@ static Tracked *remember(const ProjectileOperation*op,const SyncShot *shot,char 
  void*resource=NULL;if(valid(object,0x210)){if(!operation_live(op))return NULL;resource=*(void**)(object+0x14);}if(!operation_live(op))return NULL;
  unsigned i=(unsigned)(e-tracked);if(e->birth.id!=birth.id)creation_count[i]=0;
  if(object){if(next_instance_serial==UINT32_MAX||creation_count[i]==UINT32_MAX){operation_reject(op,PROJECTILE_CONTROL_EXHAUSTED);return NULL;}instance_serial[i]=++next_instance_serial;++creation_count[i];}
- e->birth=birth;e->object=object;e->resource=resource;dispatch_changed(op);return operation_live(op)?e:NULL;
+ e->birth=birth;e->object=object;e->resource=resource;e->native_stamp=object&&resource?*(uint32_t*)(object+8):0;dispatch_changed(op);return operation_live(op)?e:NULL;
 }
 static ShotContext native_shot_context(void) {
     return shot_context_read((uint32_t*)0xfb4b6c,(uint32_t*)0xe637b4,(uint32_t*)0xea178c,(float*)0xfb4b74);
@@ -687,12 +690,71 @@ static unsigned char __attribute__((fastcall)) remove_hook(void *manager,void *u
  if((c.op.kind==PROJECTILE_KEYED||c.op.kind==PROJECTILE_CONTROL)&&operation_live(&c.op))for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(legacy[i]==object)c.captured_legacy[i]=legacy_version[i];
  return remove_observed(&c,0);
 }
+typedef void *(__attribute__((thiscall)) *PoolRelease)(void *,uint32_t,uint32_t,uint32_t);
+static PoolRelease native_pool_release=(PoolRelease)0x69c9b0;
+typedef struct PoolReleaseCall {
+ RemoveCall removal;void *request;uint32_t arguments[3],native_stamp,qualified;
+} PoolReleaseCall;
+static int pool_contains_allocation(const ProjectileOperation *op,const void *manager,const void *object,uint32_t stamp){
+ if(!operation_live(op)||!retire_manager_live(manager))return -1;
+ const char *pool=manager;uint32_t count=*(const uint32_t*)(pool+0x2c),visited=0;
+ if(count==UINT32_MAX)return -1;
+ for(const char *node=*(const char*const*)(pool+0x28);node;node=*(const char*const*)(node+0xc)){
+  if(!operation_live(op)||!valid(node,0x18)||++visited>count)return -1;
+  if(node==object&&*(const uint32_t*)(node+8)==stamp)return 1;
+ }
+ return operation_live(op)?0:-1;
+}
+static void *__cdecl pool_release_invoke(void *opaque){
+ PoolReleaseCall*c=opaque;return native_pool_release(c->request,c->arguments[0],c->arguments[1],c->arguments[2]);
+}
+static void __cdecl pool_release_abort(void *opaque){
+ DWORD error=GetLastError();PoolReleaseCall*c=opaque;operation_exception(&c->removal.op);SetLastError(error);
+}
+__attribute__((used,noinline)) static void pool_release_complete_impl(PoolReleaseCall*c,void*result){
+ (void)result;RemoveCall*r=&c->removal;
+ if(!c->qualified||!operation_live(&r->op))return;
+ int retained=pool_contains_allocation(&r->op,r->manager,r->object,c->native_stamp);
+ if(retained<0){operation_reject(&r->op,PROJECTILE_PENDING_PROVENANCE);return;}
+ if(retained){++clonewars_projectile_pool_release_debug[2];return;}
+ ++clonewars_projectile_pool_release_debug[1];
+ for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(r->captured_id[i]&&tracked[i].birth.id==r->captured_id[i]&&instance_serial[i]==r->captured_instance[i]&&tracked[i].object==r->object){
+  retire_forget(r->captured_id[i],r->captured_instance[i]);tracked[i].object=NULL;
+  if(r->op.session.host)memset(tracked+i,0,sizeof(Tracked));
+  ++clonewars_projectile_pool_release_debug[3];dispatch_changed(&r->op);
+ }
+ for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(r->captured_legacy[i]&&legacy[i]==r->object&&legacy_version[i]==r->captured_legacy[i])legacy_set(&r->op,i,NULL);
+}
+__attribute__((naked)) static void pool_release_complete(PoolReleaseCall*c,void*result){__asm__ volatile(CONSTRUCTOR_OBSERVER_THUNK_ASM("_pool_release_complete_impl"));}
+static void *__attribute__((fastcall)) pool_release_hook(void *request,void *unused,uint32_t a,uint32_t b,uint32_t d){
+ (void)unused;DWORD error=GetLastError();PoolReleaseCall c={0};RemoveCall*r=&c.removal;
+ c.request=request;c.arguments[0]=a;c.arguments[1]=b;c.arguments[2]=d;r->op=operation_capture();operation_admit_event(&r->op);
+ if((r->op.kind==PROJECTILE_KEYED||r->op.kind==PROJECTILE_CONTROL)&&operation_live(&r->op)&&valid(request,0x18)){
+  char*root=*(char**)0xe9019c;char*manager=valid(root,0x3c)?*(char**)(root+0x38):NULL;
+  void *native_pool=valid(manager,0x30)?*(void**)(manager+0x20):NULL;
+  r->manager=manager;r->object=*(void**)((char*)request+4);
+  if(valid(native_pool,8)&&*(void**)((char*)native_pool+4)==*(void**)request&&valid(r->object,0x210)){
+   c.native_stamp=*(uint32_t*)((char*)r->object+8);
+   if(pool_contains_allocation(&r->op,manager,r->object,c.native_stamp)==1){
+    c.qualified=1;++clonewars_projectile_pool_release_debug[0];
+    for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(tracked[i].birth.id&&tracked[i].object==r->object&&tracked[i].native_stamp==c.native_stamp&&tracked[i].resource==*(void**)((char*)r->object+0x14)){r->captured_id[i]=tracked[i].birth.id;r->captured_instance[i]=instance_serial[i];}
+    for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i)if(legacy[i]==r->object)r->captured_legacy[i]=legacy_version[i];
+    clonewars_projectile_pool_release_debug[4]=(uint32_t)(uintptr_t)__builtin_return_address(0);
+    clonewars_projectile_pool_release_debug[5]=*(uint32_t*)0xfb4b6c;
+    clonewars_projectile_pool_release_debug[6]=c.native_stamp;
+   }
+  }
+ }
+ SetLastError(error);void*result=constructor_lexical_seh(&c,pool_release_invoke,pool_release_abort);
+ pool_release_complete(&c,result);return result;
+}
 static int compare(const void *a,const void *b) {
     uint32_t left=((const SyncProjectile *)a)->id,right=((const SyncProjectile *)b)->id;
     return left<right ? -1 : left>right;
 }
 static int capture(const ProjectileOperation*op,SyncProjectile *state,const Tracked *entry){
  if(!operation_live(op)||op->kind!=PROJECTILE_KEYED)return 0;char*p=entry->object;if(!valid(p,0x210)||!operation_live(op))return 0;
+ if(*(void**)(p+0x14)!=entry->resource||*(uint32_t*)(p+8)!=entry->native_stamp){record_failure(op,5,actor_at(entry->birth.owner,entry->birth.owner_generation),NULL,entry->birth.id,p,0,UINT32_MAX);failed=1;return 0;}
  SyncProjectile value={0};value.id=entry->birth.id;memcpy(value.transform,p+0x24,128);memcpy(value.position,p+0xa4,12);memcpy(value.previous,p+0xbc,12);memcpy(value.velocity,p+0xc8,12);memcpy(value.direction,p+0xd4,12);memcpy(value.previous_direction,p+0xe0,12);for(unsigned j=0;j<14;++j)value.flight[j]=*(float*)(p+flight_offsets[j]);memcpy(value.flags,p+0x160,12);
  memcpy(value.cast_origin,p+PROJECTILE_CAST_ORIGIN,sizeof(value.cast_origin));
  if(!operation_live(op))return 0;*state=value;return 1;
@@ -850,7 +912,7 @@ int projectiles_dispatch_complete(void){
      failed=1;continue;
     }
     if(!valid(e->object,0x210)){if(!operation_live(&op))return 0;record_failure(&op,5,actor_at(e->birth.owner,e->birth.owner_generation),NULL,state->id,e->object,0,UINT32_MAX);if(!operation_live(&op))return 0;failed=1;continue;}
-    if(!operation_live(&op))return 0;if(*(void**)(e->object+0x14)!=e->resource){record_failure(&op,5,actor_at(e->birth.owner,e->birth.owner_generation),NULL,state->id,e->object,0,UINT32_MAX);if(!operation_live(&op))return 0;failed=1;continue;}
+    if(!operation_live(&op))return 0;if(*(void**)(e->object+0x14)!=e->resource||*(uint32_t*)(e->object+8)!=e->native_stamp){record_failure(&op,5,actor_at(e->birth.owner,e->birth.owner_generation),NULL,state->id,e->object,0,UINT32_MAX);if(!operation_live(&op))return 0;failed=1;continue;}
     if(!correct(&op,state,e))return 0;
    }
    for(unsigned i=0;i<SYNC_MAX_PROJECTILES;++i){uint32_t id=tracked[i].birth.id;if(!id)continue;if(!operation_live(&op))return 0;if(frame_has_projectile(frame,id))continue;
@@ -926,6 +988,7 @@ int projectiles_install(void) {
     if (!patch_call(ACTOR_FOLLOWUP_SITE,SECONDARY_ALLOCATOR,create_secondary_hook) ||
         !patch_call(PROJECTILE_CHILD_SITE,SECONDARY_ALLOCATOR,create_secondary_hook)) return 0;
     for (unsigned i=0;i<4;++i) if (!patch_call(sites[i],0x846460,remove_hook)) return 0;
+    if(!patch_call(0x8464cf,0x69c9b0,pool_release_hook)||!patch_call(0x864424,0x69c9b0,pool_release_hook))return 0;
     const uintptr_t fire_sites[]={0x45a98f,0x45aa31,0x45aab5,0x884b4c};
     for (unsigned i=0;i<4;++i) if (!patch_call(fire_sites[i],0x879710,fire_hook)) return 0;
     if (!install_shot_center()) return 0;

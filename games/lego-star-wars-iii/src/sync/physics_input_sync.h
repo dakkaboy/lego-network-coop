@@ -13,8 +13,37 @@ int physics_input_finish(void);
 void physics_input_cancel(void);
 int physics_world_input(SyncPhysicsChoice *,const CoherentFrameToken *);
 int physics_module_input(SyncPhysicsChoice *,const CoherentFrameToken *);
+int physics_vehicle_rng_input(SyncPhysicsChoice *,const void *,const CoherentFrameToken *);
+static inline int physics_vehicle_rng_site(uint32_t site) {
+    switch (site) {
+    case 0x997f03:case 0x997f14:case 0x997f25:case 0x99803e:case 0x998085:case 0x9980b4:
+    case 0x99813e:case 0x9981cf:case 0x998288:case 0x9982b7:case 0x9982ee:return 1;
+    default:return 0;
+    }
+}
 static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
     if (!choice) return 0;
+    if (choice->kind==SYNC_PHYSICS_BREAKUP_BASIS) {
+        const SyncPhysicsBreakupBasisInput *p=&choice->breakup_basis;
+        if (choice->site!=0x905f38 || p->model>UINT16_MAX || !(p->name_hash[0]|p->name_hash[1])) return 0;
+        for (unsigned i=0;i<16;++i) if (!isfinite(p->matrix[i])) return 0;
+        return 1;
+    }
+    if (choice->kind==SYNC_PHYSICS_BREAKUP_SCALE) {
+        if (choice->site!=0x905f38 || !(choice->flags&0x40000000u) || choice->model>UINT16_MAX ||
+            !(choice->name_hash[0]|choice->name_hash[1]) || choice->rng) return 0;
+        for (unsigned i=0;i<3;++i) { float v;memcpy(&v,choice->recipe+i,4);if (!isfinite(v)) return 0; }
+        for (unsigned i=3;i<6;++i) if (choice->recipe[i]) return 0;
+        for (unsigned i=56;i<sizeof(*choice);++i) if (((const unsigned char *)choice)[i]) return 0;
+        return 1;
+    }
+    if (choice->kind==SYNC_PHYSICS_VEHICLE_RNG) {
+        const SyncPhysicsVehicleRngInput *v=&choice->vehicle_rng;
+        if (!physics_vehicle_rng_site(choice->site) || v->slot>=SYNC_MAX_ACTORS || !v->generation ||
+            v->character<0 || v->character>=4096 || v->vehicle_type!=4) return 0;
+        for (unsigned i=0;i<11;++i) if (v->reserved[i]) return 0;
+        return 1;
+    }
     if(choice->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||choice->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION){
         const SyncPhysicsSpellItBodyInput *body=&choice->spellit_body;
         if(choice->site!=0x840660||!body->body_class||body->body_class>=0x1000000||body->piece_ordinal>=65536||body->reserved||
@@ -86,12 +115,21 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
     for (unsigned i=56;i<sizeof(*choice);++i) if (tail[i-56]) return 0;
     if (!(choice->flags&0x40000000u) || choice->model>UINT16_MAX ||
         (!choice->name_hash[0] && !choice->name_hash[1]) || choice->site<0x400000 || choice->site>=0xb00000) return 0;
+    if (choice->kind==SYNC_PHYSICS_BREAKUP_LAUNCH) {
+        for (unsigned i=2;i<6;++i) {
+            float value;memcpy(&value,choice->recipe+i,sizeof value);
+            if (!isfinite(value)) return 0;
+        }
+    }
     return (choice->kind==SYNC_PHYSICS_AXIS_SPIN && (choice->flags&0x80u)) ||
            (choice->kind==SYNC_PHYSICS_ROTATION_SPIN && (choice->flags&0x100000u)) ||
            (choice->kind==SYNC_PHYSICS_BREAKUP_LAUNCH && choice->site==0x905f38);
 }
 static inline int physics_choice_same_source(const SyncPhysicsChoice *a,const SyncPhysicsChoice *b) {
     if (!physics_choice_valid(a) || !physics_choice_valid(b) || a->kind!=b->kind || a->site!=b->site) return 0;
+    if (a->kind==SYNC_PHYSICS_BREAKUP_BASIS) return !memcmp(&a->breakup_basis,&b->breakup_basis,16);
+    if (a->kind==SYNC_PHYSICS_BREAKUP_SCALE) return a->flags==b->flags && a->model==b->model &&
+        a->clock==b->clock && !memcmp(a->name_hash,b->name_hash,sizeof(a->name_hash));
     if(a->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||a->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION)
         return !memcmp(&a->spellit_body,&b->spellit_body,32);
     if(a->kind==SYNC_PHYSICS_SPELLIT_STEP) {
@@ -119,7 +157,25 @@ static inline int physics_choice_same_source(const SyncPhysicsChoice *a,const Sy
     if (
         a->flags!=b->flags || a->model!=b->model || a->clock!=b->clock ||
         a->name_hash[0]!=b->name_hash[0] || a->name_hash[1]!=b->name_hash[1]) return 0;
-    for (unsigned i=0;i<6;++i) if (a->recipe[i]!=b->recipe[i]) return 0;
+    const unsigned identity_words=a->kind==SYNC_PHYSICS_BREAKUP_LAUNCH?2:6;
+    for (unsigned i=0;i<identity_words;++i) if (a->recipe[i]!=b->recipe[i]) return 0;
+    return 1;
+}
+static inline int physics_breakup_geometry_replay(float *matrix,float *scale,const SyncPhysicsChoice *local_basis,
+    const SyncPhysicsChoice *local_scale,const SyncPhysicsChoice *basis,const SyncPhysicsChoice *size) {
+    if (!matrix || !scale || !local_basis || !local_scale ||
+        local_basis->kind!=SYNC_PHYSICS_BREAKUP_BASIS || local_scale->kind!=SYNC_PHYSICS_BREAKUP_SCALE ||
+        !physics_choice_same_source(local_basis,basis) || !physics_choice_same_source(local_scale,size) ||
+        basis->breakup_basis.clock!=size->clock || basis->breakup_basis.model!=size->model ||
+        memcmp(basis->breakup_basis.name_hash,size->name_hash,sizeof size->name_hash)) return 0;
+    memcpy(matrix,basis->breakup_basis.matrix,sizeof basis->breakup_basis.matrix);
+    memcpy(scale,size->recipe,3*sizeof(float));return 1;
+}
+static inline int physics_breakup_launch_replay(void *descriptor,const SyncPhysicsChoice *local,const SyncPhysicsChoice *expected) {
+    if (!descriptor || !local || local->kind!=SYNC_PHYSICS_BREAKUP_LAUNCH ||
+        !physics_choice_same_source(local,expected)) return 0;
+    // Native 9689A0 supplies part masks followed by launch spread and inherited velocity.
+    memcpy((unsigned char *)descriptor+0x10,expected->recipe+2,4*sizeof(uint32_t));
     return 1;
 }
 #ifdef __cplusplus

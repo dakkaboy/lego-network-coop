@@ -13,6 +13,7 @@ SyncSpawnSource entities_spawn_source(const void *actor,uint32_t *site);
 int entities_bind(const SyncFrame *frame);
 int entities_bind_tick(const SyncFrame *frame);
 int entities_bind_native_actor(const SyncFrame *frame,const void *actor);
+int entities_bind_native_reference(const SyncActor *reference,const void *actor);
 void *entities_actor(uint32_t network_slot,uint32_t generation);
 uint32_t entities_generation(const void *actor);
 int entities_slot(const void *actor);
@@ -31,3 +32,4 @@ int entities_party_matches(const SyncFrame *frame);
 void *entities_resolve_reference(const SyncActor *state);
 
 int entities_allocation_live(const void *actor,uint32_t generation);
+int entities_allocation_retained(const void *actor,uint32_t generation);

@@ -7,9 +7,11 @@
 #include "../engine/breakup_launch_thunk.h"
 #include "spellit_input_sync.h"
 #include "module_rng_input_sync.h"
+#include "vehicle_rng_input_sync.h"
 extern "C" {
 #include "geometry_sync.h"
 #include "game_sync.h"
+#include "entity_sync.h"
 #include "../engine/module_cohort_binding.h"
 #include "../engine/constructor_lexical_seh.h"
 }
@@ -47,12 +49,17 @@ __declspec(dllexport) volatile uint32_t clonewars_physics_input_debug[8];
 __declspec(dllexport) volatile uint32_t clonewars_physics_input_failure[12];
 __declspec(dllexport) SyncPhysicsChoice clonewars_physics_failure_local,clonewars_physics_failure_expected;
 __declspec(dllexport) volatile uint32_t clonewars_breakup_launch_debug[4],clonewars_breakup_launch_correction[8];
+__declspec(dllexport) volatile uint32_t clonewars_breakup_launch_motion_debug[14];
+__declspec(dllexport) volatile uint32_t clonewars_breakup_geometry_debug[8];
+__declspec(dllexport) volatile uint32_t clonewars_breakup_geometry_local[19],clonewars_breakup_geometry_host[19];
 __attribute__((used)) static volatile uintptr_t breakup_launch_native=0x966af0;
 }
 
 namespace {
 uint32_t failure_source_word(const SyncPhysicsChoice *choice) {
     if (!choice) return 0;
+    if (choice->kind==SYNC_PHYSICS_BREAKUP_BASIS) return choice->breakup_basis.name_hash[0];
+    if (choice->kind==SYNC_PHYSICS_BREAKUP_SCALE) return choice->name_hash[0];
     if (choice->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS || choice->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION)
         return choice->spellit_body.key[0];
     return choice->kind>=SYNC_PHYSICS_SPELLIT_SEED?choice->world.source_name[0]:choice->name_hash[0];
@@ -99,7 +106,7 @@ bool describe(void *raw,unsigned kind,uint32_t site,SyncPhysicsChoice &choice) {
     return physics_choice_valid(&choice)!=0;
 }
 
-void apply_launch(const unsigned char *descriptor,const unsigned char *handle) {
+void apply_launch(unsigned char *descriptor,const unsigned char *handle) {
     if (!active || !readable(descriptor,0x30) || !descriptor[0x2c]) return;
     if (!live() || failed) return;
     SyncPhysicsChoice local={};
@@ -116,7 +123,16 @@ void apply_launch(const unsigned char *descriptor,const unsigned char *handle) {
         ++clonewars_physics_input_debug[0];++clonewars_breakup_launch_debug[0];
     } else {
         const auto *entry=cursor<frame->physics_choice_count?frame->physics_choices+cursor:nullptr;
-        if (!entry || !physics_choice_same_source(entry,&local)) {fail(3,&local,entry);++clonewars_breakup_launch_debug[3];return;}
+        if (!entry || !physics_breakup_launch_replay(descriptor,&local,entry)) {fail(3,&local,entry);++clonewars_breakup_launch_debug[3];return;}
+        if (std::memcmp(local.recipe+2,entry->recipe+2,4*sizeof(uint32_t))) {
+            if (!clonewars_breakup_launch_motion_debug[13]) {
+                const uint32_t values[]={frame->epoch,frame->sequence,local.clock,local.model,local.name_hash[0],
+                    local.recipe[2],local.recipe[3],local.recipe[4],local.recipe[5],
+                    entry->recipe[2],entry->recipe[3],entry->recipe[4],entry->recipe[5]};
+                std::memcpy(const_cast<uint32_t *>(clonewars_breakup_launch_motion_debug),values,sizeof values);
+            }
+            ++clonewars_breakup_launch_motion_debug[13];
+        }
         if (local.rng!=entry->rng) {
             ++clonewars_breakup_launch_debug[2];
             if (!clonewars_breakup_launch_correction[0]) {
@@ -128,6 +144,60 @@ void apply_launch(const unsigned char *descriptor,const unsigned char *handle) {
         // This is the shared game stream: retain the advances of the original 966AF0 call.
         game_rng()=entry->rng;++cursor;++clonewars_physics_input_debug[1];++clonewars_breakup_launch_debug[1];
     }
+}
+void apply_breakup_geometry(unsigned char *descriptor,const unsigned char *handle,float *matrix,float *scale) {
+    if (!active || !readable(descriptor,0x30) || !descriptor[0x2c] || !live() || failed) return;
+    SyncPhysicsChoice basis{},size{},name{};
+    basis.kind=SYNC_PHYSICS_BREAKUP_BASIS;size.kind=SYNC_PHYSICS_BREAKUP_SCALE;
+    basis.site=size.site=0x905f38;
+    basis.breakup_basis.clock=size.clock=*reinterpret_cast<uint32_t *>(0xfb4b6c);
+    basis.breakup_basis.model=size.model=static_cast<uint16_t>(word(descriptor+4));
+    size.flags=0x40000000u|(descriptor[0x2d]?0x10u:0);
+    if (!readable(handle,8) || !describe_name(reinterpret_cast<const unsigned char *>(word(handle+4)),name) ||
+        !readable(matrix,sizeof basis.breakup_basis.matrix) || !readable(scale,3*sizeof(float))) {
+        ++clonewars_breakup_geometry_debug[3];fail(1,&basis);return;
+    }
+    std::memcpy(basis.breakup_basis.name_hash,name.name_hash,sizeof name.name_hash);
+    std::memcpy(size.name_hash,name.name_hash,sizeof name.name_hash);
+    std::memcpy(basis.breakup_basis.matrix,matrix,sizeof basis.breakup_basis.matrix);
+    std::memcpy(size.recipe,scale,3*sizeof(float));
+    if (!physics_choice_valid(&basis) || !physics_choice_valid(&size)) {
+        ++clonewars_breakup_geometry_debug[3];fail(1,&basis);return;
+    }
+    if (!live()) return;
+    if (host) {
+        if (frame->physics_choice_count>SYNC_MAX_PHYSICS_CHOICES-2) {
+            ++clonewars_breakup_geometry_debug[3];fail(2,&basis);return;
+        }
+        frame->physics_choices[frame->physics_choice_count++]=basis;
+        frame->physics_choices[frame->physics_choice_count++]=size;
+        clonewars_physics_input_debug[0]+=2;++clonewars_breakup_geometry_debug[0];return;
+    }
+    const auto *expected=cursor+1<frame->physics_choice_count?frame->physics_choices+cursor:nullptr;
+    if (!expected || !physics_choice_same_source(&basis,expected) || !physics_choice_same_source(&size,expected+1)) {
+        ++clonewars_breakup_geometry_debug[3];fail(3,&basis,expected);return;
+    }
+    const bool changed=std::memcmp(matrix,expected->breakup_basis.matrix,sizeof basis.breakup_basis.matrix) ||
+        std::memcmp(scale,expected[1].recipe,3*sizeof(float));
+    if (changed) {
+        if (!clonewars_breakup_geometry_debug[2]) {
+            std::memcpy(const_cast<uint32_t *>(clonewars_breakup_geometry_local),matrix,16*sizeof(float));
+            std::memcpy(const_cast<uint32_t *>(clonewars_breakup_geometry_local)+16,scale,3*sizeof(float));
+            std::memcpy(const_cast<uint32_t *>(clonewars_breakup_geometry_host),expected->breakup_basis.matrix,16*sizeof(float));
+            std::memcpy(const_cast<uint32_t *>(clonewars_breakup_geometry_host)+16,expected[1].recipe,3*sizeof(float));
+            clonewars_breakup_geometry_debug[4]=basis.breakup_basis.clock;
+            clonewars_breakup_geometry_debug[5]=basis.breakup_basis.model;
+            clonewars_breakup_geometry_debug[6]=basis.breakup_basis.name_hash[0];
+            clonewars_breakup_geometry_debug[7]=frame->sequence;
+        }
+        ++clonewars_breakup_geometry_debug[2];
+    }
+    // The native constructor reads these temporary bone matrices, not the corrected actor position.
+    if (!live()) return;
+    if (!physics_breakup_geometry_replay(matrix,scale,&basis,&size,expected,expected+1)) {
+        ++clonewars_breakup_geometry_debug[3];fail(3,&basis,expected);return;
+    }
+    cursor+=2;clonewars_physics_input_debug[1]+=2;++clonewars_breakup_geometry_debug[1];
 }
 struct SpinScope {
     void *effect;
@@ -146,8 +216,9 @@ void restore_seed(SpinScope &s) {
     s.seeded=false;
 }
 
-extern "C" void __cdecl physics_apply_breakup_launch(const unsigned char *descriptor,const unsigned char *handle) {
-    const DWORD error=GetLastError();apply_launch(descriptor,handle);SetLastError(error);
+extern "C" void __cdecl physics_apply_breakup_launch(unsigned char *descriptor,const unsigned char *handle,float *matrix,float *scale) {
+    const DWORD error=GetLastError();apply_launch(descriptor,handle);
+    apply_breakup_geometry(descriptor,handle,matrix,scale);SetLastError(error);
 }
 extern "C" __attribute__((naked)) void physics_breakup_launch_thunk(void) {__asm__ volatile(BREAKUP_LAUNCH_THUNK_ASM);}
 void *__cdecl invoke(void *raw) {
@@ -230,6 +301,7 @@ static int physics_source_input(SyncPhysicsChoice *choice,const CoherentFrameTok
         }
         else if (choice->kind==SYNC_PHYSICS_MODULE_SEED) choice->module.value=expected->module.value;
         else if (choice->kind==SYNC_PHYSICS_GUN_JAM_SEED) choice->gun_jam.value=expected->gun_jam.value;
+        else if (choice->kind==SYNC_PHYSICS_VEHICLE_RNG) choice->vehicle_rng.value=expected->vehicle_rng.value;
         else choice->world.value=expected->world.value;
         ++cursor;++clonewars_physics_input_debug[1];
     }
@@ -254,6 +326,25 @@ int physics_module_input(SyncPhysicsChoice *choice,const CoherentFrameToken *tok
     }
     return physics_source_input(choice,token);
 }
+int physics_vehicle_rng_input(SyncPhysicsChoice *choice,const void *actor,const CoherentFrameToken *token) {
+    if (!active) return 0;
+    if (!choice || choice->kind!=SYNC_PHYSICS_VEHICLE_RNG || !token || !live() || failed ||
+        !module_cohort_same(token,&lease.cohort) || !coherent_frame_valid(token,COHERENT_PHASE_BIT(COHERENT_DISPATCH))) return -1;
+    if (!host) {
+        const auto *expected=cursor<frame->physics_choice_count?frame->physics_choices+cursor:nullptr;
+        if (!expected || expected->kind!=choice->kind || expected->site!=choice->site || !physics_choice_valid(expected)) {
+            fail(6,choice,expected);return -1;
+        }
+        const auto &v=expected->vehicle_rng;
+        SyncActor reference={};reference.slot=v.slot;reference.generation=v.generation;
+        reference.character=v.character;reference.spawn_tag=v.spawn_tag;reference.spawn_source=v.spawn_source;
+        if (!entities_bind_native_reference(&reference,actor) || !live() ||
+            !entities_observed_identity(actor,&choice->vehicle_rng.slot,&choice->vehicle_rng.generation)) {
+            fail(6,choice,expected);return -1;
+        }
+    }
+    return physics_source_input(choice,token);
+}
 int physics_input_install(void) {
     auto *launch=reinterpret_cast<unsigned char *>(0x905f33);
     const unsigned char launch_bytes[]={0xe8,0xb8,0x0b,0x06,0x00};
@@ -265,6 +356,7 @@ int physics_input_install(void) {
         if (!readable(reinterpret_cast<void *>(addresses[i]),6) || std::memcmp(reinterpret_cast<void *>(addresses[i]),bytes[i],6)) return 0;
     if (!spellit_input_install()) return 0;
     if (!module_rng_input_install()) return 0;
+    if (!vehicle_rng_input_install()) return 0;
     for (unsigned i=0;i<2;++i) {
         auto *bridge=static_cast<unsigned char *>(VirtualAlloc(nullptr,11,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
         if (!bridge) return 0;

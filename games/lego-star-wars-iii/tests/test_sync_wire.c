@@ -9,7 +9,7 @@
 #include "sync/shot_context.h"
 #include "sync/physics_input_sync.h"
 #include "sync/native_tick_sync.h"
-_Static_assert(sizeof(SyncActor)==272,"Actor wire layout changed");
+_Static_assert(sizeof(SyncActor)==280,"Actor wire layout changed");
 _Static_assert(offsetof(SyncActor,rigid_body)==196,"Native rigid body wire offset changed");
 _Static_assert(offsetof(SyncActor,party_slot)==102,"Party slot must use defined padding");
 _Static_assert(sizeof(SyncTagIdentity)==16,"Tag identity wire layout changed");
@@ -80,7 +80,103 @@ static void world_physics_inputs(void) {
     different=*step;different.spellit_step.reserved[8]=1;assert(!physics_choice_valid(&different));
     free(wire);free(decoded);free(frame);
 }
+static void breakup_launch_motion(void) {
+    const uint32_t observed[22]={3,9461560,1073741840,382,1322,536967224,2001786700,
+        513,0,1082130432,791994746,1084788834,2934384681,61924};
+    SyncPhysicsChoice local,expected;
+    memcpy(&local,observed,sizeof local);expected=local;
+    expected.recipe[3]=800383354;expected.recipe[5]=2942773289;
+    assert(physics_choice_valid(&local) && physics_choice_valid(&expected));
+    assert(physics_choice_same_source(&local,&expected));
+    unsigned char descriptor[0x30],original[0x30];
+    memset(original,0x5a,sizeof original);memcpy(original+8,local.recipe,sizeof local.recipe);
+    memcpy(descriptor,original,sizeof descriptor);
+    assert(physics_breakup_launch_replay(descriptor,&local,&expected));
+    assert(!memcmp(descriptor+0x10,expected.recipe+2,16));
+    assert(!memcmp(descriptor,original,0x10) && !memcmp(descriptor+0x20,original+0x20,0x10));
+    for (unsigned field=0;field<9;++field) {
+        SyncPhysicsChoice wrong=expected;
+        uint32_t *identity[]={&wrong.kind,&wrong.site,&wrong.flags,&wrong.model,&wrong.clock,
+            &wrong.name_hash[0],&wrong.name_hash[1],&wrong.recipe[0],&wrong.recipe[1]};
+        *identity[field]^=1;memcpy(descriptor,original,sizeof descriptor);
+        assert(!physics_breakup_launch_replay(descriptor,&local,&wrong));
+        assert(!memcmp(descriptor,original,sizeof descriptor));
+    }
+    for (unsigned field=2;field<6;++field) {
+        SyncPhysicsChoice wrong=expected;wrong.recipe[field]=0x7fc00000;
+        assert(!physics_choice_valid(&wrong));
+        memcpy(descriptor,original,sizeof descriptor);
+        assert(!physics_breakup_launch_replay(descriptor,&local,&wrong));
+        assert(!memcmp(descriptor,original,sizeof descriptor));
+        wrong.recipe[field]=0x7f800000;assert(!physics_choice_valid(&wrong));
+    }
+    local.kind=expected.kind=SYNC_PHYSICS_AXIS_SPIN;
+    local.site=expected.site=0x7425c3;local.flags=expected.flags=0x40000080;
+    assert(!physics_choice_same_source(&local,&expected));
+}
+static void breakup_geometry_inputs(void) {
+    assert(sizeof(SyncPhysicsBreakupBasisInput)==80 && sizeof(SyncPhysicsChoice)==88);
+    SyncFrame *frame=calloc(1,sizeof *frame),*decoded=calloc(1,sizeof *decoded);unsigned char *wire=malloc(sizeof *frame);
+    frame->epoch=2;frame->sequence=71;frame->level=41;frame->physics_choice_count=2;
+    SyncPhysicsChoice *basis=&frame->physics_choices[0],*scale=&frame->physics_choices[1];
+    *basis=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_BREAKUP_BASIS,.site=0x905f38,
+        .breakup_basis={.clock=73,.model=184,.name_hash={123,456},.matrix={1,0,0,0,0,1,0,0,0,0,1,0,155.8f,132.6f,38.7f,1}}};
+    *scale=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_BREAKUP_SCALE,.site=0x905f38,
+        .flags=0x40000010,.clock=73,.model=184,.name_hash={123,456}};
+    const float native_scale[3]={1,.5f,2};memcpy(scale->recipe,native_scale,sizeof native_scale);
+    SyncPhysicsChoice local_basis=*basis,local_scale=*scale;local_basis.breakup_basis.matrix[13]=132.7f;
+    float matrix[16],size[3];memset(matrix,0xa5,sizeof matrix);memset(size,0xa5,sizeof size);
+    assert(physics_breakup_geometry_replay(matrix,size,&local_basis,&local_scale,basis,scale));
+    assert(!memcmp(matrix,basis->breakup_basis.matrix,sizeof matrix) && !memcmp(size,native_scale,sizeof size));
+    size_t n=sync_frame_encode(frame,wire,sizeof *frame);assert(n && sync_frame_decode(decoded,wire,n));
+    assert(!memcmp(frame->physics_choices,decoded->physics_choices,2*sizeof *basis));
+    for(unsigned axis=0;axis<16;++axis){SyncPhysicsChoice bad=*basis;bad.breakup_basis.matrix[axis]=NAN;assert(!physics_choice_valid(&bad));}
+    for(unsigned axis=0;axis<3;++axis){SyncPhysicsChoice bad=*scale;float invalid=INFINITY;memcpy(bad.recipe+axis,&invalid,4);assert(!physics_choice_valid(&bad));}
+    for(unsigned field=0;field<6;++field){
+        SyncPhysicsChoice bad=*basis;uint32_t *identity[]={&bad.kind,&bad.site,&bad.breakup_basis.clock,&bad.breakup_basis.model,&bad.breakup_basis.name_hash[0],&bad.breakup_basis.name_hash[1]};
+        ++*identity[field];float before[16];memcpy(before,matrix,sizeof before);
+        assert(!physics_breakup_geometry_replay(matrix,size,&local_basis,&local_scale,&bad,scale));assert(!memcmp(before,matrix,sizeof before));
+    }
+    local_scale.clock++;assert(!physics_breakup_geometry_replay(matrix,size,&local_basis,&local_scale,basis,scale));
+    free(wire);free(decoded);free(frame);
+}
+static void vehicle_rng_inputs(void) {
+    _Static_assert(sizeof(SyncPhysicsVehicleRngInput)==80,"vehicle RNG input size");
+    _Static_assert(SYNC_PROTOCOL_VERSION<=UINT8_MAX,"LAN version must fit its handshake byte");
+    _Static_assert((SYNC_WIRE_VERSION^128)!=SYNC_WIRE_VERSION,"trace and release must differ");
+    SyncFrame *frame=calloc(1,sizeof *frame),*decoded=calloc(1,sizeof *decoded);
+    unsigned char *wire=malloc(sizeof *frame);assert(frame && decoded && wire);
+    frame->epoch=2;frame->sequence=5416;frame->level=41;frame->delta=.06666667f;frame->physics_choice_count=1;
+    const uint32_t sites[]={0x997f03,0x997f14,0x997f25,0x99803e,0x998085,0x9980b4,0x99813e,0x9981cf,0x998288,0x9982b7,0x9982ee};
+    for (unsigned i=0;i<sizeof sites/sizeof *sites;++i) {
+        SyncPhysicsChoice *p=frame->physics_choices;
+        *p=(SyncPhysicsChoice){.kind=SYNC_PHYSICS_VEHICLE_RNG,.site=sites[i],
+            .vehicle_rng={.clock=5418,.value=3338446660u,.slot=5,.generation=229,.spawn_tag=0xcb8c1,
+                .character=381,.spawn_source={1,1},.vehicle_type=4}};
+        const size_t bytes=sync_frame_encode(frame,wire,sizeof *frame);
+        assert(bytes && sync_frame_decode(decoded,wire,bytes));
+        assert(!memcmp(p,decoded->physics_choices,sizeof *p));
+        SyncPhysicsChoice altered=*p;altered.vehicle_rng.value=1325471230;
+        assert(physics_choice_same_source(p,&altered));
+        for (unsigned field=0;field<8;++field) {
+            altered=*p;
+            uint32_t *identity[]={&altered.vehicle_rng.clock,&altered.vehicle_rng.slot,&altered.vehicle_rng.generation,
+                &altered.vehicle_rng.spawn_tag,(uint32_t *)&altered.vehicle_rng.character,
+                &altered.vehicle_rng.spawn_source.producer,&altered.vehicle_rng.spawn_source.serial,&altered.vehicle_rng.vehicle_type};
+            ++*identity[field];assert(!physics_choice_same_source(p,&altered));
+        }
+        altered=*p;altered.vehicle_rng.slot=SYNC_MAX_ACTORS;assert(!physics_choice_valid(&altered));
+        altered=*p;altered.vehicle_rng.generation=0;assert(!physics_choice_valid(&altered));
+        altered=*p;altered.vehicle_rng.character=-1;assert(!physics_choice_valid(&altered));
+        for(unsigned j=0;j<11;++j){altered=*p;altered.vehicle_rng.reserved[j]=1;assert(!physics_choice_valid(&altered));}
+        altered=*p;++altered.site;assert(!physics_choice_valid(&altered));
+    }
+    free(wire);free(decoded);free(frame);
+}
 int main(void) {
+    breakup_launch_motion();
+    breakup_geometry_inputs();
+    vehicle_rng_inputs();
     world_physics_inputs();
     SyncFrame *input=calloc(1,sizeof(*input)),*output=calloc(1,sizeof(*output));
     unsigned char *wire=malloc(sizeof(*input));
@@ -128,6 +224,8 @@ int main(void) {
     input->actors[1].animation.frames[3]=19.5f;
     input->actors[1].animation.clips[2]=-1;
     input->actors[1].position[1]=1;
+    const uint32_t native_motion_origin[]={0x431d103b,0x4304a96d,0x420c9113};
+    memcpy(input->actors[1].motion_origin,native_motion_origin,sizeof native_motion_origin);
     input->actors[1].body=(SyncActorBody){.active=1,.position={1,.078638f,-3},.velocity={.1f,-.25f,.2f,0},.floor_height=.080519f};
     input->actors[1].rigid_body=(SyncRigidBody){.active=1,.transform={0,0,1,0,0,1,0,0,-1,0,0,0,12,3,-5,1}};
     input->actors[1].previous_position[1]=.5f;
@@ -223,6 +321,7 @@ int main(void) {
     assert(!sync_frame_encode(input,wire,sizeof(*input)));
     input->variables[2].scope=SYNC_VARIABLE_AREA_DECLARATION;
     assert(output->actors[1].position[1]==1 && output->actors[1].previous_position[1]==.5f);
+    assert(!memcmp(output->actors[1].motion_origin,native_motion_origin,sizeof native_motion_origin));
     assert(output->actors[1].render_position[1]==2 && output->actors[1].previous_render_position[1]==1.5f);
     assert(output->actors[1].velocity[1]==3 && output->actors[1].render_heading==1234 && output->combat_ready==1);
     assert(output->actors[1].generation==8 && output->actors[1].spawn_tag==0x5c5cff && output->actors[1].spawn_position[2]==3.5f);
@@ -428,6 +527,11 @@ int main(void) {
     input->sequence=0; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->sequence=1;
     input->actors[1].animation.frames[0]=NAN;
     assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].animation.frames[0]=0;
+    for (unsigned axis=0;axis<3;++axis) {
+        input->actors[1].motion_origin[axis]=NAN;
+        assert(!sync_frame_encode(input,wire,sizeof(*input)));
+        memcpy(input->actors[1].motion_origin,native_motion_origin,sizeof native_motion_origin);
+    }
     input->actors[1].body.active=0;
     assert(!sync_frame_encode(input,wire,sizeof(*input))); input->actors[1].body.active=1;
     input->actors[1].body.velocity[1]=INFINITY;
@@ -465,13 +569,13 @@ int main(void) {
     input->cadence[0].period=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence[0].period=8;
     input->cadence[0].phase=256;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence[0].phase=5;
     input->cadence[0].elapsed=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence[0].elapsed=.05f;
-    input->cadence_reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence_reserved=0;
+    input->numeric_mxcsr=UINT32_MAX;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->numeric_mxcsr=0;
     assert(output->reaction_count==4 && output->reactions[0].clip==975 && output->reactions[0].source_id==667 && output->reactions[1].clip==-1 && output->reactions[1].old_action==20);
     input->reaction_reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reaction_reserved=0;
     input->reactions[0].clip=4096;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[0].clip=975;
     input->reactions[0].generation=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[0].generation=26;
     input->reactions[0].origin[0]=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[0].origin[0]=0;
-    input->actor_input_reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->actor_input_reserved=0;
+    input->numeric_cw=0x100;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->numeric_cw=0;
     input->engine_delta=NAN; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->engine_delta=.017f;
     input->shots[0].phase=2; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[0].phase=1;
     input->shots[0].delta=INFINITY; assert(!sync_frame_encode(input,wire,sizeof(*input))); input->shots[0].delta=.015f;

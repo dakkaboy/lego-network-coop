@@ -510,6 +510,47 @@ flight-completion170 rejected with -16 at native clock29588, leaving36
 recorded physical choices unconsumed; flight-combat-source170-r3 first
 rejected with -15 at native clock15453 because a geometry reference to
 slot6/generation219 could not resolve. The successful complete route does
-not close either failure. The latter run's fault exports were saved before
-a diagnostic teardown crash; its later terminal capture is invalid. No
-production change has yet been justified by those source traces.
+not close either failure. The latter run's first-fault counters were read
+live and saved before a diagnostic teardown crash; its actor-table dump was
+lost and its terminal capture is invalid. Those traces did not establish a
+production fix.
+
+
+## Flight verification, 12 November 2026
+
+Candidate178 (wire131/layout54) completed Shadow of Malevolence on two offscreen
+instances in one session. Both landing pads and levers worked, all three shield
+scripts completed, all12 external torpedo targets and FINAL_TARGET were destroyed
+on both peers. Original shooting, refill, death and respawn calls remained in use.
+The route retained its bounded navigation failures and continued in the same
+session; no health, ammo, position, hit or objective state was forced.
+
+Both peers naturally entered OUTRO and Status, showed15160 studs, and returned
+to CWHub through the native Continue Story menu. Enter first advanced the results
+presentation; another Enter confirmed the displayed menu. Both players accepted
+attack input in the Hub. All107 Hub variables matched, with equal session and
+epoch and no first-fault/reject record. The original HUD, separate views and
+textured geometry were reviewed on paired frames. SHA256 of the tested DLL:
+AB8042999E9B6945EE9686C092F96A961FC5B5EEA1433C267247E606B12BEB8E.
+
+The outgoing preload receipt fix was exercised: at the end of OUTRO, the host
+held its old epoch while its final native serial260 was applied locally but the
+client receipt still described259. Three waits were recorded before both entered
+Status and later Hub. This covers the earlier lost-final-receipt transition.
+
+The candidate also carries native damaged-flight RNG inputs, retained allocation
+checks, native numeric controls, character solver origin, and native projectile
+pool release coverage. Tests cover the actual ABI bridges and source/lifetime
+regressions; all33 repository tests pass. The new breakup matrix/scale records
+were consumed390 times with equal original operands, so this run does not prove
+that those operands fix the rare interaction failure.
+
+Earlier -15 interaction failures remain open. A preceding run captured the
+client losing native contact with a LeftLeg_Blowup_HIGH body while the host
+retained it, before their interaction checks diverged. Initial matrix/scale
+coverage is not a substitute for resolving that contact source. An earlier
+42BEF2 selected-body lifetime crash and a persistent torpedo inventory difference
+also remain unproven fixes. Neither reproduced in this complete run. The diagnostic hardware
+execution breakpoints were disabled before the final Hub checks; this run makes
+no performance claim. The campaign
+and separate-PC play are not qualified by this local route.

@@ -548,6 +548,32 @@ static int bind_frame(const SyncFrame *frame,int before_tick) {
 }
 int entities_bind(const SyncFrame *frame) {return bind_frame(frame,0);}
 int entities_bind_tick(const SyncFrame *frame) {return bind_frame(frame,1);}
+int entities_bind_native_reference(const SyncActor *reference,const void *actor) {
+    if (!reference || reference->slot>=SYNC_MAX_ACTORS || !reference->generation || lan_is_host()) return 0;
+    entities_update();
+    const int slot=raw_slot(actor),count=game_actor_count();
+    if (slot<0 || slot>=count || !entities_allocation_retained(actor,local[slot].key.generation) ||
+        !reference_matches(&local[slot].key,reference) || local[slot].key.spawn_tag!=reference->spawn_tag) return 0;
+    const Binding *history=known+reference->slot;
+    if (history->remote_generation==reference->generation) {
+        if (history->local_slot!=slot || history->local_generation!=local[slot].key.generation) return 0;
+    } else {
+        if (!reference->spawn_source.producer) return 0;
+        for (int other=0;other<count;++other)
+            if (other!=slot && reference_matches(&local[other].key,reference) &&
+                entities_allocation_retained(pool+other*0x1440,local[other].key.generation)) return 0;
+    }
+    if (assigned[slot].local_generation==local[slot].key.generation &&
+        (assigned[slot].remote_slot!=reference->slot || assigned[slot].remote_generation!=reference->generation)) return 0;
+    const Binding *previous=bindings+reference->slot;
+    if (previous->remote_generation && previous->local_slot!=slot && previous->local_slot>=0 &&
+        previous->local_slot<count && entities_allocation_retained(pool+previous->local_slot*0x1440,previous->local_generation)) return 0;
+    const Binding value={reference->generation,local[slot].key.generation,slot};
+    bindings[reference->slot]=known[reference->slot]=value;inverse[slot]=(int)reference->slot;
+    assigned[slot].local_generation=value.local_generation;assigned[slot].remote_slot=reference->slot;
+    assigned[slot].remote_generation=reference->generation;
+    return 1;
+}
 static int bind_native_actor(const SyncFrame *frame,const void *actor) {
     if(!frame || frame->actor_count>SYNC_MAX_ACTORS || lan_is_host())return 0;
     entities_update();const int slot=raw_slot(actor);
@@ -587,14 +613,17 @@ void *entities_actor(uint32_t network_slot,uint32_t wanted_generation) {
     if (lan_is_host() && local[slot].key.generation!=wanted_generation) return NULL;
     return pool+slot*0x1440;
 }
-int entities_allocation_live(const void *actor,uint32_t generation) {
+int entities_allocation_retained(const void *actor,uint32_t generation) {
     if (!generation || ENTITY_POOL!=pool) return 0;
     int slot=raw_slot(actor);
     if (slot<0 || slot>=game_actor_count() || !valid(actor,0x1440)) return 0;
     const char *p=actor;const LocalEntity *entry=local+slot;
     return entry->origin_ready && entry->key.generation==generation &&
-        (*(const uint32_t *)(p+0x50)&3)==3 && entry->model==*(char *const *)(p+8) &&
+        (*(const uint32_t *)(p+0x50)&1) && entry->model==*(char *const *)(p+8) &&
         entry->key.character==*(const int16_t *)(p+0xdc0);
+}
+int entities_allocation_live(const void *actor,uint32_t generation) {
+    return entities_allocation_retained(actor,generation) && (*(const uint32_t *)((const char *)actor+0x50)&3)==3;
 }
 uint32_t entities_local_generation(const void *actor) {
     entities_update(); int slot=raw_slot(actor);

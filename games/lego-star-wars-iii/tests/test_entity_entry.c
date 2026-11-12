@@ -217,6 +217,53 @@ static void test_cold_tag_binding(void) {
     memcpy(entity_test_players,saved_players,sizeof saved_players);entities_update();
 }
 
+static void test_native_reference_binding(void) {
+    char *saved_pool=entity_test_pool,*saved_players[8];
+    memcpy(saved_players,entity_test_players,sizeof saved_players);
+    entity_test_pool=calloc(ACTOR_COUNT,ACTOR_STRIDE);assert(entity_test_pool);
+    memset(entity_test_players,0,sizeof entity_test_players);
+    char *actor=entity_test_pool,*other=actor+ACTOR_STRIDE;
+    const uint32_t active=3,inactive=0;const int16_t character=381;
+    memcpy(actor+0x50,&active,4);memcpy(actor+0xdc0,&character,2);
+    entities_update();entities_note_spawn_source(actor,0xcb8c1,(SyncSpawnSource){1,7});
+    SyncActor reference={.slot=70,.generation=900,.character=381,.spawn_tag=0xcb8c1,.spawn_source={1,7}};
+    assert(entities_bind_native_reference(&reference,actor));
+    uint32_t slot,generation;
+    assert(entities_observed_identity(actor,&slot,&generation) && slot==70 && generation==900);
+    const uint32_t local_generation=entities_local_generation(actor),retained=0x81;
+    memcpy(actor+0x50,&retained,4);
+    assert(entities_allocation_retained(actor,local_generation));
+    assert(!entities_allocation_live(actor,local_generation));
+    assert(entities_bind_native_reference(&reference,actor));
+    assert(!entities_resolve_reference(&reference));
+    const uintptr_t wrong_model=1;
+    memcpy(actor+8,&wrong_model,sizeof wrong_model);
+    assert(!entities_allocation_retained(actor,local_generation));
+    assert(!entities_bind_native_reference(&reference,actor));
+    memset(actor+8,0,sizeof wrong_model);
+    memcpy(actor+0x50,&active,4);
+    assert(entities_allocation_live(actor,local_generation));
+    SyncFrame *empty=calloc(1,sizeof *empty);assert(empty);
+    assert(entities_bind(empty) && !entities_observed_identity(actor,&slot,&generation));
+    assert(entities_bind_native_reference(&reference,actor));
+    SyncActor wrong=reference;++wrong.spawn_source.serial;
+    assert(!entities_bind_native_reference(&wrong,actor));
+    memcpy(actor+0x50,&inactive,4);entities_update();
+    assert(!entities_allocation_retained(actor,local_generation));
+    assert(!entities_bind_native_reference(&reference,actor));
+    memcpy(actor+0x50,&active,4);entities_update();entities_note_spawn_source(actor,0xcb8c1,(SyncSpawnSource){1,7});
+    assert(!entities_bind_native_reference(&reference,actor));
+    ++reference.generation;
+    memcpy(other+0x50,&active,4);memcpy(other+0xdc0,&character,2);entities_update();
+    entities_note_spawn_source(other,0xcb8c1,(SyncSpawnSource){1,7});
+    assert(!entities_bind_native_reference(&reference,actor));
+    memcpy(other+0x50,&inactive,4);entities_update();
+    assert(entities_bind_native_reference(&reference,actor));
+    assert(entities_actor(70,901)==actor && !entities_actor(70,900));
+    assert(!entities_bind_native_reference(&reference,other));
+    free(empty);free(entity_test_pool);entity_test_pool=saved_pool;
+    memcpy(entity_test_players,saved_players,sizeof saved_players);entities_update();
+}
 int main(void) {
     EntityKey requested={.generation=12,.spawn_tag=5,.character=171,.spawn_source={0xe033ae01,2}};
     EntityKey candidates[]={
@@ -325,6 +372,7 @@ int main(void) {
     test_retiring_tag_operands();
     test_cold_tag_binding();
     test_last_native_weapon_command();
+    test_native_reference_binding();
 
     free(frame);
     free(entity_test_pool);

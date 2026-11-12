@@ -250,5 +250,21 @@ int main(){
   require(preload_state_finish(&state,&done));require(preload_state_finish(&state,&done));
  }
  require(state.completed&&preload_state_seal(&state,5000));
+ state=bound();state.input=source(259);state.applied={258,1,13};state.completed=1;
+ const auto before_final=state.applied;
+ SyncPreloadReceipt final_tick{259,1,13};final_tick.flow_count=1;final_tick.flow_requests[0]=UINT32_MAX;
+ require(preload_transition_pending(&state,11,5,7,nullptr)==1);
+ require(preload_transition_pending(&state,11,5,7,&final_tick)==1);
+ require(preload_state_finish(&state,&final_tick));
+ require(preload_transition_pending(&state,11,5,7,nullptr)==1);
+ require(preload_transition_pending(&state,11,5,7,&before_final)==1);
+ require(preload_transition_pending(&state,11,5,7,&final_tick)==0);
+ auto different_final=final_tick;different_final.flow_requests[0]=14;
+ require(preload_transition_pending(&state,11,5,7,&different_final)==-1);
+ require(preload_transition_pending(&state,12,5,7,nullptr)==0);
+ require(preload_transition_pending(&state,11,6,7,nullptr)==0);
+ require(preload_transition_pending(&state,11,5,8,nullptr)==0);
+ require(preload_state_seal(&state,259));
+ require(preload_transition_pending(&state,11,5,7,nullptr)==0);
  std::puts("preload stream state: passed");
 }

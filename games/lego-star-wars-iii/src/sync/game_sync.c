@@ -79,6 +79,7 @@ static int core_dispatch_authority(void);
 static void core_note_initialized_level(int);
 static void core_note_world_complete(void);
 static int core_preload_tick(void *flow);
+static int core_preload_transition_waiting(void);
 static DWORD core_tick_thread;
 static DWORD core_window_thread;
 static volatile LONG deferred_assignment_restore,core_reject_bits;
@@ -226,8 +227,10 @@ static int epoch_needs_transition(int target,int transitioning) {
     return !interval.active || interval.level!=target || (interval_started && transitioning);
 }
 int game_sync_transition_waiting(int target,int transitioning) {
-    if(!interval.active || !last_published_sequence || observed_lan_session!=lan_session_serial() ||
+    if(!interval.active || observed_lan_session!=lan_session_serial() ||
        !epoch_needs_transition(target,transitioning))return 0;
+    if(core_preload_transition_waiting())return 1;
+    if(!last_published_sequence)return 0;
     const uint32_t ack=lan_peer_ack();
     if(ack==last_published_sequence)return 0;
     ++clonewars_transition_drain_debug[0];
@@ -587,6 +590,7 @@ static int collect_actors(SyncFrame *frame) {
         memcpy(a->render_position,p+0xf28,12);
         memcpy(a->previous_render_position,p+0xf40,12);
         memcpy(a->velocity,p+0xf10,12);
+        memcpy(a->motion_origin,p+0xe2c,sizeof(a->motion_origin));
         a->heading=*(uint16_t *)(p+0x6c);
         a->render_heading=*(uint16_t *)(p+0xf0c);
         a->health=*(int8_t *)(p+0xdde); a->max_health=*(uint8_t *)(p+0xddd);
@@ -640,6 +644,7 @@ static int restore_actor_body(char *actor,const SyncActorBody *state,
     return 1;
 }
 
+__declspec(dllexport) volatile uint32_t clonewars_actor_motion_origin_debug[12];
 static int correct_actors_impl(const SyncFrame *frame,const CoherentFrameToken*original) {
     if(!core_live()||!coherent_frame_valid(original,COHERENT_PHASE_BIT(COHERENT_DISPATCH)))return 0;
     if (!entities_bind(frame)) return 0;
@@ -680,6 +685,20 @@ static int correct_actors_impl(const SyncFrame *frame,const CoherentFrameToken*o
         memcpy(p+0xf28,a->render_position,12);
         memcpy(p+0x30,a->previous_position,12); memcpy(p+0xf40,a->previous_render_position,12);
         memcpy(p+0xf10,a->velocity,12);
+        if(memcmp(p+0xe2c,a->motion_origin,sizeof(a->motion_origin))){
+            if(!clonewars_actor_motion_origin_debug[0]){
+                clonewars_actor_motion_origin_debug[1]=*(uint32_t*)0xfb4b6c;
+                clonewars_actor_motion_origin_debug[2]=a->slot;
+                clonewars_actor_motion_origin_debug[3]=a->generation;
+                memcpy((void*)(clonewars_actor_motion_origin_debug+4),p+0xe2c,sizeof(a->motion_origin));
+                memcpy((void*)(clonewars_actor_motion_origin_debug+7),a->motion_origin,sizeof(a->motion_origin));
+                clonewars_actor_motion_origin_debug[10]=frame->sequence;
+                clonewars_actor_motion_origin_debug[11]=a->body.active;
+            }
+            ++clonewars_actor_motion_origin_debug[0];
+        }
+        // 9C41ED derives solver motion from this origin; correcting only position injects a local displacement.
+        memcpy(p+0xe2c,a->motion_origin,sizeof(a->motion_origin));
         *(int8_t *)(p+0xdde)=a->health; *(uint8_t *)(p+0xddd)=a->max_health;
         uint64_t *wallet=*(uint64_t **)(p+0x5b0);
         if (a->has_wallet && valid(wallet,8)) *wallet=a->wallet;

@@ -12,15 +12,15 @@
 #define SYNC_MAX_SPAWN_TIMER_CHOICES (SYNC_MAX_SPAWN_TIMERS + SYNC_MAX_RTS_TEAMS * 4)
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
-#define SYNC_LAYOUT_VERSION 50
-#define SYNC_WIRE_VERSION 127
+#define SYNC_LAYOUT_VERSION 54
+#define SYNC_WIRE_VERSION 131
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
 #define SYNC_NATIVE_SPAN_CALLS_MASK 3u
 #define SYNC_FIRE_TASK_QUEUES_SHOT 0x40u
 #ifdef STEERING_TRACE_ONLY
-#define SYNC_PROTOCOL_VERSION (SYNC_WIRE_VERSION|128)
+#define SYNC_PROTOCOL_VERSION (SYNC_WIRE_VERSION^128)
 #else
 #define SYNC_PROTOCOL_VERSION SYNC_WIRE_VERSION
 #endif
@@ -175,6 +175,7 @@ typedef struct SyncActor {
     SyncSpawnSource spawn_source;
     SyncActorBody body;
     SyncRigidBody rigid_body;
+    float motion_origin[3];
 } SyncActor;
 
 enum SyncVariableScope {
@@ -371,7 +372,8 @@ enum SyncPhysicsChoiceKind {
     SYNC_PHYSICS_SPELLIT_SEED=4, SYNC_PHYSICS_SPELLIT_ENTITY=5, SYNC_PHYSICS_SPELLIT_ENABLED=6,
     SYNC_PHYSICS_MODULE_SEED=7, SYNC_PHYSICS_GUN_JAM_SEED=8, SYNC_PHYSICS_SPELLIT_POSE=9,
     SYNC_PHYSICS_SPELLIT_STEP=10, SYNC_PHYSICS_SPELLIT_SELECTION=11,
-    SYNC_PHYSICS_SPELLIT_BODY_BASIS=12, SYNC_PHYSICS_SPELLIT_BODY_MOTION=13
+    SYNC_PHYSICS_SPELLIT_BODY_BASIS=12, SYNC_PHYSICS_SPELLIT_BODY_MOTION=13,
+    SYNC_PHYSICS_VEHICLE_RNG=14, SYNC_PHYSICS_BREAKUP_BASIS=15, SYNC_PHYSICS_BREAKUP_SCALE=16
 };
 typedef struct SyncPhysicsWorldInput {
     uint32_t clock,value;
@@ -415,6 +417,17 @@ typedef struct SyncPhysicsSpellItBodyInput {
     uint32_t clock,key[4],body_class,piece_ordinal,reserved;
     float values[12];
 } SyncPhysicsSpellItBodyInput;
+
+typedef struct SyncPhysicsVehicleRngInput {
+    uint32_t clock,value,slot,generation,spawn_tag;
+    int32_t character;
+    SyncSpawnSource spawn_source;
+    uint32_t vehicle_type,reserved[11];
+} SyncPhysicsVehicleRngInput;
+typedef struct SyncPhysicsBreakupBasisInput {
+    uint32_t clock,model,name_hash[2];
+    float matrix[16];
+} SyncPhysicsBreakupBasisInput;
 typedef struct SyncPhysicsChoice {
     uint32_t kind,site;
     union {
@@ -429,6 +442,8 @@ typedef struct SyncPhysicsChoice {
         SyncPhysicsSpellItStepInput spellit_step;
         SyncPhysicsSpellItSelectionInput spellit_selection;
         SyncPhysicsSpellItBodyInput spellit_body;
+        SyncPhysicsVehicleRngInput vehicle_rng;
+        SyncPhysicsBreakupBasisInput breakup_basis;
     };
 } SyncPhysicsChoice;
 
@@ -454,8 +469,8 @@ typedef struct SyncFrame {
     uint32_t shot_count,projectile_count;
     uint32_t tag_count;
     uint32_t combat_ready;
-    uint32_t actor_input_count,actor_input_reserved;
-    uint32_t cadence_count,cadence_reserved;
+    uint32_t actor_input_count,numeric_cw;
+    uint32_t cadence_count,numeric_mxcsr;
     uint32_t geometry_count,geometry_calls;
     uint32_t reaction_count,reaction_reserved;
     uint32_t model_input_count,model_input_reserved;

@@ -2,7 +2,7 @@
 #include "cadence_sync.h"
 void cadence_journal_begin(CadenceJournal *journal,SyncFrame *frame,int host) {
     *journal=(CadenceJournal){.frame=frame,.host=host};
-    if (host) frame->cadence_count=frame->cadence_reserved=0;
+    if (host) frame->cadence_count=0;
 }
 static int entry_valid(const SyncCadence *entry) {
     return entry && entry->slot<SYNC_MAX_ACTORS && entry->generation && entry->period && entry->period<=255 && entry->phase<=255 && isfinite(entry->elapsed) && entry->elapsed>=0;
