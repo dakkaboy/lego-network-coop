@@ -869,3 +869,48 @@ call, arguments, CPU/FPU state and LastError. All33 tests pass. The paired fligh
 Status and Continue Story to Hub in one session. All390 geometry records had
 equal original operands; no correction was observed. The earlier contact fork
 therefore remains open. See the12 November verification in SYNC_NOTES.md.
+
+## Emitted-body ownership and moving-support history
+
+The common exit at `7427D8` observes the result of the original `741F90`
+constructor. Physical effects own a receiver at `+1F8`; its `+1A0` points to
+the native body. The physical flag, native part resource/name, model and clock
+qualify an ordered birth record. Epoch, frame and journal event identify that
+birth across peers. A local pool slot or heap address is never its network ID.
+
+The native allocator reuses body addresses. Resolution therefore validates the
+current active effect, receiver, body and resource links, revokes retired local
+bindings and continues searching. A stale earlier slot must not hide a later
+live owner. Multiple live owners reject the frame. The native frame release
+and world epoch also qualify each binding; game allocation and retirement are
+unchanged.
+
+`A31D30` reads the previous moving support's local anchor at character-body
+`+110`, normal at `+F0`, material at `+102` and cache-valid bit at `+C0` before
+the next contact query. `A38316` writes the anchor through the original
+`574950` transform. The character motion input now carries that history when
+the original selected support resolves to the same emitted-body birth.
+Neither the selected body pointer nor the new contact result is assigned by
+the mod. The original velocity setter, contact solver, ground writer and
+interaction predicates still execute.
+
+## Native no-animation hit completion
+
+At `96A1BD`, clip `-1` takes the branch at `96A1C4` directly to the epilogue at
+`96A3FF`. Non-arena calls without a projectile source and without an animation
+do not need animation-journal entries. A pending real animation still uses the
+original actor, action, source and resource checks.
+
+Projectile hits retain their no-animation records as duplicate-hit evidence.
+The wrapper captures the existing victim allocation and projectile source
+before one original HIT call. At its completion, a missing animation callback
+can consume only the matching no-animation receipt. Native health, allocation,
+life byte, action and immunity timer before and after HIT must agree. A missing
+damage draw, real animation, arena event or different hit outcome still rejects
+the frame. No HIT is repeated and no damage result is written.
+
+Wire 134/layout 54 retains the 88-byte physics choice, 96-byte reaction choice and
+3,914,832-byte frame. Support history uses the existing 68-byte actor-gate union;
+the 36-byte hit outcome uses the existing reaction union. Tests cover 3000 native
+constructor-exit ABI comparisons, reused addresses, retired bindings, ambiguous
+owners, source/finite-value guards, cache replay and native-hit receipt outcomes.

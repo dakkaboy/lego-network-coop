@@ -554,3 +554,46 @@ also remain unproven fixes. Neither reproduced in this complete run. The diagnos
 execution breakpoints were disabled before the final Hub checks; this run makes
 no performance claim. The campaign
 and separate-PC play are not qualified by this local route.
+
+## 12 November: emitted support sources and hit completion
+
+The native physical-effect constructor now supplies the lifetime identity of
+emitted bodies. Resolution checks native ownership links instead of accepting
+a reused address or stopping at an earlier retired entry. Character motion
+also carries the original moving-support cache for that same birth. This
+avoids combining a corrected character pose with unrelated local support
+history. New contact selection, ground state and hit results remain native.
+
+The animation journal also distinguishes the native no-animation exit from
+a completed projectile hit. No-animation projectile receipts remain available
+to the duplicate-hit guard. Accepting a missing callback requires a completed
+original HIT for the same victim/source and equal native before/after health,
+allocation, life, action and immunity timer. Positive animation choices, damage
+draws and arena events retain their strict checks.
+
+Candidate 181 completed Shadow of Malevolence on two offscreen local instances
+in one session: both landing pads, levers, reboarding, all three shield scripts,
+all 13 targets, native OUTRO, Status and Continue Story back to CWHub. Results
+showed 36,860 studs on both peers. Both accepted attack input after returning;
+all 107 Hub variables matched in session 1/epoch 5, with no first-fault or reject.
+Paired frames show the original HUD, separate cameras and textured geometry.
+
+Both peers registered 433 physical births and revoked 3 retired bindings without
+an ambiguous owner. The trace records both selecting the same Torso_Blowup
+support at native clock 5584, with identical positions and support matrices.
+Both consumed one emitted-support history input. The B landing, lever and
+reboarding passed beyond the preceding failed contact-source lookup.
+
+The passing run had equal cache operands, so no cache correction was observed.
+Its missing-callback completion counter also stayed zero; the strict outcome
+and changed-cache paths are covered by unit tests. The earlier saved
+LeftLeg_Blowup_HIGH fork was not replayed from an identical state. This result
+qualifies the checked route and the exercised binding-reuse case, rather than
+every contact configuration, mission or separate-PC session.
+
+All 35 repository tests pass. The outgoing preload barrier again waited for the
+client's final receipt: native serial 261 was local while 260 was acknowledged,
+then both entered the next level. The tested DLL SHA256 is
+73AE7CF4C914D175189D20270081F1416EC04C8B6705D0388A31D143D920FFEE.
+Local traces, paired frames and the verification manifests are retained in
+flight-native-contact-source181-r1.

@@ -571,6 +571,13 @@ int main(void) {
     input->cadence[0].elapsed=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->cadence[0].elapsed=.05f;
     input->numeric_mxcsr=UINT32_MAX;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->numeric_mxcsr=0;
     assert(output->reaction_count==4 && output->reactions[0].clip==975 && output->reactions[0].source_id==667 && output->reactions[1].clip==-1 && output->reactions[1].old_action==20);
+    input->reactions[1].hit=(SyncReactionHitOutcome){.completed=1,.health_before=4,.health_after=3,.life_before=3,.life_after=3,.timer_after=.25f};
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(!memcmp(&input->reactions[1].hit,&output->reactions[1].hit,sizeof(SyncReactionHitOutcome)));
+    input->reactions[1].hit.timer_after=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[1].hit.timer_after=.25f;
+    input->reactions[1].hit.life_after=2;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[1].hit.life_after=3;
+    input->reactions[1].hit.health_after=128;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[1].hit.health_after=3;
+    input->reactions[1].hit.completed=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));memset(&input->reactions[1].hit,0,sizeof(input->reactions[1].hit));
     input->reaction_reserved=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reaction_reserved=0;
     input->reactions[0].clip=4096;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[0].clip=975;
     input->reactions[0].generation=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->reactions[0].generation=26;
@@ -665,7 +672,18 @@ int main(void) {
         input->fire_task_gates[0].character_motion.velocity[component]=saved;
     }
     input->fire_task_gates[0].character_motion.body_class=0;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].character_motion.body_class=0x869f1c;
-    input->fire_task_gates[0].storage[sizeof(SyncCharacterMotionState)]=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].storage[sizeof(SyncCharacterMotionState)]=0;
+    input->fire_task_gates[0].character_motion.support_frame=6;
+    assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[0].character_motion.support_event=3;
+    input->fire_task_gates[0].character_motion.support_anchor[3]=1;
+    input->fire_task_gates[0].character_motion.support_normal[1]=1;
+    input->fire_task_gates[0].character_motion.support_material_flags=0x10400;
+    bytes=sync_frame_encode(input,wire,sizeof(*input));assert(bytes && sync_frame_decode(output,wire,bytes));
+    assert(!memcmp(&input->fire_task_gates[0].character_motion,&output->fire_task_gates[0].character_motion,sizeof(SyncCharacterMotionState)));
+    input->fire_task_gates[0].character_motion.support_anchor[0]=NAN;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[0].character_motion.support_anchor[0]=0;
+    input->fire_task_gates[0].character_motion.support_material_flags|=0x20000;assert(!sync_frame_encode(input,wire,sizeof(*input)));
+    input->fire_task_gates[0].character_motion.support_material_flags=0x10400;
     input->fire_task_gates[0].value=1;assert(!sync_frame_encode(input,wire,sizeof(*input)));input->fire_task_gates[0].value=0;
     memset(input,0,sizeof(*input));
     input->epoch=9;input->sequence=1;input->level=7;input->fire_task_gate_count=1;

@@ -220,7 +220,9 @@ static void*__cdecl hit_lexical_invoke(void*raw){
     reaction_client_duplicate_projectile((void*)(uintptr_t)c->args[1],source.id))return NULL;
  c->cause=(DamageCause){active_damage,source.status==SHOT_LIVE?source.id:0,source.status,c->caller};active_damage=&c->cause;
  if(clonewars_combat_observer_enabled){begin(&c->scope,1,c->caller,c->args);c->observed=1;}
+ ReactionDamageReceipt receipt;reaction_damage_begin(&receipt,(const void *)(uintptr_t)c->args[1],c->cause.id);
  c->result=original_hit(c->args[0],c->args[1],c->args[2],c->args[3],c->args[4],c->args[5]);
+ reaction_damage_complete(&receipt);
  if(c->observed)finish(&c->scope,c->result);
  active_damage=c->cause.previous;return (void*)(uintptr_t)c->result;
 }

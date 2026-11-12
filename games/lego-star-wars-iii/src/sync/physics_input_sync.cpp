@@ -5,6 +5,8 @@
 #include <cstring>
 #include "physics_input_sync.h"
 #include "../engine/breakup_launch_thunk.h"
+#include "../engine/effect_birth_thunk.h"
+#include "../engine/native_effect_binding.hpp"
 #include "spellit_input_sync.h"
 #include "module_rng_input_sync.h"
 #include "vehicle_rng_input_sync.h"
@@ -25,6 +27,8 @@ SyncFrame *frame;
 GeometryFrameLease lease;
 uint32_t cursor,last_epoch;
 bool active,host,failed;
+using EffectBodySource=clonewars::engine::NativeEffectBodyBinding;
+EffectBodySource effect_bodies[SYNC_MAX_ACTORS];
 
 bool readable(const void *p,size_t size) {
     MEMORY_BASIC_INFORMATION m;
@@ -53,6 +57,8 @@ __declspec(dllexport) volatile uint32_t clonewars_breakup_launch_motion_debug[14
 __declspec(dllexport) volatile uint32_t clonewars_breakup_geometry_debug[8];
 __declspec(dllexport) volatile uint32_t clonewars_breakup_geometry_local[19],clonewars_breakup_geometry_host[19];
 __attribute__((used)) static volatile uintptr_t breakup_launch_native=0x966af0;
+__attribute__((used)) static volatile uintptr_t effect_birth_resume=0x7427df;
+__declspec(dllexport) volatile uint32_t clonewars_effect_birth_debug[8];
 }
 
 namespace {
@@ -60,9 +66,15 @@ uint32_t failure_source_word(const SyncPhysicsChoice *choice) {
     if (!choice) return 0;
     if (choice->kind==SYNC_PHYSICS_BREAKUP_BASIS) return choice->breakup_basis.name_hash[0];
     if (choice->kind==SYNC_PHYSICS_BREAKUP_SCALE) return choice->name_hash[0];
+    if (choice->kind==SYNC_PHYSICS_EFFECT_BIRTH) return choice->name_hash[0];
     if (choice->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS || choice->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION)
         return choice->spellit_body.key[0];
     return choice->kind>=SYNC_PHYSICS_SPELLIT_SEED?choice->world.source_name[0]:choice->name_hash[0];
+}
+uint32_t failure_clock(const SyncPhysicsChoice *choice) {
+    if (!choice) return 0;
+    return choice->kind<SYNC_PHYSICS_SPELLIT_SEED || choice->kind==SYNC_PHYSICS_BREAKUP_SCALE ||
+        choice->kind==SYNC_PHYSICS_EFFECT_BIRTH ? choice->clock : choice->world.clock;
 }
 int fail(unsigned reason,const SyncPhysicsChoice *local=nullptr,const SyncPhysicsChoice *expected=nullptr) {
     if (!live()) return 0;
@@ -73,8 +85,7 @@ int fail(unsigned reason,const SyncPhysicsChoice *local=nullptr,const SyncPhysic
         const uint32_t values[]={frame->epoch,frame->sequence,cursor,reason,
             local?local->kind:0,expected?expected->kind:0,
             failure_source_word(local),failure_source_word(expected),
-            local?(local->kind>=SYNC_PHYSICS_SPELLIT_SEED?local->world.clock:local->clock):0,
-            expected?(expected->kind>=SYNC_PHYSICS_SPELLIT_SEED?expected->world.clock:expected->clock):0,
+            failure_clock(local),failure_clock(expected),
             local?local->site:0,expected?expected->site:0};
         std::memcpy(const_cast<uint32_t *>(clonewars_physics_input_failure),values,sizeof(values));
     }
@@ -221,6 +232,62 @@ extern "C" void __cdecl physics_apply_breakup_launch(unsigned char *descriptor,c
     apply_breakup_geometry(descriptor,handle,matrix,scale);SetLastError(error);
 }
 extern "C" __attribute__((naked)) void physics_breakup_launch_thunk(void) {__asm__ volatile(BREAKUP_LAUNCH_THUNK_ASM);}
+}
+extern "C" void __cdecl physics_effect_birth(const unsigned char *node) {
+    const DWORD error=GetLastError();
+    do {
+        const auto *pool=*reinterpret_cast<const unsigned char **>(0xfa3d38);
+        const uint32_t count=*reinterpret_cast<const uint32_t *>(0xe5f480);
+        const uintptr_t offset=reinterpret_cast<uintptr_t>(node)-reinterpret_cast<uintptr_t>(pool);
+        if (!node || !pool || offset%0x228 || offset/0x228>=count || offset/0x228>=SYNC_MAX_ACTORS || !readable(node,0x228)) break;
+        auto &binding=effect_bodies[offset/0x228];binding={};
+        if (!active || !live() || failed || !(word(node+0x11c)&0x40000000u) || !(word(node+0x15c)&1)) break;
+        const auto *receiver=reinterpret_cast<const unsigned char *>(word(node+0x1f8));
+        if (!readable(receiver,0x1a4)) break;
+        const auto *body=reinterpret_cast<const unsigned char *>(word(receiver+0x1a0));
+        const auto *resource=reinterpret_cast<const unsigned char *>(word(node+0x164));
+        if (!readable(body,0xb0)) {fail(1);break;}
+        SyncPhysicsChoice choice={};choice.kind=SYNC_PHYSICS_EFFECT_BIRTH;choice.site=0x7427d8;
+        choice.clock=*reinterpret_cast<uint32_t *>(0xfb4b6c);choice.flags=word(node+0x11c);
+        choice.model=static_cast<uint16_t>(word(node+0x156));
+        if (!describe_name(resource,choice) || !physics_choice_valid(&choice)) {fail(1,&choice);break;}
+        const uint32_t event=host?frame->physics_choice_count:cursor;
+        if (host) {
+            if (event>=SYNC_MAX_PHYSICS_CHOICES) {fail(2,&choice);break;}
+            frame->physics_choices[frame->physics_choice_count++]=choice;++clonewars_physics_input_debug[0];
+        } else {
+            const auto *expected=event<frame->physics_choice_count?frame->physics_choices+event:nullptr;
+            if (!expected || !physics_choice_same_source(&choice,expected)) {fail(3,&choice,expected);break;}
+            ++cursor;++clonewars_physics_input_debug[1];
+        }
+        binding={node,receiver,body,resource,frame->epoch,frame->sequence,event+1,lease.cohort.release};
+        ++clonewars_effect_birth_debug[host?0:1];
+        clonewars_effect_birth_debug[2]=frame->epoch;clonewars_effect_birth_debug[3]=frame->sequence;
+        clonewars_effect_birth_debug[4]=event+1;clonewars_effect_birth_debug[5]=choice.name_hash[0];
+    } while(false);
+    SetLastError(error);
+}
+extern "C" __attribute__((naked)) void physics_effect_birth_thunk(void) {__asm__ volatile(EFFECT_BIRTH_THUNK_ASM);}
+int physics_effect_body_source(const void *body,uint32_t source[2]) {
+    if (!source || !body || !live() || failed) return 0;
+    const uint32_t count=*reinterpret_cast<const uint32_t *>(0xe5f480);
+    if (count>SYNC_MAX_ACTORS) return 0;
+    const auto *pool=*reinterpret_cast<const unsigned char **>(0xfa3d38);
+    if (!pool) return 0;
+    uint32_t revoked=0;
+    const int result=clonewars::engine::resolve_effect_body(effect_bodies,count,body,frame->epoch,lease.cohort.release,[&](size_t i,const EffectBodySource &binding) {
+        const auto *node=pool+i*0x228;
+        if (node!=binding.node || !readable(node,0x228) || !(word(node+0x15c)&1) ||
+            !(word(node+0x11c)&0x40000000u) || word(node+0x1f8)!=reinterpret_cast<uintptr_t>(binding.receiver) ||
+            word(node+0x164)!=reinterpret_cast<uintptr_t>(binding.resource) || !readable(binding.receiver,0x1a4) ||
+            word(binding.receiver+0x1a0)!=reinterpret_cast<uintptr_t>(body)) return false;
+        return true;
+    },source,revoked);
+    clonewars_effect_birth_debug[6]+=revoked;
+    if (result<0) {++clonewars_effect_birth_debug[7];fail(7);return 0;}
+    return result;
+}
+namespace {
 void *__cdecl invoke(void *raw) {
     auto &s=*static_cast<SpinScope *>(raw);
     const auto *p=static_cast<const unsigned char *>(s.effect);
@@ -346,6 +413,9 @@ int physics_vehicle_rng_input(SyncPhysicsChoice *choice,const void *actor,const 
     return physics_source_input(choice,token);
 }
 int physics_input_install(void) {
+    auto *birth=reinterpret_cast<unsigned char *>(0x7427d8);
+    const unsigned char birth_bytes[]={0x8b,0x8c,0x24,0x08,0x02,0x00,0x00};
+    if (!readable(birth,sizeof birth_bytes) || std::memcmp(birth,birth_bytes,sizeof birth_bytes)) return 0;
     auto *launch=reinterpret_cast<unsigned char *>(0x905f33);
     const unsigned char launch_bytes[]={0xe8,0xb8,0x0b,0x06,0x00};
     if (std::memcmp(launch,launch_bytes,sizeof(launch_bytes))) return 0;
@@ -357,6 +427,14 @@ int physics_input_install(void) {
     if (!spellit_input_install()) return 0;
     if (!module_rng_input_install()) return 0;
     if (!vehicle_rng_input_install()) return 0;
+    {
+        DWORD old;
+        if (!VirtualProtect(birth,sizeof birth_bytes,PAGE_EXECUTE_READWRITE,&old)) return 0;
+        const auto jump=static_cast<int32_t>(reinterpret_cast<uintptr_t>(physics_effect_birth_thunk)-0x7427dd);
+        birth[0]=0xe9;std::memcpy(birth+1,&jump,4);birth[5]=birth[6]=0x90;
+        const bool flushed=FlushInstructionCache(GetCurrentProcess(),birth,sizeof birth_bytes)!=0;DWORD ignored;
+        if (!VirtualProtect(birth,sizeof birth_bytes,old,&ignored) || !flushed) return 0;
+    }
     for (unsigned i=0;i<2;++i) {
         auto *bridge=static_cast<unsigned char *>(VirtualAlloc(nullptr,11,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
         if (!bridge) return 0;
