@@ -372,7 +372,8 @@ int main(){
  }
  for(uint32_t site:{NATIVE_TICK_PACK_HIT_REACTION,NATIVE_TICK_PACK_HIT_DEBRIS,
                    NATIVE_TICK_PACK_HIT_SHOCK,NATIVE_TICK_PACK_HIT_HEADING,
-                   NATIVE_TICK_PACK_IMPULSE_TIMER,NATIVE_TICK_PACK_IMPULSE_SPEED,NATIVE_TICK_PACK_IMPULSE_HEADING}) {
+                   NATIVE_TICK_PACK_IMPULSE_TIMER,NATIVE_TICK_PACK_IMPULSE_SPEED,NATIVE_TICK_PACK_IMPULSE_HEADING,
+                   NATIVE_TICK_PACK_DEATH_CLIP}) {
   next(true);engine_rng=0x1234abcd;native_pack_hit_seed(first_member,site);
   assert(native_tick_finish() && native_tick_stream_valid(frame->tick_gates,2));
   assert(!native_tick_stream_valid(frame->tick_gates,1) && !native_tick_stream_valid(frame->tick_gates+1,1));
