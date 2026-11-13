@@ -379,7 +379,7 @@ int physics_world_input(SyncPhysicsChoice *choice,const CoherentFrameToken *toke
     if (!choice || ((choice->kind<SYNC_PHYSICS_SPELLIT_SEED || choice->kind>SYNC_PHYSICS_SPELLIT_ENABLED) &&
                    choice->kind!=SYNC_PHYSICS_SPELLIT_POSE && choice->kind!=SYNC_PHYSICS_SPELLIT_STEP &&
                    choice->kind!=SYNC_PHYSICS_SPELLIT_SELECTION && choice->kind!=SYNC_PHYSICS_SPELLIT_BODY_BASIS &&
-                   choice->kind!=SYNC_PHYSICS_SPELLIT_BODY_MOTION)) {
+                   choice->kind!=SYNC_PHYSICS_SPELLIT_BODY_MOTION && choice->kind!=SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS)) {
         if (live()) fail(5,choice);
         return -1;
     }

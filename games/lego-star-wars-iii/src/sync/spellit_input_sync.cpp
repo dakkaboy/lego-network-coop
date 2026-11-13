@@ -8,6 +8,7 @@
 #include "spellit_input_sync.h"
 #include "physics_input_sync.h"
 #include "../engine/native_spellit_source.h"
+#include "../engine/spellit_completion_thunk.h"
 extern "C" {
 #include "game_sync.h"
 #include "../engine/constructor_lexical_seh.h"
@@ -18,6 +19,8 @@ __declspec(dllexport) volatile uint32_t clonewars_spellit_native_count;
 __declspec(dllexport) volatile uint32_t clonewars_spellit_native_batch[256][40];
 __declspec(dllexport) volatile uint32_t clonewars_spellit_body_debug[4],clonewars_spellit_body_correction[8];
 __attribute__((used)) static volatile uintptr_t spellit_target_resume=0x8406b8;
+__attribute__((used)) static volatile uintptr_t spellit_timeout_flags_resume=0x812d81,spellit_finish_flags_resume=0x812df7;
+__declspec(dllexport) volatile uint32_t clonewars_spellit_completion_debug[8];
 }
 
 namespace {
@@ -293,7 +296,7 @@ void __attribute__((fastcall)) hop_hook(void *gizmo,void *,float delta) {
     scope.clock=*reinterpret_cast<uint32_t *>(0xfb4b6c);current=&scope;
     constructor_lexical_seh(&scope,invoke_hop,abort_hop);current=scope.previous;scope.machine.restore();
 }
-uint32_t query(void *target,NativeQuery original,unsigned kind) {
+uint32_t query(void *target,NativeQuery original,unsigned kind,uint32_t site=0) {
     MachineState machine;machine.capture();HopScope *scope=current;
     NativeSpellItPiece piece{};bool bound=scope && scope->bound;
     if (bound) {
@@ -311,6 +314,7 @@ uint32_t query(void *target,NativeQuery original,unsigned kind) {
             std::memcpy(&selected,static_cast<unsigned char *>(scope->gizmo)+0x21c,4);
         if (selected!=piece.piece) {reject(*scope,8,kind);machine.restore();return result;}
         auto input=choice(*scope,kind,result!=0,&piece);
+        if(site)input.site=site;
         if (resolve_input(*scope,input,&piece)) result=input.world.value;
     }
     machine.restore();return result;
@@ -355,18 +359,52 @@ void *__attribute__((fastcall)) selection_hook(void *gizmo,void *) {
 }
 uint32_t __attribute__((fastcall)) enabled_hook(void *receiver,void *table) {
     NativeQuery original;std::memcpy(&original,static_cast<unsigned char *>(table)+0x1c,4);
-    return query(receiver,original,SYNC_PHYSICS_SPELLIT_ENABLED);
+    const auto site=static_cast<uint32_t>(reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
+    if(current && current->bound && (site==0x812d8c || site==0x812e02))
+        ++clonewars_spellit_completion_debug[site==0x812d8c?2:3];
+    return query(receiver,original,SYNC_PHYSICS_SPELLIT_ENABLED,site);
+}
+extern "C" uint32_t __cdecl native_spellit_receiver_flags(void *receiver,uint32_t site) {
+    const DWORD error=GetLastError();
+    const uint32_t local=static_cast<unsigned char *>(receiver)[0x183]&4;
+    uint32_t result=local;HopScope *scope=current;
+    if(scope && scope->bound) {
+        NativeSpellItPiece piece{};void *selected=nullptr;
+        if(live(*scope) && native_spellit_source_revalidate(&scope->source))
+            std::memcpy(&selected,static_cast<unsigned char *>(scope->gizmo)+0x21c,4);
+        if(!selected || !native_spellit_piece_resolve(&scope->source,selected,&piece) || piece.receiver!=receiver)
+            reject(*scope,21,SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS);
+        else {
+            auto input=choice(*scope,SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS,local,&piece);input.site=site;
+            ++clonewars_spellit_completion_debug[site==0x812d7a?0:1];
+            if(resolve_input(*scope,input,&piece)) {
+                result=input.world.value;
+                if(result!=local)++clonewars_spellit_completion_debug[4];
+            }
+        }
+    }
+    SetLastError(error);return result;
+}
+extern "C" __attribute__((naked)) void native_spellit_timeout_flags_bridge(void) {
+    __asm__ volatile(SPELLIT_RECEIVER_FLAGS_ASM(0x812d7a,spellit_timeout_flags_resume));
+}
+extern "C" __attribute__((naked)) void native_spellit_finish_flags_bridge(void) {
+    __asm__ volatile(SPELLIT_RECEIVER_FLAGS_ASM(0x812df0,spellit_finish_flags_resume));
 }
 }
 
 int spellit_input_install(void) {
     if (installed) return 1;
     char trace[8];trace_native=GetEnvironmentVariableA("CLONEWARS_SPELLIT_SOURCE_TRACE",trace,sizeof trace)>0;
-    struct Patch {uintptr_t address;unsigned char expected[6];void *target;DWORD protection;unsigned size;};
+    struct Patch {uintptr_t address;unsigned char expected[7];void *target;DWORD protection;unsigned size;};
     Patch patches[]={
         {0x861019,{0xe8,0x42,0xf6,0xfd,0xff},reinterpret_cast<void *>(hop_hook),0,5},
         {0x8407cf,{0xe8,0x6c,0xa8,0xf6,0xff},reinterpret_cast<void *>(entity_hook),0,5},
         {0x840856,{0x8b,0x42,0x1c,0xff,0xd0},reinterpret_cast<void *>(enabled_hook),0,5},
+        {0x812d87,{0x8b,0x42,0x1c,0xff,0xd0},reinterpret_cast<void *>(enabled_hook),0,5},
+        {0x812dfd,{0x8b,0x42,0x1c,0xff,0xd0},reinterpret_cast<void *>(enabled_hook),0,5},
+        {0x812d7a,{0xf6,0x81,0x83,0x01,0,0,4},reinterpret_cast<void *>(native_spellit_timeout_flags_bridge),0,7},
+        {0x812df0,{0xf6,0x81,0x83,0x01,0,0,4},reinterpret_cast<void *>(native_spellit_finish_flags_bridge),0,7},
         {0x8406b2,{0x8b,0x8b,0x1c,0x02,0,0},reinterpret_cast<void *>(native_spellit_pose_bridge),0,6},
         {0x8406a7,{0xe8,0xd4,0x9b,0xf9,0xff},reinterpret_cast<void *>(selection_hook),0,5},
         {0x840790,{0xe8,0xeb,0x9a,0xf9,0xff},reinterpret_cast<void *>(selection_hook),0,5},
@@ -384,7 +422,7 @@ int spellit_input_install(void) {
     for (const auto &p:patches) {
         auto *code=reinterpret_cast<unsigned char *>(p.address);
         const int32_t relative=static_cast<int32_t>(reinterpret_cast<uintptr_t>(p.target)-p.address-5);
-        code[0]=p.address==0x8406b2?0xe9:0xe8;std::memcpy(code+1,&relative,4);
+        code[0]=(p.address==0x8406b2 || p.address==0x812d7a || p.address==0x812df0)?0xe9:0xe8;std::memcpy(code+1,&relative,4);
         if(p.size>5)std::memset(code+5,0x90,p.size-5);
         FlushInstructionCache(GetCurrentProcess(),code,p.size);
     }

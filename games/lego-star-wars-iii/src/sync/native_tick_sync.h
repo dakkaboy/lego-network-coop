@@ -53,7 +53,10 @@ enum {
     NATIVE_TICK_PACK_IMPULSE_TIMER = 0x43455b,
     NATIVE_TICK_PACK_IMPULSE_SPEED = 0x43457b,
     NATIVE_TICK_PACK_IMPULSE_HEADING = 0x4345f0,
-    NATIVE_TICK_PACK_DEATH_CLIP = 0x433928
+    NATIVE_TICK_PACK_DEATH_CLIP = 0x433928,
+    NATIVE_TICK_PACK_DEATH_VERTICAL = 0x4338f0,
+    NATIVE_TICK_PACK_DEATH_SPEED = 0x4338f1,
+    NATIVE_TICK_PACK_DEATH_FLAGS = 0x4338f2
 };
 static inline int native_pack_hit_rng_site(uint32_t site) {
     switch(site) {
@@ -105,6 +108,8 @@ static inline int native_tick_gate_valid(const SyncTickGate *gate) {
         gate->site==NATIVE_TICK_PACK_ATTACK || gate->site==NATIVE_TICK_PACK_ATTACK_WITNESS ||
         gate->site==NATIVE_TICK_PACK_MODE_MEMBER || gate->site==NATIVE_TICK_PACK_MODE_WITNESS ||
         (gate->site==NATIVE_TICK_PACK_MODE_VALUE && (gate->value&~0x3ffu)==0) ||
+        ((gate->site==NATIVE_TICK_PACK_DEATH_VERTICAL || gate->site==NATIVE_TICK_PACK_DEATH_SPEED) && native_track_time_valid(gate->value)) ||
+        (gate->site==NATIVE_TICK_PACK_DEATH_FLAGS && !(gate->value&~0x101u)) ||
         gate->site==NATIVE_TICK_PACK_TIMER_MEMBER || gate->site==NATIVE_TICK_PACK_TIMER_SEED ||
         gate->site==NATIVE_TICK_PACK_REARM_MEMBER || gate->site==NATIVE_TICK_PACK_REARM_SEED ||
         gate->site==NATIVE_TICK_PACK_FORMATION_MEMBER ||
@@ -159,8 +164,16 @@ static inline int native_tick_stream_valid(const SyncTickGate *gates,uint32_t co
         } else if (gates[i].site==NATIVE_TICK_PACK_MODE_MEMBER) {
             if (count-i<3 || gates[i+1].site!=NATIVE_TICK_PACK_MODE_WITNESS || gates[i+2].site!=NATIVE_TICK_PACK_MODE_VALUE ||
                 gates[i+1].clock!=gates[i].clock || gates[i+2].clock!=gates[i].clock || !native_tick_gate_valid(gates+i+2)) return 0;
+            if((gates[i+2].value&0xffu)==9){
+                if(count-i<6 || gates[i+3].site!=NATIVE_TICK_PACK_DEATH_VERTICAL ||
+                   gates[i+4].site!=NATIVE_TICK_PACK_DEATH_SPEED || gates[i+5].site!=NATIVE_TICK_PACK_DEATH_FLAGS)return 0;
+                for(unsigned j=3;j<6;++j)if(gates[i+j].clock!=gates[i].clock || !native_tick_gate_valid(gates+i+j))return 0;
+                i+=3;
+            }
             i+=2;
-        } else if (gates[i].site==NATIVE_TICK_RTS_GAME_RNG || gates[i].site==NATIVE_TICK_RTS_PRODUCER_GAME_RNG) {
+        } else if(gates[i].site==NATIVE_TICK_PACK_DEATH_VERTICAL || gates[i].site==NATIVE_TICK_PACK_DEATH_SPEED ||
+                  gates[i].site==NATIVE_TICK_PACK_DEATH_FLAGS)return 0;
+        else if (gates[i].site==NATIVE_TICK_RTS_GAME_RNG || gates[i].site==NATIVE_TICK_RTS_PRODUCER_GAME_RNG) {
             const uint32_t engine_site=gates[i].site==NATIVE_TICK_RTS_GAME_RNG ?
                 NATIVE_TICK_RTS_ENGINE_RNG : NATIVE_TICK_RTS_PRODUCER_ENGINE_RNG;
             if (count-i<2 || gates[i+1].site!=engine_site ||
