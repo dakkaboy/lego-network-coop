@@ -74,6 +74,13 @@ add_library(clonewars-camera SHARED
     src/sync/native_tick_sync.cpp
     src/sync/object_progress_sync.cpp
     src/sync/spellit_input_sync.cpp
+    src/engine/native_rts_body_source.cpp
+    src/sync/rts_body_input_sync.cpp
+    src/sync/rts_generator_input_sync.cpp
+    src/engine/native_rts_generator_source.cpp
+    src/sync/rts_order_input_sync.cpp
+    src/engine/native_rts_order_source.cpp
+    src/engine/native_global_pack_source.cpp
     src/sync/module_rng_input_sync.cpp
     src/sync/vehicle_rng_input_sync.cpp
     src/sync/preload_state.cpp

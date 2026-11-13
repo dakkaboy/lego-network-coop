@@ -24,6 +24,28 @@ static inline int physics_vehicle_rng_site(uint32_t site) {
 }
 static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
     if (!choice) return 0;
+    if(choice->kind==SYNC_PHYSICS_RTS_VISIBILITY){
+        const SyncPhysicsWorldInput *v=&choice->world;
+        if(choice->site!=0x5525e0||v->value>1||v->gizmo_class<0x400000||v->gizmo_class>=0xb00000||v->gizmo_ordinal>=65536||!(v->source_name[0]|v->source_name[1]|v->source_name[2]|v->source_name[3]))return 0;
+        for(unsigned i=32;i<sizeof(*v);++i)if(((const unsigned char *)v)[i])return 0;
+        return 1;
+    }
+    if(choice->kind==SYNC_PHYSICS_RTS_GENERATOR){
+        const SyncPhysicsRtsGeneratorInput *v=&choice->rts_generator;
+        if(choice->site!=0x547d30 || v->team_slot>=SYNC_MAX_RTS_TEAMS || v->index>=8 || v->side>=2 ||
+           v->object_class<0x400000 || v->object_class>=0xb00000 || !isfinite(v->delta) || v->delta<0 ||
+           !isfinite(v->elapsed) || !isfinite(v->countdown) || !isfinite(v->phase_time) || !isfinite(v->timer_delta) || v->timer_delta<0)return 0;
+        for(unsigned i=0;i<5;++i)if(v->reserved[i])return 0;
+        return 1;
+    }
+    if(choice->kind==SYNC_PHYSICS_RTS_ORDER){
+        const SyncPhysicsRtsOrderInput *v=&choice->rts_order;
+        if((choice->site!=0x55e2c0 && choice->site!=0x55e65c) || v->team_slot>=SYNC_MAX_RTS_TEAMS ||
+           v->order_class<0x400000 || v->order_class>=0xb00000 || !isfinite(v->elapsed) || !isfinite(v->progress))return 0;
+        for(unsigned i=0;i<11;++i)if(v->reserved[i])return 0;
+        if(choice->site==0x55e2c0)return !v->ready;
+        return !(v->ready&~2u) && !v->state && !v->previous_state && v->elapsed==0 && v->progress==0;
+    }
     if (choice->kind==SYNC_PHYSICS_EFFECT_BIRTH) {
         if (choice->site!=0x7427d8 || !(choice->flags&0x40000000u) || choice->model>UINT16_MAX ||
             !(choice->name_hash[0]|choice->name_hash[1]) || choice->rng) return 0;
@@ -52,9 +74,9 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
         for (unsigned i=0;i<11;++i) if (v->reserved[i]) return 0;
         return 1;
     }
-    if(choice->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||choice->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION){
+    if(choice->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||choice->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION||choice->kind==SYNC_PHYSICS_RTS_BODY_BASIS||choice->kind==SYNC_PHYSICS_RTS_BODY_MOTION){
         const SyncPhysicsSpellItBodyInput *body=&choice->spellit_body;
-        if(choice->site!=0x840660||!body->body_class||body->body_class>=0x1000000||body->piece_ordinal>=65536||body->reserved||
+        if(choice->site!=((choice->kind==SYNC_PHYSICS_RTS_BODY_BASIS||choice->kind==SYNC_PHYSICS_RTS_BODY_MOTION)?0x544b10u:0x840660u)||!body->body_class||body->body_class>=0x1000000||body->piece_ordinal>=65536||body->reserved||
            !(body->key[0]|body->key[1]|body->key[2]|body->key[3]))return 0;
         for(unsigned i=0;i<12;++i)if(!isfinite(body->values[i]))return 0;
         return 1;
@@ -140,10 +162,12 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
 }
 static inline int physics_choice_same_source(const SyncPhysicsChoice *a,const SyncPhysicsChoice *b) {
     if (!physics_choice_valid(a) || !physics_choice_valid(b) || a->kind!=b->kind || a->site!=b->site) return 0;
+    if(a->kind==SYNC_PHYSICS_RTS_GENERATOR)return !memcmp(&a->rts_generator,&b->rts_generator,24);
+    if(a->kind==SYNC_PHYSICS_RTS_ORDER)return !memcmp(&a->rts_order,&b->rts_order,16);
     if (a->kind==SYNC_PHYSICS_BREAKUP_BASIS) return !memcmp(&a->breakup_basis,&b->breakup_basis,16);
     if (a->kind==SYNC_PHYSICS_BREAKUP_SCALE || a->kind==SYNC_PHYSICS_EFFECT_BIRTH) return a->flags==b->flags && a->model==b->model &&
         a->clock==b->clock && !memcmp(a->name_hash,b->name_hash,sizeof(a->name_hash));
-    if(a->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||a->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION)
+    if(a->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||a->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION||a->kind==SYNC_PHYSICS_RTS_BODY_BASIS||a->kind==SYNC_PHYSICS_RTS_BODY_MOTION)
         return !memcmp(&a->spellit_body,&b->spellit_body,32);
     if(a->kind==SYNC_PHYSICS_SPELLIT_STEP) {
         if(a->spellit_step.clock!=b->spellit_step.clock)return 0;

@@ -355,7 +355,7 @@ static int physics_source_input(SyncPhysicsChoice *choice,const CoherentFrameTok
     } else {
         const auto *expected=cursor<frame->physics_choice_count?frame->physics_choices+cursor:nullptr;
         if (!expected || !physics_choice_same_source(expected,choice)) {fail(6,choice,expected);return -1;}
-        if(choice->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||choice->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION){
+        if(choice->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||choice->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION||choice->kind==SYNC_PHYSICS_RTS_BODY_BASIS||choice->kind==SYNC_PHYSICS_RTS_BODY_MOTION){
             std::memcpy(choice->spellit_body.values,expected->spellit_body.values,sizeof choice->spellit_body.values);
         } else if(choice->kind==SYNC_PHYSICS_SPELLIT_STEP) {
             choice->spellit_step.engine_seed=expected->spellit_step.engine_seed;
@@ -366,6 +366,8 @@ static int physics_source_input(SyncPhysicsChoice *choice,const CoherentFrameTok
             std::memcpy(choice->spellit_pose.position,expected->spellit_pose.position,sizeof choice->spellit_pose.position);
             choice->spellit_pose.last_time=expected->spellit_pose.last_time;
         }
+        else if(choice->kind==SYNC_PHYSICS_RTS_GENERATOR)std::memcpy(&choice->rts_generator.delta,&expected->rts_generator.delta,36);
+        else if(choice->kind==SYNC_PHYSICS_RTS_ORDER)std::memcpy(&choice->rts_order.state,&expected->rts_order.state,20);
         else if (choice->kind==SYNC_PHYSICS_MODULE_SEED) choice->module.value=expected->module.value;
         else if (choice->kind==SYNC_PHYSICS_GUN_JAM_SEED) choice->gun_jam.value=expected->gun_jam.value;
         else if (choice->kind==SYNC_PHYSICS_VEHICLE_RNG) choice->vehicle_rng.value=expected->vehicle_rng.value;
@@ -379,7 +381,8 @@ int physics_world_input(SyncPhysicsChoice *choice,const CoherentFrameToken *toke
     if (!choice || ((choice->kind<SYNC_PHYSICS_SPELLIT_SEED || choice->kind>SYNC_PHYSICS_SPELLIT_ENABLED) &&
                    choice->kind!=SYNC_PHYSICS_SPELLIT_POSE && choice->kind!=SYNC_PHYSICS_SPELLIT_STEP &&
                    choice->kind!=SYNC_PHYSICS_SPELLIT_SELECTION && choice->kind!=SYNC_PHYSICS_SPELLIT_BODY_BASIS &&
-                   choice->kind!=SYNC_PHYSICS_SPELLIT_BODY_MOTION && choice->kind!=SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS)) {
+                   choice->kind!=SYNC_PHYSICS_SPELLIT_BODY_MOTION && choice->kind!=SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS &&
+                   choice->kind!=SYNC_PHYSICS_RTS_VISIBILITY && choice->kind!=SYNC_PHYSICS_RTS_BODY_BASIS && choice->kind!=SYNC_PHYSICS_RTS_BODY_MOTION && choice->kind!=SYNC_PHYSICS_RTS_ORDER && choice->kind!=SYNC_PHYSICS_RTS_GENERATOR)) {
         if (live()) fail(5,choice);
         return -1;
     }

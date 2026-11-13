@@ -8,14 +8,21 @@ extern "C" {
 #include "coherent_frame_fence.h"
 }
 #include "spawn_timer_sync.h"
+#include "rts_order_input_sync.h"
+#include "rts_generator_input_sync.h"
+#include "rts_body_input_sync.h"
 
 namespace {
 
 using RtsOrderUpdate = void (__attribute__((thiscall)) *)(void *,float);
 using RtsTimerSet = void (__attribute__((thiscall)) *)(void *,uint32_t);
 using ModuleTimerChoose = float (__attribute__((thiscall)) *)(char *);
-RtsOrderUpdate original_rts_order;
+RtsOrderUpdate original_rts_order,original_rts_generator;
 RtsTimerSet original_rts_timer_set;
+RtsBodyUpdate original_rts_body;
+RtsVisibilityUpdate original_rts_visibility;
+void __attribute__((thiscall)) rts_visibility_hook(void *object,uint32_t delta){rts_visibility_input_update(object,delta,original_rts_visibility);}
+void __attribute__((thiscall)) rts_body_hook(void *object,uint32_t state,uint32_t flag){rts_body_input_update(object,state,flag,original_rts_body);}
 ModuleTimerChoose original_module_timer_choose;
 __attribute__((used)) const uintptr_t rts_spawn_ground_query asm("rts_spawn_ground_query")=0x52a580;
 
@@ -202,17 +209,27 @@ void __attribute__((thiscall)) rts_timer_set_hook(void *team,uint32_t index) {
 }
 
 void __attribute__((thiscall)) rts_order_hook(void *order,float delta) {
+    alignas(16) unsigned char fx[512];__asm__ volatile("fxsave %0":"=m"(fx)::"memory");
+    const DWORD error=GetLastError();
     CoherentFrameToken token;
     if (coherent_frame_get(&token,COHERENT_PHASE_BIT(COHERENT_DISPATCH)) &&
         token.sequence==1 && token.frame==timer_frame.frame) {
-        if (timer_frame.failed) return;
+        if (timer_frame.failed){SetLastError(error);__asm__ volatile("fxrstor %0"::"m"(fx):"memory");return;}
         if (!synchronize_rts_order(token,order)) {
             timer_frame.failed=true;
             clonewars_rts_spawn_timer_debug[3]=clonewars_rts_spawn_timer_debug[3]+1;
+            SetLastError(error);__asm__ volatile("fxrstor %0"::"m"(fx):"memory");
             return;
         }
     }
-    original_rts_order(order,delta);
+    uint32_t delta_bits;std::memcpy(&delta_bits,&delta,4);
+    SetLastError(error);__asm__ volatile("fxrstor %0"::"m"(fx):"memory");
+    rts_order_input_update(order,delta_bits,reinterpret_cast<RtsOrderOriginal>(original_rts_order));
+}
+
+void __attribute__((thiscall)) rts_generator_hook(void *object,float delta) {
+    uint32_t bits;std::memcpy(&bits,&delta,4);
+    rts_generator_input_update(object,bits,reinterpret_cast<RtsGeneratorOriginal>(original_rts_generator));
 }
 
 bool collect(ModuleEntry *entries, LocalTimer *timers, uint32_t &count) {
@@ -335,9 +352,10 @@ static bool install_pack_ground_query_hooks() {
 }
 
 int rts_spawn_timers_install(void) {
+    constexpr unsigned char visibility_native[]={0x8b,0x91,0x38,0x02,0,0};
     constexpr unsigned char order_native[]={0x55,0x8b,0xec,0x83,0xe4,0xf0};
     constexpr unsigned char timer_native[]={0xd9,0x05,0x40,0x14,0xae,0x00};
-    return install_rts_hook(0x55e2c0,order_native,&rts_order_hook,original_rts_order) &&
+    return install_rts_hook(0x5525e0,visibility_native,&rts_visibility_hook,original_rts_visibility) && install_rts_hook(0x544b10,order_native,&rts_body_hook,original_rts_body) && install_rts_hook(0x547d30,order_native,&rts_generator_hook,original_rts_generator) && rts_order_input_install() && install_rts_hook(0x55e2c0,order_native,&rts_order_hook,original_rts_order) &&
         install_rts_hook(0x50afc0,timer_native,&rts_timer_set_hook,original_rts_timer_set) &&
         install_module_timer_hook() && install_pack_ground_query_hooks();
 }

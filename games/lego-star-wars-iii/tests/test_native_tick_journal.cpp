@@ -7,6 +7,7 @@
 #include <memory>
 #include <cstring>
 #include "../src/sync/native_tick_sync.h"
+#include "../src/engine/native_global_pack_source.h"
 extern "C" {
 #include "../src/net/lan.h"
 #include "../src/sync/entity_sync.h"
@@ -267,7 +268,7 @@ int main(){
  assert(native_rts_turret_heading(turret,0xcbdb)==0xcbdb && !native_tick_finish() && faults==stale_pilot+1);
  put(party,4,0);
  next(true);assert(native_rts_turret_heading(turret,0xcbdb)==0xcbdb && native_tick_finish() && frame->tick_gate_count==0);
- unsigned char manager_list[4]{},krawly_manager[0x110]{},pack[0x148]{},pack_definition[0x20]{};
+ unsigned char manager_list[4]{},krawly_manager[0x200]{},pack[0x148]{},pack_definition[0x34]{};
  unsigned char first_member[0xa0]{},second_member[0xa0]{};
  put(krawly_manager,0,0xaded84);
  put(krawly_manager,0x10c,reinterpret_cast<uintptr_t>(manager_list));
@@ -327,6 +328,52 @@ int main(){
   assert(!native_tick_finish() && faults==wrong_pose_site+1);
   frame->tick_gates[1].value=0x7fc00000;assert(!native_tick_stream_valid(frame->tick_gates,6));
  }
+ {
+  auto *constructor_bound=reinterpret_cast<unsigned char *>(0x47699b);const unsigned char code[]={0x83,0xfe,3};
+  std::memcpy(constructor_bound,code,3);unsigned char native_pool[0x24]{};
+  put(manager_list,0,0);put(krawly_manager,0x20,reinterpret_cast<uintptr_t>(native_pool));put(krawly_manager,0x28,1);
+  put(native_pool,8,reinterpret_cast<uintptr_t>(krawly_manager));put(pack,0xb0,reinterpret_cast<uintptr_t>(native_pool));
+  put(pack_definition,0,0xad7f74);put(pack_definition,4,reinterpret_cast<uintptr_t>(native_pool));
+  put(pack_definition,0x10,reinterpret_cast<uintptr_t>(pack));put(pack_definition,0x18,1);put(pack_definition,0x1c,10);
+  put(pack_definition,0x30,reinterpret_cast<uintptr_t>(krawly_manager));put(krawly_manager,0x184,reinterpret_cast<uintptr_t>(pack_definition));
+  put(pack,0x13c,10);put(pack,0x140,1);
+  NativeGlobalPackSource global{};assert(native_global_pack_source(pack,&global) && global.faction==1);
+  unsigned char extra_pool[0x24]{};put(extra_pool,8,reinterpret_cast<uintptr_t>(krawly_manager));
+  put(extra_pool,4,reinterpret_cast<uintptr_t>(native_pool));put(native_pool,0,reinterpret_cast<uintptr_t>(extra_pool));
+  put(krawly_manager,0x20,reinterpret_cast<uintptr_t>(extra_pool));put(krawly_manager,0x24,reinterpret_cast<uintptr_t>(native_pool));put(krawly_manager,0x28,2);
+  assert(native_global_pack_source(pack,&global));
+  put(native_pool,0,0);put(native_pool,4,reinterpret_cast<uintptr_t>(extra_pool));put(extra_pool,0,reinterpret_cast<uintptr_t>(native_pool));put(extra_pool,4,0);
+  put(krawly_manager,0x20,reinterpret_cast<uintptr_t>(native_pool));put(krawly_manager,0x24,reinterpret_cast<uintptr_t>(extra_pool));
+  assert(native_global_pack_source(pack,&global));
+  put(native_pool,4,0);put(krawly_manager,0x24,reinterpret_cast<uintptr_t>(native_pool));put(krawly_manager,0x28,1);
+
+  for(unsigned mutation=0;mutation<8;++mutation){
+   const auto manager_index=word(krawly_manager,0x184),pool_owner=word(native_pool,8),backlink=word(pack_definition,0x10);
+   if(mutation==0)put(krawly_manager,0x184,0);
+   if(mutation==1)put(native_pool,8,0);
+   if(mutation==2)put(pack_definition,0x10,0);
+   if(mutation==3)put(pack_definition,0x18,3);
+   if(mutation==4)constructor_bound[1]=0xff;
+   if(mutation==5)constructor_bound[2]=0;
+   if(mutation==6)put(pack,0x140,0);
+   if(mutation==7)put(native_pool,4,reinterpret_cast<uintptr_t>(native_pool));
+   assert(!native_global_pack_source(pack,&global));
+   put(krawly_manager,0x184,manager_index);put(native_pool,8,pool_owner);put(pack_definition,0x10,backlink);
+   put(pack_definition,0x18,1);std::memcpy(constructor_bound,code,3);put(pack,0x140,1);put(native_pool,4,0);
+  }
+  put(first_member,0x20,0x3f800000);next(true);native_pack_pose(first_member,NATIVE_TICK_PACK_POSE_QUERY);
+  assert(native_tick_finish() && frame->tick_gate_count==6 && native_tick_stream_valid(frame->tick_gates,6));
+  begin(false);put(first_member,0x20,0);native_pack_pose(first_member,NATIVE_TICK_PACK_POSE_QUERY);
+  assert(native_tick_finish() && word(first_member,0x20)==0x3f800000);
+  begin(false);const auto wrong_global=faults;native_pack_pose(second_member,NATIVE_TICK_PACK_POSE_QUERY);
+  assert(!native_tick_finish() && faults==wrong_global+1);
+  first_member[0x60]=9;unsigned char entered=0;put(first_member,0x88,0x3f800000);put(first_member,0x8c,0x40000000);
+  next(true);native_pack_mode(first_member,&entered);
+  assert(native_tick_finish() && frame->tick_gates[0].value==0xfffe0000u && native_tick_stream_valid(frame->tick_gates,6));
+  begin(false);put(first_member,0x88,0);put(first_member,0x8c,0);native_pack_mode(first_member,&entered);
+  assert(native_tick_finish() && word(first_member,0x88)==0x3f800000 && word(first_member,0x8c)==0x40000000);
+  put(manager_list,0,reinterpret_cast<uintptr_t>(pack));put(pack,0x13c,0);put(pack,0x140,0);put(pack_definition,0x1c,0);
+ }
  next(true);assert(native_pack_cell_admission(first_member,0xe0)==0x60 && native_tick_finish());
  assert(native_tick_stream_valid(frame->tick_gates,2) && !native_tick_stream_valid(frame->tick_gates+1,1));
  begin(false);const auto unchanged_flags=first_member[0x63];SetLastError(321);
@@ -371,7 +418,7 @@ int main(){
   begin(false);engine_rng=0xabcd1234;const auto before_fault=faults;draw(second_member);
   assert(engine_rng==0xabcd1234 && !native_tick_finish() && faults==before_fault+1);
  }
- for(uint32_t site:{NATIVE_TICK_PACK_HIT_REACTION,NATIVE_TICK_PACK_HIT_DEBRIS,
+ for(uint32_t site:{NATIVE_TICK_PACK_HIT_REACTION,NATIVE_TICK_PACK_HIT_AVOIDANCE,NATIVE_TICK_PACK_HIT_DEBRIS,
                    NATIVE_TICK_PACK_HIT_SHOCK,NATIVE_TICK_PACK_HIT_HEADING,
                    NATIVE_TICK_PACK_IMPULSE_TIMER,NATIVE_TICK_PACK_IMPULSE_SPEED,NATIVE_TICK_PACK_IMPULSE_HEADING,
                    NATIVE_TICK_PACK_DEATH_CLIP}) {
@@ -410,6 +457,18 @@ int main(){
  native_pack_mode(first_member,&entry);
  assert(native_tick_finish() && word(first_member,0x88)==0xbf000000 && word(first_member,0x8c)==0x3f800000);
  assert(first_member[0x90]==1 && first_member[0x91]==0);
+ // The dispatcher can enter death with bytes from the previous state; stock code initializes them afterward.
+ next(true);first_member[0x60]=9;entry=1;first_member[0x90]=12;first_member[0x91]=255;
+ native_pack_mode(first_member,&entry);
+ assert(native_tick_finish() && native_tick_stream_valid(frame->tick_gates,6));
+ begin(false);first_member[0x90]=0;first_member[0x91]=0;entry=0;
+ native_pack_mode(first_member,&entry);
+ assert(native_tick_finish() && first_member[0x90]==12 && first_member[0x91]==255 && entry==1);
+ for(uint32_t bytes=0;bytes<=UINT16_MAX;++bytes){
+  const SyncTickGate gate={NATIVE_TICK_PACK_DEATH_FLAGS,clock,bytes};assert(native_tick_gate_valid(&gate));
+ }
+ const SyncTickGate oversized_flags={NATIVE_TICK_PACK_DEATH_FLAGS,clock,0x10000};
+ assert(!native_tick_gate_valid(&oversized_flags));
  begin(false);put(second_member,0x88,0x3e000000);put(second_member,0x8c,0x3f000000);const auto wrong_death=faults;
  native_pack_mode(second_member,&entry);
  assert(!native_tick_finish() && faults==wrong_death+1 && word(second_member,0x88)==0x3e000000);
