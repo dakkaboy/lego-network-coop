@@ -639,3 +639,44 @@ and the isolated test profiles restored before installing this DLL.
 This checks mission selection through the existing diagnostic native-launch
 request, entry controls and Hub returns. It does not qualify full completion of
 these missions, later RTS objectives, the Hub map interface or separate-PC play.
+
+## 13 November: native RTS death initialization RNG
+
+The lazy initialization path in `4338F0` draws at `433928 -> 6D60D0` to
+choose a death animation variant. That draw was missing from the native pack
+RNG journal. It now uses the existing pack/member witness and engine-seed
+pair, with the original float RNG called once. Wire 135 rejects older peers;
+the frame layout remains 54. No mission names, map coordinates or forced
+death/removal results were added.
+
+Candidate 183 passed two offscreen local instances in one session: native
+selection from CWHub to WeaponsFactory_A, 1,200 autonomous battle steps,
+ordinary saber attacks destroying the same rock on both peers, client
+movement/fire/jump, and return to CWHub. The recorded battle ends at clock
+2369. All 761 paired death/ground inputs matched, as did 4,354 hit entries
+and 184 hit-reaction RNG entries per peer. There was no first-fault or
+coherent rejection. Paired frames show visible characters, the original HUD,
+separate cameras and textured geometry; the host's active blue blade is visible.
+
+The added lazy-init branch was not entered on this route: its entry flag was
+zero in all 761 observed death steps. Changed-seed, wrong-member and incomplete
+journal paths are covered by the existing helper fixture, extended to this
+site. All 35 repository tests pass. This is a source coverage improvement and
+route regression, not proof that the earlier -23 has been fixed.
+
+Earlier baseline 182 runs retained distinct failures: an extra native hit RNG
+entry at clock 1356; an initial pack-update count difference at clock 659;
+different pool removal order at clock 2006; and -16 in SpellIt at clock 858.
+The latter diverged between a new selection at `840790` and the expected
+receiver-enabled query at `84085B`. The completion/timeout helper `812D60`
+contains additional receiver flags and enabled queries not yet journaled.
+These remain open. Full Weapons Factory completion, later RTS objectives and
+separate-PC play are not qualified by this run.
+
+Evidence is retained locally in `weapons-native-objectives183-r1` through
+`-r4` and `weapons-native-rng183-r5`, including first-fault snapshots, native
+input traces, paired frames and qualification manifests. The exact tested and
+installed DLL SHA256 is
+15C95851D09DE1A36A59173686677383215600139B0A55BEC1B4C0C2240A9910.
+Owned games were closed and test profiles restored. The supervisor restored
+the exact qualified 182 baseline before candidate 183 was installed.

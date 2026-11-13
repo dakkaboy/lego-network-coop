@@ -1071,7 +1071,7 @@ int native_tick_install(void) {
         {NATIVE_TICK_PACK_HIT_REACTION,0x6d6140},{NATIVE_TICK_PACK_HIT_DEBRIS,0x6d6140},
         {NATIVE_TICK_PACK_HIT_SHOCK,0x6d6140},{NATIVE_TICK_PACK_HIT_HEADING,0x6d6140},
         {NATIVE_TICK_PACK_IMPULSE_TIMER,0x6d60d0},{NATIVE_TICK_PACK_IMPULSE_SPEED,0x6d60d0},
-        {NATIVE_TICK_PACK_IMPULSE_HEADING,0x6d6140}};
+        {NATIVE_TICK_PACK_IMPULSE_HEADING,0x6d6140},{NATIVE_TICK_PACK_DEATH_CLIP,0x6d60d0}};
     for(const auto &source:hit_rng) {
         const auto *code=reinterpret_cast<const unsigned char *>(source[0]);
         int32_t relative;std::memcpy(&relative,code+1,4);
