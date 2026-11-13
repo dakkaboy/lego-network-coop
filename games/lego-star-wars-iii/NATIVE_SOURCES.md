@@ -914,3 +914,26 @@ Wire 134/layout 54 retains the 88-byte physics choice, 96-byte reaction choice a
 the 36-byte hit outcome uses the existing reaction union. Tests cover 3000 native
 constructor-exit ABI comparisons, reused addresses, retired bindings, ambiguous
 owners, source/finite-value guards, cache replay and native-hit receipt outcomes.
+
+## Registered RTS components on reserve actors
+
+The original RTS competitor update at 541180 can run for a character whose
+allocation bit is set while its active bit is clear. Its native ownership chain
+is actor+142C -> component+8C -> competitor, with competitor+D0 pointing back to
+the actor. Such a character can remain inactive from construction onward and
+therefore never appear in the active actor frame.
+
+The allocation registry now retains that character's original model and type
+without claiming that its initial world position is ready. The native factory's
+producer, serial and call site remain the identity source. Active references
+still require activity. The RTS gate can bind an allocated owner through the
+existing native-reference path, which requires an exact source and generation,
+rejects ambiguous owners and refuses conflicting live bindings. Before replaying
+original timers, delta and RNG inputs, it revalidates the allocation and both
+component ownership links. It neither activates the character nor adds a native
+update call. No mission names, coordinates or substitute spawn identifiers are
+used by this path.
+
+The entity regression includes a reserve actor that was never active, later
+activation with its real initial position, duplicate sources, wrong model/type,
+free and reuse. The general active-reference resolver remains strict.

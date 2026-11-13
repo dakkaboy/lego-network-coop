@@ -264,6 +264,44 @@ static void test_native_reference_binding(void) {
     free(empty);free(entity_test_pool);entity_test_pool=saved_pool;
     memcpy(entity_test_players,saved_players,sizeof saved_players);entities_update();
 }
+static void test_never_active_reserve_reference(void) {
+    char *saved_pool=entity_test_pool,*saved_players[8];
+    memcpy(saved_players,entity_test_players,sizeof saved_players);
+    entity_test_pool=calloc(ACTOR_COUNT,ACTOR_STRIDE);assert(entity_test_pool);
+    memset(entity_test_players,0,sizeof entity_test_players);
+    char *actor=entity_test_pool,*duplicate=actor+ACTOR_STRIDE;
+    const uint32_t allocated=1,freed=0,active=3;
+    const uintptr_t model=0x1234,other_model=0x5678;
+    const int16_t character=191,other_character=223;
+    memcpy(actor+0x50,&allocated,4);memcpy(actor+8,&model,sizeof model);memcpy(actor+0xdc0,&character,2);
+    entities_update();entities_note_spawn_source(actor,0x5c5ef6,(SyncSpawnSource){1,1});
+    const uint32_t local_generation=entities_observed_generation(actor);
+    assert(local_generation && entities_allocation_retained(actor,local_generation));
+    assert(!entities_allocation_live(actor,local_generation));
+    SyncActor reference={.slot=71,.generation=901,.character=191,.spawn_tag=0x5c5ef6,.spawn_source={1,1}};
+    assert(entities_bind_native_reference(&reference,actor));
+    assert(entities_actor(71,901)==actor && !entities_resolve_reference(&reference));
+    SyncActor described={0};entities_describe(&described,actor);
+    assert(described.spawn_position[0]==0 && described.spawn_position[1]==0 && described.spawn_position[2]==0);
+    SyncActor wrong=reference;++wrong.spawn_source.serial;assert(!entities_bind_native_reference(&wrong,actor));
+    wrong=reference;++wrong.character;assert(!entities_bind_native_reference(&wrong,actor));
+    memcpy(actor+8,&other_model,sizeof other_model);assert(!entities_bind_native_reference(&reference,actor));
+    memcpy(actor+8,&model,sizeof model);memcpy(actor+0xdc0,&other_character,2);assert(!entities_bind_native_reference(&reference,actor));
+    memcpy(actor+0xdc0,&character,2);
+    memcpy(duplicate+0x50,&allocated,4);memcpy(duplicate+8,&other_model,sizeof other_model);memcpy(duplicate+0xdc0,&character,2);
+    entities_update();entities_note_spawn_source(duplicate,reference.spawn_tag,reference.spawn_source);entities_reset_bindings();
+    assert(!entities_bind_native_reference(&reference,actor));
+    memcpy(duplicate+0x50,&freed,4);entities_update();assert(entities_bind_native_reference(&reference,actor));
+    const float position[3]={2,3,4};memcpy(actor+0x24,position,sizeof position);memcpy(actor+0x50,&active,4);entities_update();
+    assert(entities_observed_generation(actor)==local_generation && entities_allocation_live(actor,local_generation));
+    entities_describe(&described,actor);assert(!memcmp(described.spawn_position,position,sizeof position));
+    assert(entities_resolve_reference(&reference)==actor);
+    memcpy(actor+0x50,&freed,4);entities_update();assert(!entities_bind_native_reference(&reference,actor));
+    memcpy(actor+0x50,&allocated,4);entities_update();entities_note_spawn_source(actor,reference.spawn_tag,reference.spawn_source);
+    assert(entities_observed_generation(actor)!=local_generation && !entities_bind_native_reference(&reference,actor));
+    free(entity_test_pool);entity_test_pool=saved_pool;
+    memcpy(entity_test_players,saved_players,sizeof saved_players);entities_update();
+}
 int main(void) {
     EntityKey requested={.generation=12,.spawn_tag=5,.character=171,.spawn_source={0xe033ae01,2}};
     EntityKey candidates[]={
@@ -373,6 +411,7 @@ int main(void) {
     test_cold_tag_binding();
     test_last_native_weapon_command();
     test_native_reference_binding();
+    test_never_active_reserve_reference();
 
     free(frame);
     free(entity_test_pool);

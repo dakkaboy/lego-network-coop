@@ -597,3 +597,45 @@ then both entered the next level. The tested DLL SHA256 is
 73AE7CF4C914D175189D20270081F1416EC04C8B6705D0388A31D143D920FFEE.
 Local traces, paired frames and the verification manifests are retained in
 flight-native-contact-source181-r1.
+
+## 13 November: reserve owners in native RTS updates
+
+Weapons Factory failed on its first coherent step after the introductory scene.
+The client stopped with -15 at native clock 653: RTS competitor gate 134 of 140
+referenced host slot 1, generation 37. Both copies had the same allocated but
+inactive characters in slots 1 and 3, with valid original component/backlink
+chains. Their factory producer, party serial and call site were recorded, but
+the local registry had never captured their model/type because it waited for
+activity. The active actor frame correctly omitted them; the RTS reference
+resolver incorrectly depended on that frame.
+
+The registry now retains model/type for those allocated owners while leaving
+their initial position uninitialized until actual activation. The RTS input
+path uses native reference binding for these owners and revalidates allocation
+and component ownership before replay. Active references and ambiguity checks
+remain strict. No mission-specific selection or coordinate identity was added.
+
+Candidate 182 passed a short regression on two offscreen local instances in
+session 1: CWHub -> InnocentsOfRyloth_A -> CWHub -> WeaponsFactory_A -> CWHub.
+Each mission received attack, jump, tag and movement inputs for both players,
+followed by short attack sequences. The first RTS steps exercised the new path:
+host reserve updates reached 6, client reserve updates 4 and retained-reference
+bindings 4 at the first saved proof. The original ownership links matched on
+both sides. No first-fault or coherent rejection occurred on the checked route.
+
+All 37 Innocents variables and all 10 Weapons Factory variables matched after
+the inputs. Both Hub returns retained session 1, reached epochs 3 and 5, accepted
+input for both players and matched all 107 Hub variables. Paired mission and Hub
+frames show visible characters, the stock HUD and separate camera views.
+
+All 35 repository tests passed, including the never-active reserve, subsequent
+activation, duplicate-source, model/type mismatch and free/reuse regressions.
+The exact tested DLL SHA256 is
+1EBF3C239B31F8F0DFEF289CCDBF96F142D6FF7BD6ACFB293A363698F9EABCA5.
+Traces, paired frames, native ownership proof and installation verification are
+retained locally in ground-native-reserve182-nov13-r1. Owned games were closed
+and the isolated test profiles restored before installing this DLL.
+
+This checks mission selection through the existing diagnostic native-launch
+request, entry controls and Hub returns. It does not qualify full completion of
+these missions, later RTS objectives, the Hub map interface or separate-PC play.
