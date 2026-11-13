@@ -110,6 +110,7 @@ __declspec(dllexport) volatile uint32_t clonewars_native_tick_correction[6];
 __declspec(dllexport) volatile uint32_t clonewars_native_pack_pose_correction[16];
 __declspec(dllexport) volatile uint32_t clonewars_native_pack_cell_correction[8];
 __declspec(dllexport) volatile uint32_t clonewars_native_pack_hit_correction[8];
+__declspec(dllexport) volatile uint32_t clonewars_native_pack_death_input_debug[4];
 __declspec(dllexport) volatile uint32_t clonewars_native_weapon_command_correction[8];
 __declspec(dllexport) volatile uint32_t clonewars_native_clock_debug[4],clonewars_native_clock_correction[10];
 }
@@ -668,7 +669,30 @@ extern "C" void __cdecl native_pack_mode(unsigned char *member,unsigned char *en
             // The stock dispatcher can run during construction, before the pack joins its manager.
             SetLastError(error);return;
         }
-        if (host && frame->tick_gate_count>SYNC_MAX_TICK_GATES-3) {
+        const uint32_t mode=host?local:(expected && frame->tick_gate_count-cursor>=3?expected[2].value:local);
+        const bool dying=(mode&0xffu)==9;
+        constexpr uint32_t death_sites[]={NATIVE_TICK_PACK_DEATH_VERTICAL,NATIVE_TICK_PACK_DEATH_SPEED,NATIVE_TICK_PACK_DEATH_FLAGS};
+        uint32_t death_local[3]={},death_source[3]={};
+        if(dying){
+            if(!readable(member,0x92)){fail(4,site,clock,expected);SetLastError(error);return;}
+            std::memcpy(death_local,member+0x88,8);
+            death_local[2]=member[0x90] | (static_cast<uint32_t>(member[0x91])<<8);
+            for(unsigned i=0;i<3;++i){
+                const SyncTickGate gate={death_sites[i],clock,death_local[i]};
+                if(!native_tick_gate_valid(&gate)){fail(4,death_sites[i],clock,expected);SetLastError(error);return;}
+                death_source[i]=death_local[i];
+            }
+            if(!host){
+                if(!expected || frame->tick_gate_count-cursor<6){fail(2,site,clock,expected);SetLastError(error);return;}
+                for(unsigned i=0;i<3;++i){
+                    if(expected[3+i].site!=death_sites[i] || expected[3+i].clock!=clock || !native_tick_gate_valid(expected+3+i)){
+                        fail(2,death_sites[i],clock,expected);SetLastError(error);return;
+                    }
+                    death_source[i]=expected[3+i].value;
+                }
+            }
+        }
+        if (host && frame->tick_gate_count>SYNC_MAX_TICK_GATES-(dying?6:3)) {
             fail(1,site,clock);
         } else if (!host && (!expected || frame->tick_gate_count-cursor<3 ||
                    expected[0].site!=site || expected[0].clock!=clock || expected[0].value!=index ||
@@ -691,6 +715,19 @@ extern "C" void __cdecl native_pack_mode(unsigned char *member,unsigned char *en
                 member[0x60]=static_cast<unsigned char>(source);
                 *entry=static_cast<unsigned char>((source>>8)&1);
                 member[0x63]=static_cast<unsigned char>((member[0x63]&~0x10u) | ((source>>5)&0x10u));
+            }
+            if(dying && !failed){
+                for(unsigned i=0;i<3;++i)native_tick_decision(death_sites[i],death_local[i]);
+                if(!failed && live(COHERENT_PHASE_BIT(COHERENT_DISPATCH))){
+                    ++clonewars_native_pack_death_input_debug[host?0:1];
+                    if(!host){
+                        // The stock death integrator reads these independently of the spatial-query pose.
+                        if(std::memcmp(death_local,death_source,sizeof death_local))++clonewars_native_pack_death_input_debug[2];
+                        std::memcpy(member+0x88,death_source,8);
+                        member[0x90]=static_cast<unsigned char>(death_source[2]);
+                        member[0x91]=static_cast<unsigned char>(death_source[2]>>8);
+                    }
+                }
             }
         }
     }

@@ -705,3 +705,47 @@ cleanup and installation. The exact installed DLL SHA256 is
 0477D18A56BD6FB476B9F6A85F132C8B8B813A0E41B43AFED43F17FC436BBC24.
 Owned test games were closed and profiles restored. This fixes the observed
 missing-blade case; the RTS and SpellIt failures documented above remain open.
+
+## SpellIt completion and RTS death inputs
+
+SpellIt's native completion helper `812D60` tests receiver flag `183h & 4`
+and calls the receiver's enabled method at `812D87` and `812DFD`. Only the
+later query at `840856` was journaled. The two early flag tests and method
+results now use the existing gizmo and selected-piece source witnesses. The
+flag bridge preserves live registers and FP state; it projects TEST flags
+without writing the receiver. Each enabled method still runs once. The native
+timeout calculation and selection/completion functions remain unchanged.
+
+The native RTS death integrator `4338F0` reads member vertical velocity at
+`88h`, a movement multiplier at `8Ch`, and two state bytes at `90h/91h`,
+independently of its spatial-query pose. These inputs now travel with the
+existing pack/member mode witness before the stock death update. The complete
+group is validated before replay. Native ground handling, removal decisions
+and dense-pool compaction are unchanged. Wire 136 rejects older peers; layout
+54 is unchanged. No mission names, positions or forced hit/death outcomes were
+added to the runtime changes.
+
+All 36 tests pass, including the TEST bridge ABI, stale/cancelled SpellIt
+sources, single native method calls, invalid operand sites/values, and
+wrong-member or truncated death-input groups. Candidate 187 passed a short
+offscreen two-instance Weapons Factory session: native rock destruction with
+matching flags/hit counters, 360 following battle steps, client movement,
+fire and jump, and return to CWHub in the same network session. The new death
+input group executed 191 times per peer, with no value correction on that
+route. No first fault or rejection was recorded. Reviewed battle frames show
+blue/green blades, stock HUD, separate cameras and textured geometry.
+
+The early SpellIt completion hooks were not entered in that run; their new
+paths have fixture coverage only. An earlier candidate 186 run hit a distinct
+geometry-roster -16 at clock 712: the client's newly active RTS transport was
+absent from the host's first collision-manager batch. That timing issue remains
+open. A separate hardware-observer run was invalidated when stopping the
+observer ended the games; it is excluded from qualification. The earlier -23
+reproductions have not been replayed to closure. This is source coverage and a
+bounded regression, not proof that every -16/-23 or the full mission is fixed.
+
+Evidence: local `weapons-native-source187-r2`, including source-qualification,
+paired battle/Hub frames, destruction results, control checks and installation
+manifest. Owned games were closed and profiles restored; the exact candidate
+was installed after the supervisor restored the qualified 185 baseline.
+DLL SHA256: 44922B13F4F2B337941D1D7A8C6D9AEF96396D606B4CE414AEE13641F7EEB8CB.

@@ -5,6 +5,7 @@
 
 __attribute__((used)) static unsigned char native_image[0x1200000];
 static unsigned char gizmo_memory[0x230],piece_memory[0x120],other_piece[0x120];
+static unsigned char receiver_memory[0x184];
 static bool alive=true,proof=true;
 static unsigned mode,calls,faults;
 static unsigned original_calls;
@@ -26,7 +27,7 @@ extern "C" int native_spellit_source_resolve(void *g,NativeSpellItSource *s) {
 extern "C" int native_spellit_source_revalidate(const NativeSpellItSource *){return proof;}
 extern "C" int native_spellit_piece_resolve(const NativeSpellItSource *,void *p,NativeSpellItPiece *out) {
     if(p!=piece_memory)return 0;
-    *out={};out->piece=p;out->key={{5,6,7,8},{9,10,11,12},265,672,0x820f64,8};return 1;
+    *out={};out->piece=p;out->receiver=receiver_memory;out->key={{5,6,7,8},{9,10,11,12},265,672,0x820f64,8};return 1;
 }
 extern "C" int native_spellit_piece_revalidate(const NativeSpellItSource *,const NativeSpellItPiece *){return proof;}
 extern "C" int native_spellit_body_resolve(const NativeSpellItSource *,void *piece,NativeSpellItBody *body){
@@ -44,6 +45,13 @@ extern "C" int native_spellit_selection_snapshot(const NativeSpellItSource *,uin
 }
 extern "C" int physics_world_input(SyncPhysicsChoice *p,const CoherentFrameToken *) {
     ++calls;assert(physics_choice_valid(p));
+    if(p->kind==SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS || p->kind==SYNC_PHYSICS_SPELLIT_ENABLED){
+        p->world.value=p->kind==SYNC_PHYSICS_SPELLIT_ENABLED?1:4;
+        if(mode==1){void *other=other_piece;std::memcpy(gizmo_memory+0x21c,&other,4);}
+        if(mode==2)alive=false;
+        if(mode==3)proof=false;
+        SetLastError(999);return mode==4?-1:1;
+    }
     if(p->kind==SYNC_PHYSICS_SPELLIT_BODY_BASIS||p->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION){
         const unsigned part=p->kind==SYNC_PHYSICS_SPELLIT_BODY_MOTION;
         std::memcpy(p->spellit_body.values,reinterpret_cast<const unsigned char *>(&canonical_body)+part*48,48);
@@ -88,6 +96,10 @@ static void *__attribute__((thiscall)) original_selection_fixture(void *gizmo) {
     assert(gizmo==gizmo_memory && *reinterpret_cast<uint32_t *>(0xea178c)==expected_selection_seed);
     ++selection_calls;++*reinterpret_cast<uint32_t *>(0xea178c);SetLastError(789);return piece_memory;
 }
+static unsigned enabled_calls;
+static uint32_t __attribute__((thiscall)) original_enabled_fixture(void *receiver){
+    assert(receiver==receiver_memory);++enabled_calls;SetLastError(321);return 0;
+}
 __attribute__((naked)) static uint32_t invoke_bridge(void *) {
     __asm__ volatile("pushl %ebx\n\tmovl 8(%esp),%ebx\n\tmovl $0xcafebabe,%eax\n\tmovl $0x87654321,%edx\n\t"
         "cmpl %eax,%eax\n\tstc\n\tcall _native_spellit_pose_bridge\n\tpushfl\n\t"
@@ -100,6 +112,16 @@ int main() {
     *reinterpret_cast<uint32_t *>(0xfb4b6c)=100;
     HopScope scope{};scope.gizmo=gizmo_memory;scope.bound=true;scope.clock=100;scope.token.sequence=44;
     assert(native_spellit_source_resolve(gizmo_memory,&scope.source));current=&scope;
+    for(unsigned second=0;second<2;++second)for(mode=0;mode<=4;++mode){
+        alive=proof=true;void *piece=piece_memory;std::memcpy(gizmo_memory+0x21c,&piece,4);
+        receiver_memory[0x183]=0xa0;const auto before_faults=faults;SetLastError(123);
+        assert(native_spellit_receiver_flags(receiver_memory,second?0x812df0:0x812d7a)==(mode?0:4));
+        assert(receiver_memory[0x183]==0xa0 && GetLastError()==123 && faults==before_faults+(mode!=0));
+        alive=proof=true;std::memcpy(gizmo_memory+0x21c,&piece,4);const auto before_calls=enabled_calls;
+        assert(query(receiver_memory,original_enabled_fixture,SYNC_PHYSICS_SPELLIT_ENABLED,second?0x812e02:0x812d8c)==(mode?0:1));
+        assert(enabled_calls==before_calls+1 && GetLastError()==321);
+    }
+    alive=proof=true;mode=0;
     bodies_enabled=true;assert(native_spellit_source_resolve(gizmo_memory,&scope.source));
     uint16_t helper_control;const uint16_t native_control=0x7f;
     __asm__ volatile("fnstcw %0\n\tfldcw %1":"=m"(helper_control):"m"(native_control));scope.machine.capture();

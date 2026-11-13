@@ -104,7 +104,8 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
         for (unsigned i=0;i<9;++i) if (jam->reserved[i]) return 0;
         return 1;
     }
-    if (choice->kind>=SYNC_PHYSICS_SPELLIT_SEED && choice->kind<=SYNC_PHYSICS_SPELLIT_ENABLED) {
+    if ((choice->kind>=SYNC_PHYSICS_SPELLIT_SEED && choice->kind<=SYNC_PHYSICS_SPELLIT_ENABLED) ||
+        choice->kind==SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS) {
         const SyncPhysicsWorldInput *w=&choice->world;
         if (!w->gizmo_class || w->gizmo_ordinal>=65536 ||
             !(w->source_name[0]|w->source_name[1]|w->source_name[2]|w->source_name[3])) return 0;
@@ -113,8 +114,12 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
             for (unsigned i=0;i<4;++i) if (w->resource_name[i] || w->poi_name[i]) return 0;
             return 1;
         }
-        return choice->site==(choice->kind==SYNC_PHYSICS_SPELLIT_ENTITY?0x8407d4u:0x84085bu) &&
-            w->value<=1 && w->receiver_class && w->piece_ordinal<65536 &&
+        const int site_valid=choice->kind==SYNC_PHYSICS_SPELLIT_ENTITY?choice->site==0x8407d4u:
+            choice->kind==SYNC_PHYSICS_SPELLIT_ENABLED?
+                (choice->site==0x84085bu || choice->site==0x812d8cu || choice->site==0x812e02u):
+                (choice->site==0x812d7au || choice->site==0x812df0u);
+        const int value_valid=choice->kind==SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS?!(w->value&~4u):w->value<=1;
+        return site_valid && value_valid && w->receiver_class && w->piece_ordinal<65536 &&
             w->poi_count && w->poi_count<=65536 && w->poi_ordinal<w->poi_count &&
             (w->resource_name[0]|w->resource_name[1]|w->resource_name[2]|w->resource_name[3]) &&
             (w->poi_name[0]|w->poi_name[1]|w->poi_name[2]|w->poi_name[3]);

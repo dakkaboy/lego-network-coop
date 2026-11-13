@@ -74,6 +74,7 @@ extern "C" volatile uint32_t clonewars_native_tick_failure[16],clonewars_native_
 extern "C" uint32_t game_sync_preload_flow_input(void *,uint32_t request) { return request; }
 extern "C" int game_sync_preload_level(void) { return -1; }
 extern "C" uint32_t game_sync_preload_track_input(const uint32_t *,uint32_t time) { return time; }
+static uint32_t word(const unsigned char *p,unsigned offset){uint32_t value;std::memcpy(&value,p+offset,4);return value;}
 int main(){
  assert(reinterpret_cast<uintptr_t>(native_image)<0xfb0000 && reinterpret_cast<uintptr_t>(native_image)+sizeof(native_image)>0xfc0000);
  auto &clock=*reinterpret_cast<uint32_t *>(0xfb4b6c);clock=100;
@@ -267,7 +268,7 @@ int main(){
  put(party,4,0);
  next(true);assert(native_rts_turret_heading(turret,0xcbdb)==0xcbdb && native_tick_finish() && frame->tick_gate_count==0);
  unsigned char manager_list[4]{},krawly_manager[0x110]{},pack[0x148]{},pack_definition[0x20]{};
- unsigned char first_member[0x90]{},second_member[0x90]{};
+ unsigned char first_member[0xa0]{},second_member[0xa0]{};
  put(krawly_manager,0,0xaded84);
  put(krawly_manager,0x10c,reinterpret_cast<uintptr_t>(manager_list));
  put(manager_list,0,reinterpret_cast<uintptr_t>(pack));
@@ -400,6 +401,21 @@ int main(){
  begin(false);second_member[0x60]=2;entry=0;const auto wrong_mode_member=faults;
  native_pack_mode(second_member,&entry);
  assert(second_member[0x60]==2 && entry==0 && !native_tick_finish() && faults==wrong_mode_member+1);
+ next(true);first_member[0x60]=9;entry=0;
+ put(first_member,0x88,0xbf000000);put(first_member,0x8c,0x3f800000);first_member[0x90]=1;first_member[0x91]=0;
+ native_pack_mode(first_member,&entry);
+ assert(native_tick_finish() && frame->tick_gate_count==6 && native_tick_stream_valid(frame->tick_gates,6));
+ assert(!native_tick_stream_valid(frame->tick_gates,5) && !native_tick_stream_valid(frame->tick_gates+3,3));
+ begin(false);put(first_member,0x88,0x3e000000);put(first_member,0x8c,0x3f000000);first_member[0x90]=0;first_member[0x91]=1;
+ native_pack_mode(first_member,&entry);
+ assert(native_tick_finish() && word(first_member,0x88)==0xbf000000 && word(first_member,0x8c)==0x3f800000);
+ assert(first_member[0x90]==1 && first_member[0x91]==0);
+ begin(false);put(second_member,0x88,0x3e000000);put(second_member,0x8c,0x3f000000);const auto wrong_death=faults;
+ native_pack_mode(second_member,&entry);
+ assert(!native_tick_finish() && faults==wrong_death+1 && word(second_member,0x88)==0x3e000000);
+ begin(false);frame->tick_gate_count=5;put(first_member,0x88,0x3e000000);const auto incomplete_death=faults;
+ native_pack_mode(first_member,&entry);
+ assert(!native_tick_finish() && faults==incomplete_death+1 && word(first_member,0x88)==0x3e000000);
  next(true);first_member[0x60]=0xff;entry=1;
  native_pack_mode(first_member,&entry);
  native_pack_mode(second_member,&entry);

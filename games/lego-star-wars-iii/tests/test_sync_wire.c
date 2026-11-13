@@ -42,6 +42,15 @@ static void world_physics_inputs(void) {
     entity->world.poi_count=65537;assert(!physics_choice_valid(entity));entity->world.poi_count=65536;
     entity->world.piece_ordinal=65536;assert(!physics_choice_valid(entity));entity->world.piece_ordinal=65535;
     enabled->site=entity->site;assert(!physics_choice_valid(enabled));enabled->site=0x84085b;
+    for(unsigned site_index=0;site_index<2;++site_index){
+        different=*enabled;different.site=site_index?0x812e02:0x812d8c;assert(physics_choice_valid(&different));
+        different.kind=SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS;assert(!physics_choice_valid(&different));
+        different.site=site_index?0x812df0:0x812d7a;different.world.value=4;assert(physics_choice_valid(&different));
+        SyncPhysicsChoice operand=different;operand.world.value=0;assert(physics_choice_same_source(&different,&operand));
+        operand.world.piece_ordinal--;assert(!physics_choice_same_source(&different,&operand));
+        different.world.value=1;assert(!physics_choice_valid(&different));
+        different.world.value=0x84;assert(!physics_choice_valid(&different));
+    }
     seed->world.receiver_class=1;assert(!physics_choice_valid(seed));seed->world.receiver_class=0;
     seed->world.resource_name[3]=1;assert(!physics_choice_valid(seed));seed->world.resource_name[3]=0;
     seed->world.gizmo_ordinal=65536;assert(!physics_choice_valid(seed));seed->world.gizmo_ordinal=65535;
