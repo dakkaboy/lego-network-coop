@@ -8,7 +8,7 @@ Start missions from the Resolute map and return to the ship in the same co-op se
 
 Desyncs can still occur. We're working on fixes for the next update.
 
-- [Download 0.0.12](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.12)
+- [Download 0.0.13](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.13)
 - [Nexus Mods](https://www.nexusmods.com/legostarwars3theclonewars/mods/28)
 
 ## Build
