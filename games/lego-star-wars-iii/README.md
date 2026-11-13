@@ -4,11 +4,11 @@
 
 Network co-op for two Windows PCs. One player hosts, the other joins by IP, and each player has their own camera and the original HUD.
 
-Start missions from the Resolute map and return to the ship in the same co-op session. This update fixes loading failures and an enemy hit-reaction desync in RTS battles.
+Start missions from the Resolute map and return to the ship in the same co-op session. This update fixes a client stop on entering Weapons Factory and improves synchronization of debris, projectiles and damaged ships.
 
 Desyncs can still occur. We're working on fixes for the next update.
 
-- [Download 0.0.11](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.11)
+- [Download 0.0.12](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.12)
 - [Nexus Mods](https://www.nexusmods.com/legostarwars3theclonewars/mods/28)
 
 ## Build
