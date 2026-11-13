@@ -13,7 +13,7 @@
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
 #define SYNC_LAYOUT_VERSION 54
-#define SYNC_WIRE_VERSION 136
+#define SYNC_WIRE_VERSION 147
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -385,7 +385,7 @@ enum SyncPhysicsChoiceKind {
     SYNC_PHYSICS_SPELLIT_STEP=10, SYNC_PHYSICS_SPELLIT_SELECTION=11,
     SYNC_PHYSICS_SPELLIT_BODY_BASIS=12, SYNC_PHYSICS_SPELLIT_BODY_MOTION=13,
     SYNC_PHYSICS_VEHICLE_RNG=14, SYNC_PHYSICS_BREAKUP_BASIS=15, SYNC_PHYSICS_BREAKUP_SCALE=16,
-    SYNC_PHYSICS_EFFECT_BIRTH=17, SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS=18
+    SYNC_PHYSICS_EFFECT_BIRTH=17, SYNC_PHYSICS_SPELLIT_RECEIVER_FLAGS=18, SYNC_PHYSICS_RTS_ORDER=19, SYNC_PHYSICS_RTS_GENERATOR=20, SYNC_PHYSICS_RTS_BODY_BASIS=21, SYNC_PHYSICS_RTS_BODY_MOTION=22, SYNC_PHYSICS_RTS_VISIBILITY=23
 };
 typedef struct SyncPhysicsWorldInput {
     uint32_t clock,value;
@@ -440,6 +440,19 @@ typedef struct SyncPhysicsBreakupBasisInput {
     uint32_t clock,model,name_hash[2];
     float matrix[16];
 } SyncPhysicsBreakupBasisInput;
+typedef struct SyncPhysicsRtsOrderInput {
+    uint32_t clock,team_slot,building_id,order_class,state,previous_state;
+    float elapsed,progress;
+    uint32_t ready,reserved[11];
+} SyncPhysicsRtsOrderInput;
+
+typedef struct SyncPhysicsRtsGeneratorInput {
+ uint32_t clock,team_slot,index,side,object_class,state;
+ float delta,elapsed,countdown,phase_time;
+ uint32_t previous_state,rng_game,rng_engine,rng_effects;
+ float timer_delta;
+ uint32_t reserved[5];
+} SyncPhysicsRtsGeneratorInput;
 typedef struct SyncPhysicsChoice {
     uint32_t kind,site;
     union {
@@ -456,6 +469,8 @@ typedef struct SyncPhysicsChoice {
         SyncPhysicsSpellItBodyInput spellit_body;
         SyncPhysicsVehicleRngInput vehicle_rng;
         SyncPhysicsBreakupBasisInput breakup_basis;
+        SyncPhysicsRtsOrderInput rts_order;
+        SyncPhysicsRtsGeneratorInput rts_generator;
     };
 } SyncPhysicsChoice;
 

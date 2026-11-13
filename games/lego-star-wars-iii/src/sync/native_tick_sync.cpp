@@ -4,6 +4,7 @@
 #include <cstring>
 #include "native_tick_sync.h"
 #include "../engine/native_gizmo_source.h"
+#include "../engine/native_global_pack_source.h"
 extern "C" {
 #include "game_sync.h"
 #include "entity_sync.h"
@@ -111,6 +112,8 @@ __declspec(dllexport) volatile uint32_t clonewars_native_pack_pose_correction[16
 __declspec(dllexport) volatile uint32_t clonewars_native_pack_cell_correction[8];
 __declspec(dllexport) volatile uint32_t clonewars_native_pack_hit_correction[8];
 __declspec(dllexport) volatile uint32_t clonewars_native_pack_death_input_debug[4];
+__declspec(dllexport) volatile uint32_t clonewars_native_pack_avoidance_debug[4];
+__declspec(dllexport) volatile uint32_t clonewars_native_global_pack_debug[4];
 __declspec(dllexport) volatile uint32_t clonewars_native_weapon_command_correction[8];
 __declspec(dllexport) volatile uint32_t clonewars_native_clock_debug[4],clonewars_native_clock_correction[10];
 }
@@ -397,10 +400,16 @@ bool pack_attack_identity(const unsigned char *member,uint32_t &index,uint32_t &
     uint32_t pack_index=0;
     // No engine calls occur during either traversal, so region checks stay local to this lookup.
     NativeListMemory packs,members;
-    while (current!=pack) {
-        if (pack_index==UINT16_MAX || !packs.contains(current,0x18) || pointer(current)!=0xadcef0) return false;
+    while (current && current!=pack) {
+        if (pack_index>=UINT16_MAX-UINT8_MAX || !packs.contains(current,0x18) || pointer(current)!=0xadcef0) return false;
         current=reinterpret_cast<const unsigned char *>(pointer(current,0x14));
         ++pack_index;
+    }
+    if (current!=pack) {
+        NativeGlobalPackSource source{};
+        if(!native_global_pack_source(pack,&source))return false;
+        pack_index=UINT16_MAX-source.faction;
+        ++clonewars_native_global_pack_debug[host?0:1];
     }
     current=reinterpret_cast<const unsigned char *>(pointer(pack,0xa0));
     uint32_t member_index=0;
@@ -598,6 +607,10 @@ static void pack_attack_seed(const unsigned char *member,uint32_t site,uint32_t 
             auto &seed=*reinterpret_cast<uint32_t *>(0xea178c);
             native_tick_decision(site,key);
             const uint32_t local=seed,source=native_tick_decision(seed_site,seed);
+            if(site==NATIVE_TICK_PACK_HIT_AVOIDANCE && !failed && live(COHERENT_PHASE_BIT(COHERENT_DISPATCH))) {
+                ++clonewars_native_pack_avoidance_debug[host?0:1];
+                if(local!=source)++clonewars_native_pack_avoidance_debug[2];
+            }
             if (!host && !failed && live(COHERENT_PHASE_BIT(COHERENT_DISPATCH))) {
                 if(correction && !correction[0] && local!=source) {
                     const uint32_t values[]={frame->epoch,frame->sequence,site,clock,index,local,source,witness};
@@ -1104,8 +1117,9 @@ void native_tick_cancel(const CoherentFrameToken *original) {
     if (original && same(token,*original)) {active=false;frame=nullptr;}
 }
 int native_tick_install(void) {
+    if(!native_global_pack_registry_count())return 0;
     const uintptr_t hit_rng[][2]={
-        {NATIVE_TICK_PACK_HIT_REACTION,0x6d6140},{NATIVE_TICK_PACK_HIT_DEBRIS,0x6d6140},
+        {NATIVE_TICK_PACK_HIT_REACTION,0x6d6140},{NATIVE_TICK_PACK_HIT_AVOIDANCE,0x6d6140},{NATIVE_TICK_PACK_HIT_DEBRIS,0x6d6140},
         {NATIVE_TICK_PACK_HIT_SHOCK,0x6d6140},{NATIVE_TICK_PACK_HIT_HEADING,0x6d6140},
         {NATIVE_TICK_PACK_IMPULSE_TIMER,0x6d60d0},{NATIVE_TICK_PACK_IMPULSE_SPEED,0x6d60d0},
         {NATIVE_TICK_PACK_IMPULSE_HEADING,0x6d6140},{NATIVE_TICK_PACK_DEATH_CLIP,0x6d60d0}};

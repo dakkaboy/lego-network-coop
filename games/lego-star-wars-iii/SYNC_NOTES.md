@@ -518,7 +518,7 @@ production fix.
 
 ## Flight verification, 12 November 2026
 
-Candidate178 (wire131/layout54) completed Shadow of Malevolence on two offscreen
+Candidate178 (wire131/layout 54) completed Shadow of Malevolence on two offscreen
 instances in one session. Both landing pads and levers worked, all three shield
 scripts completed, all12 external torpedo targets and FINAL_TARGET were destroyed
 on both peers. Original shooting, refill, death and respawn calls remained in use.
@@ -749,3 +749,137 @@ paired battle/Hub frames, destruction results, control checks and installation
 manifest. Owned games were closed and profiles restored; the exact candidate
 was installed after the supervisor restored the qualified 185 baseline.
 DLL SHA256: 44922B13F4F2B337941D1D7A8C6D9AEF96396D606B4CE414AEE13641F7EEB8CB.
+
+## Native RTS factory and hit-avoidance inputs
+
+The earlier transport discrepancy was a one-tick creation difference: the
+client created main unit 400 and turret 401 while the host's current batch
+still contained five actors. Native factory update `55E2C0` now receives its
+state, previous state, elapsed time and build progression from the host before
+advancing the stock controller. The readiness read at `55E65C` projects the
+host's building signal into the original register operand. Identity comes
+from the native team descriptor slot, building instance ID and order class;
+team/building/order backlinks are revalidated before replay.
+
+A separate host -23 rejected member byte `90h` equal to 12 before the death
+handler initialized `90h/91h`. The wire validator now accepts their full
+two-byte representation. It still rejects upper bits, incomplete groups and
+wrong member identities. The original handler performs initialization.
+
+The remaining hit/avoidance fork was traced with identical native query
+inputs, candidate lists, projectile identities and member state before damage.
+The native weapon-kind filter `437510` calls `4096A0`, which draws an integer
+from 0 through 10 at `4096A7`. A positive draw takes the avoidance path;
+a zero draw continues into the existing hit-reaction draw at `45F44E`.
+That first draw was missing from the journal. Its engine RNG seed now uses
+the existing native pack/member witness before the original integer call.
+The game still chooses avoidance, damage, death and pool retirement.
+
+Wire 143 includes RTS order input kind 19, troop-generator input kind 20,
+and the native avoidance RNG site;
+layout 54 is unchanged. Factory update, spawn and RNG functions run once.
+No mission names, positions, forced hits, forced removals or extra world
+updates were added.
+
+All 39 tests pass, including changed-seed replay at the avoidance site,
+wrong-member/site checks, truncated input groups, the death-byte domain,
+RTS source reuse/cancellation, single original-call execution, and the
+readiness bridge's registers, flags, FP state and LastError.
+
+
+## Native global faction containers
+
+Army members can remain in the native physics pool after the game transfers
+those members to a global faction container. These containers are absent from
+the active-pack list. The previous identity lookup skipped their pose, mode,
+animation and RNG inputs, allowing corpse motion and pool compaction to diverge
+before the next tracked member reported -23.
+
+The lookup now follows the engine's global-container registry. It verifies the
+manager, faction descriptor, member pool and container backlinks. The registry
+length comes from the validated native constructor loop bound; each descriptor
+supplies its faction index. Global factions occupy a separate range in the pack
+ordinal encoding. Member identity still follows the native linked list and
+formation fields. No position matching, mission names or replacement removal
+logic are involved.
+
+Wire 147 rejects the earlier stream semantics while retaining layout 54. The
+40-test suite includes global-container lookup with multiple native pools,
+invalid registry entries,
+reused ownership, invalid constructor bounds, wrong members and replay of
+native corpse position and velocity before the original handler.
+
+
+## Native troop-generator inputs
+
+The troop generator's `547D30` state machine runs before the later RTS registry
+update. Its native state, previous state, elapsed and pending timers are separate
+from the factory controller at `55E2C0`. Earlier qualification stopped when the
+host had admitted an additional army that the client had not created.
+
+The new input group identifies the generator through its native team descriptor,
+producer slot and side, class, and the battlefield resource's world backlink.
+The current state is a context check. The original update receives the host's
+step delta, previous-state/timer inputs, engine timer operand and all three native
+RNG seeds. It still performs state transitions and creation itself, once. A
+changed current state or reused owner fails validation; it never causes a forced
+birth or an invented actor match.
+
+Tests cover stale ownership, interrupted cohorts, changed generator/state keys,
+invalid timer operands, reserved input bytes, full native state-word values,
+original-call count and LastError. Input kind 20 retains the 80-byte union layout.
+
+
+## RTS model admission and physics inputs
+
+A native contact callback changes a character's action before the next animation
+or SpellIt query. The captured host path was `A31D30` -> `A06E30` ->
+`ObeliskOrbListener` -> `522CD0`, which applied damage and entered `TakeHit`.
+The client did not enter that action. Its physical RTS model followed a different
+update history. This body is in the world's model registry, not the tracked
+breakup-effect pool.
+
+The native region/frustum query in `50FCB0` writes the pad's availability flag.
+`5525E0` consumes that flag before creating, updating or releasing the model.
+The journal now supplies that native input at the consumer, before its original
+call. The query and model lifecycle remain native. The host's result is used for
+simulation while each peer retains its own rendering camera.
+
+The source follows the pad's gizmo manager and verifies that manager against the
+current world's registry. The RTS manager's field `0x34` is a moving update cursor;
+it cannot establish pad membership or a stable ordinal. The existing gizmo
+source resolver supplies the actual list identity and ownership witness. Keys
+contain native world/pad names, manager and pad classes, registry indices and
+ordinals, the controller class, model state and requested state. No mission or
+pad names or position-based identity fallbacks are embedded in the code.
+
+The stock `544B10` update executes once. On return, after it can create the model,
+the journal publishes its transform and velocities for subsequent native physics.
+Both peers use stock transform and velocity setters. The mod does not manufacture
+contacts, damage or action transitions, or add another world update.
+
+Tests cover creation during the stock call, missing models, cancellation,
+changed source keys and ownership, invalid floats, original-call counts and
+LastError, a moving RTS cursor, and removal from the actual gizmo registry.
+Kinds 21/22 reuse the existing 80-byte body input; kind 23 carries the native
+availability input. Wire 147 keeps layout 54 and the existing frame capacity.
+
+Qualification `weapons-native-rts-registry206-r1` passed on two offscreen
+instances. The native route covered transport admission, destruction on both
+peers, Force interaction, the client's approach to the parts, battle through
+native clocks 3102 and 3101, client movement/fire/jump, and a same-session return to the Hub.
+Both peers recorded movement of 58 parts. Paired captures showed native HUD,
+separate views, visible blades and textured geometry. The position samples are
+asynchronous; they do not establish simultaneous transform equality.
+
+Before cleanup, both peers had consumed 30876 RTS availability inputs, 9835 body
+inputs and 12865 troop-generator inputs. The client corrected 6020 availability
+values, 1390 body states and 400 generator inputs. Factory readiness ran 5013 times
+on both peers; the late-battle report also recorded 19049 global-container inputs
+and 814 avoidance RNG inputs per peer. No first fault or rejection was recorded.
+All 40 tests passed, including the native registry and moving-cursor cases.
+
+The owned instances closed, the previous DLL and private profiles were restored
+and verified, and the qualified DLL was then installed. SHA256:
+`d273f8d59e45a5d7cb6dc6e17223ebc2ebd6cc53ef3eae9499f3067103772d9d`.
+This is a bounded regression route, not full-mission or all-mission coverage.

@@ -47,6 +47,7 @@ enum {
     NATIVE_TICK_PACK_POSE_COMMIT = 0x6d7670,
     NATIVE_TICK_PACK_CELL_MEMBER = 0x475716, NATIVE_TICK_PACK_CELL_FLAGS = 0x47571a,
     NATIVE_TICK_PACK_HIT_REACTION = 0x45f44e,
+    NATIVE_TICK_PACK_HIT_AVOIDANCE = 0x4096a7,
     NATIVE_TICK_PACK_HIT_DEBRIS = 0x45f59d,
     NATIVE_TICK_PACK_HIT_SHOCK = 0x45fa14,
     NATIVE_TICK_PACK_HIT_HEADING = 0x43356a,
@@ -60,7 +61,7 @@ enum {
 };
 static inline int native_pack_hit_rng_site(uint32_t site) {
     switch(site) {
-    case NATIVE_TICK_PACK_HIT_REACTION:case NATIVE_TICK_PACK_HIT_DEBRIS:
+    case NATIVE_TICK_PACK_HIT_REACTION:case NATIVE_TICK_PACK_HIT_AVOIDANCE:case NATIVE_TICK_PACK_HIT_DEBRIS:
     case NATIVE_TICK_PACK_HIT_SHOCK:case NATIVE_TICK_PACK_HIT_HEADING:
     case NATIVE_TICK_PACK_IMPULSE_TIMER:case NATIVE_TICK_PACK_IMPULSE_SPEED:
     case NATIVE_TICK_PACK_IMPULSE_HEADING:case NATIVE_TICK_PACK_DEATH_CLIP:return 1;
@@ -109,7 +110,7 @@ static inline int native_tick_gate_valid(const SyncTickGate *gate) {
         gate->site==NATIVE_TICK_PACK_MODE_MEMBER || gate->site==NATIVE_TICK_PACK_MODE_WITNESS ||
         (gate->site==NATIVE_TICK_PACK_MODE_VALUE && (gate->value&~0x3ffu)==0) ||
         ((gate->site==NATIVE_TICK_PACK_DEATH_VERTICAL || gate->site==NATIVE_TICK_PACK_DEATH_SPEED) && native_track_time_valid(gate->value)) ||
-        (gate->site==NATIVE_TICK_PACK_DEATH_FLAGS && !(gate->value&~0x101u)) ||
+        (gate->site==NATIVE_TICK_PACK_DEATH_FLAGS && !(gate->value&~0xffffu)) ||
         gate->site==NATIVE_TICK_PACK_TIMER_MEMBER || gate->site==NATIVE_TICK_PACK_TIMER_SEED ||
         gate->site==NATIVE_TICK_PACK_REARM_MEMBER || gate->site==NATIVE_TICK_PACK_REARM_SEED ||
         gate->site==NATIVE_TICK_PACK_FORMATION_MEMBER ||
