@@ -148,10 +148,18 @@ void entities_update(void) {
         char *actor=pool+slot*0x1440; LocalEntity *entry=local+slot;
         uint32_t flags=*(uint32_t *)(actor+0x50);
         if (!(flags&1)) { memset(entry,0,sizeof(*entry)); continue; }
-        if ((flags&3)!=3) continue;
         char *model=*(char **)(actor+8);
+        if ((flags&3)!=3) {
+            // Reserve actors can own running components before their first active position exists.
+            if (!entry->origin_ready && !entry->model && model) {
+                if (!entry->key.generation) entry->key.generation=generation();
+                entry->model=model;
+                entry->key.character=*(short *)(actor+0xdc0);
+            }
+            continue;
+        }
         if (!entry->key.generation || (entry->model && entry->model!=model) ||
-            (entry->origin_ready && entry->key.character!=*(short *)(actor+0xdc0))) {
+            ((entry->model || entry->origin_ready) && entry->key.character!=*(short *)(actor+0xdc0))) {
             entry->key.generation=generation();
             entry->origin_ready=0;
         }
@@ -618,7 +626,7 @@ int entities_allocation_retained(const void *actor,uint32_t generation) {
     int slot=raw_slot(actor);
     if (slot<0 || slot>=game_actor_count() || !valid(actor,0x1440)) return 0;
     const char *p=actor;const LocalEntity *entry=local+slot;
-    return entry->origin_ready && entry->key.generation==generation &&
+    return (entry->origin_ready || entry->model) && entry->key.generation==generation &&
         (*(const uint32_t *)(p+0x50)&1) && entry->model==*(char *const *)(p+8) &&
         entry->key.character==*(const int16_t *)(p+0xdc0);
 }

@@ -171,7 +171,12 @@ static int apply_actor_gate(void *actor,uint32_t kind,uint16_t flags,uint16_t ac
         if (gate->kind==kind && gate->flags==flags && gate->action==action) {
             SyncActor identity={.slot=gate->slot,.generation=gate->generation,.spawn_tag=gate->spawn_tag,.spawn_source=gate->spawn_source,.character=gate->character};
             memcpy(identity.spawn_position,gate->origin,sizeof(gate->origin));
-            const int matches=entities_resolve_reference(&identity)==actor;
+            int matches=entities_resolve_reference(&identity)==actor;
+            // Native RTS components also update allocated reserve characters absent from the active actor frame.
+            if (!matches && kind==SYNC_ACTOR_RTS_COMPETITOR && entities_bind_native_reference(&identity,actor)) {
+                matches=entities_actor(identity.slot,identity.generation)==actor;
+                if (matches) ++clonewars_rts_competitor_debug[7];
+            }
             if (!op_live(&op)) return failure_value;
             if (matches && kind==SYNC_ACTOR_AIM_TASK && !aim_task_context_equal(&gate->aim,state)) {
                 journal.failed=7;++debug[3];failed(&op,actor,NULL,7);return failure_value;
@@ -421,6 +426,8 @@ __attribute__((used,noinline)) void cadence_prepare_rts_competitor(unsigned char
         (uintptr_t)table.AllocationBase!=image || vtable<=image) {journal.failed=11;failed(&op,actor,NULL,11);goto done;}
     entities_update();
     if (!op_live(&op)) goto done;
+    const uint32_t allocation=entities_observed_generation(actor);
+    if (!entities_allocation_retained(actor,allocation)) {journal.failed=11;failed(&op,actor,NULL,11);goto done;}
     SyncRtsCompetitorState inputs={.rng_game=*(uint32_t *)0xe637b4,.rng_engine=*(uint32_t *)0xea178c,
         .clock=*(uint32_t *)0xfb4b6c,.competitor_class=(uint32_t)(vtable-image),.delta=*delta};
     static const unsigned offsets[]={0x60,0x64,0x68,0x6c,0x70,0x74,0x78,0x7c,0xa0,0xa4,0xa8,0xac};
@@ -428,6 +435,11 @@ __attribute__((used,noinline)) void cadence_prepare_rts_competitor(unsigned char
     const SyncRtsCompetitorState local=inputs;
     apply_actor_gate(actor,SYNC_ACTOR_RTS_COMPETITOR,0,0,0,&inputs,clonewars_rts_competitor_debug);
     if (!op_live(&op) || !active || journal.failed) goto done;
+    if (!entities_allocation_retained(actor,allocation) || *(void **)((unsigned char *)actor+0x142c)!=component ||
+        !valid(component,0x90) || *(void **)(component+0x8c)!=competitor || *(void **)(competitor+0xd0)!=actor) {
+        journal.failed=11;failed(&op,actor,NULL,11);goto done;
+    }
+    if ((*(uint32_t *)((unsigned char *)actor+0x50)&3)!=3) ++clonewars_rts_competitor_debug[journal.host?5:6];
     if (!journal.host) {
         if (!clonewars_rts_competitor_correction[0] && memcmp(&local,&inputs,sizeof(inputs))) {
             uint32_t slot=UINT32_MAX,generation=0;entities_observed_identity(actor,&slot,&generation);
