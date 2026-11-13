@@ -680,3 +680,28 @@ installed DLL SHA256 is
 15C95851D09DE1A36A59173686677383215600139B0A55BEC1B4C0C2240A9910.
 Owned games were closed and test profiles restored. The supervisor restored
 the exact qualified 182 baseline before candidate 183 was installed.
+
+## Native saber visibility on both network views
+
+The earlier weapon-FX visibility exception applied only to host player one's
+Yoda. Other equipped sabers could retain their hilt while the native model
+visibility gate suppressed the blade update. Eligibility now comes from the
+engine's equipped weapon definition for any active saber actor on either peer.
+The existing guards for holstering, actor state and cinematic mode remain.
+Only the original per-actor FX caller can bypass the model visibility gate;
+there is no extra actor batch, projectile update or Present-driven simulation.
+
+Candidate 185 passed a short two-instance, offscreen Weapons Factory run:
+Anakin idle and attack, native player-two switching to Barriss, then both
+players idle and player-two attack. All 40 paired samples retained native
+type-2 saber effects for the tested player roles. Reviewed paired frames show
+blue and green blades, the original HUD and separate cameras. Both processes
+recorded 1,071 native actor batches; the final update/draw flags were 1/0.
+Neither peer recorded a first fault or rejection. All 35 repository tests pass.
+
+Local evidence: weapons-native-saber185-r1/saber-qualification contains the
+trace, paired frames and verification; qualified-installation.json records
+cleanup and installation. The exact installed DLL SHA256 is
+0477D18A56BD6FB476B9F6A85F132C8B8B813A0E41B43AFED43F17FC436BBC24.
+Owned test games were closed and profiles restored. This fixes the observed
+missing-blade case; the RTS and SpellIt failures documented above remain open.

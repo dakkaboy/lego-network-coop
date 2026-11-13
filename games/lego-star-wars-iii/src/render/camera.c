@@ -445,10 +445,10 @@ static int readable(void *pointer, SIZE_T size) {
 
 __declspec(dllexport) volatile uint32_t clonewars_saber_host_repair[4];
 
-__attribute__((used,noinline)) static int __cdecl saber_allow_host_weapon_fx(unsigned char *actor) {
-    if (!lan_is_host() || lan_status()!=LAN_CONNECTED || game_sync_status()!=2 ||
-        *(volatile unsigned char *)0xfbc161 || actor!=*(unsigned char **)0xfb4940 ||
-        !readable(actor,0x1440) || *(uint16_t *)(actor+0xdc0)!=360 ||
+__attribute__((used,noinline)) static int __cdecl saber_allow_network_weapon_fx(unsigned char *actor) {
+    if (lan_status()!=LAN_CONNECTED || game_sync_status()!=2 ||
+        *(volatile unsigned char *)0xfbc161 ||
+        !readable(actor,0x1440) ||
         (*(uint32_t *)(actor+0x50)&3)!=3 || actor[0x54] || !actor[0x10ec] ||
         (int8_t)actor[0xdde]<=0) return 0;
     unsigned char *weapon=*(unsigned char **)(actor+0x528);
@@ -473,7 +473,7 @@ __attribute__((naked)) static void saber_weapon_visibility_gate(void) {
         // The other caller equips weapons; only the native per-actor FX update can bypass visibility.
         "cmpl $0x9b6c10,4(%esp)\n\t"
         "jne 2f\n\t"
-        "pushal\n\tpushl %ebx\n\tcall _saber_allow_host_weapon_fx\n\taddl $4,%esp\n\t"
+        "pushal\n\tpushl %ebx\n\tcall _saber_allow_network_weapon_fx\n\taddl $4,%esp\n\t"
         "testl %eax,%eax\n\tpopal\n\tjz 2f\n\t"
         "1: jmp *_saber_weapon_walk\n\t"
         "2: jmp *_saber_weapon_skip\n\t");
