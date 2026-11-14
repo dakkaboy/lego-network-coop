@@ -5,3 +5,7 @@
 *.obj
 *.pdb
 *.lib
+
+# Local development notes
+/games/lego-star-wars-iii/SYNC_NOTES.md
+/games/lego-star-wars-iii/NATIVE_SOURCES.md
