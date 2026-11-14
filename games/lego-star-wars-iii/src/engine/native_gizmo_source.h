@@ -9,3 +9,5 @@ struct NativeGizmoSource {
 bool native_gizmo_source_resolve(void *manager,void *gizmo,NativeGizmoSource &source);
 bool native_gizmo_source_find(void *gizmo,uintptr_t native_update,NativeGizmoSource &source);
 bool native_gizmo_source_revalidate(const NativeGizmoSource &source);
+
+bool native_gizmo_manager_source_resolve(void *manager,NativeGizmoSource &source);

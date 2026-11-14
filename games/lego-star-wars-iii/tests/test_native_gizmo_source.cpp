@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include "../src/engine/native_gizmo_source.h"
+#include "../src/engine/native_render_cohort.h"
 
 __attribute__((used)) static unsigned char native_image[0x1200000];
 static unsigned char manager_class[0x44],gizmo_class[16];
@@ -41,5 +42,30 @@ int main() {
     assert(!native_gizmo_source_resolve(b.manager,a.gizmos[0],relocated));
     put(b.gizmos[1],0x24,reinterpret_cast<uintptr_t>(b.gizmos[0]));assert(!native_gizmo_source_resolve(b.manager,b.gizmos[0],relocated));
     put(b.gizmos[1],0x24,0);put(b.gizmos[0],0,1);assert(!native_gizmo_source_resolve(b.manager,b.gizmos[0],relocated));
+    a.bind();NativeGizmoSource manager_source{};
+    assert(native_gizmo_manager_source_resolve(a.manager,manager_source) && manager_source.manager_index==1 && !manager_source.gizmo);
+    NativeRenderCohort cohort;
+    const uint32_t passes[][3]={{5610,1,0},{5610,0,1},{5610,1,0},{5610,0,0},{5610,1,0},{5610,0,0},
+        {5611,1,0},{5611,0,1},{5611,1,0},{5611,0,0},{5611,1,0},{5611,0,0}};
+    uint16_t original_flags=9,coherent_flags=9;unsigned resets=0;
+    for(const auto &pass:passes){
+        if(pass[1])original_flags&=~4u;
+        const auto reset=cohort.primary(manager_source,2,pass[0],pass[1]);
+        if(reset){coherent_flags&=~4u;++resets;}
+        original_flags|=pass[2]*4;coherent_flags|=pass[2]*4;
+    }
+    assert(original_flags==9 && coherent_flags==13 && resets==2);
+    assert(cohort.primary(manager_source,2,5612,1)==1);coherent_flags&=~4u;assert(coherent_flags==9);
+    assert(cohort.primary(manager_source,2,5612,1)==0);
+    assert(cohort.primary(manager_source,3,5612,1)==1);
+    auto changed=manager_source;changed.world=b.world;assert(cohort.primary(changed,3,5612,1)==1);
+    changed=manager_source;changed.manager=b.manager;assert(cohort.primary(changed,3,5612,1)==1);
+    changed=manager_source;changed.key[0]^=1;assert(cohort.primary(changed,3,5612,1)==1);
+    assert(cohort.primary(manager_source,4,0xffffffffu,0)==0);
+    assert(cohort.primary(manager_source,4,0xffffffffu,1)==1);
+    assert(cohort.primary(manager_source,4,0,1)==1);
+    put(a.manager,0x24,0);assert(native_gizmo_manager_source_resolve(a.manager,manager_source));
+    a.table[0]=a.manager;assert(!native_gizmo_manager_source_resolve(a.manager,manager_source));a.table[0]=nullptr;
+    put(a.container,12,0);assert(!native_gizmo_manager_source_resolve(a.manager,manager_source));
     puts("Native gizmo identity: relocated peers, duplicate names, native membership, world ownership and stale witnesses passed.");
 }

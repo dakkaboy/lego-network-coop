@@ -12,6 +12,8 @@ void native_tick_cancel(const CoherentFrameToken *);
 uint32_t native_tick_clock_input(const uint32_t witness[2],uint32_t sample);
 enum {
     NATIVE_TICK_GAME_TIME = 0xfb4ad4,
+    NATIVE_TICK_TURN_SMOOTHING = 0xfb0fac,
+    NATIVE_TICK_CLOCK_COEFFICIENTS = 17,
     NATIVE_TICK_GIZMO_TURRET_SOURCE = 0x83827a,
     NATIVE_TICK_WEAPON_COMMAND_ACTOR = 0x45a929,
     NATIVE_TICK_WEAPON_COMMAND_GENERATION = 0x45a930,
@@ -57,37 +59,83 @@ enum {
     NATIVE_TICK_PACK_DEATH_CLIP = 0x433928,
     NATIVE_TICK_PACK_DEATH_VERTICAL = 0x4338f0,
     NATIVE_TICK_PACK_DEATH_SPEED = 0x4338f1,
-    NATIVE_TICK_PACK_DEATH_FLAGS = 0x4338f2
+    NATIVE_TICK_PACK_DEATH_FLAGS = 0x4338f2,
+    NATIVE_TICK_PACK_MODE10_DURATION = 0x432d8f,
+    NATIVE_TICK_PACK_MODE10_CLIP_PHASE = 0x432dc5,
+    NATIVE_TICK_RTS_WAIT_RNG = 0x5108fa,
+    NATIVE_TICK_RTS_TURN_INPUT = 0x546c17,
+    NATIVE_TICK_ACTOR_TURN_INPUT = 0x46b0c9,
+    NATIVE_TICK_PACK_GOAL_MOVE = 0x43167f,
+    NATIVE_TICK_PACK_GOAL_ACTIVE = 0x45fded,
+    NATIVE_TICK_PACK_GOAL_FIELDS = 10
 };
 static inline int native_pack_hit_rng_site(uint32_t site) {
     switch(site) {
     case NATIVE_TICK_PACK_HIT_REACTION:case NATIVE_TICK_PACK_HIT_AVOIDANCE:case NATIVE_TICK_PACK_HIT_DEBRIS:
     case NATIVE_TICK_PACK_HIT_SHOCK:case NATIVE_TICK_PACK_HIT_HEADING:
     case NATIVE_TICK_PACK_IMPULSE_TIMER:case NATIVE_TICK_PACK_IMPULSE_SPEED:
-    case NATIVE_TICK_PACK_IMPULSE_HEADING:case NATIVE_TICK_PACK_DEATH_CLIP:return 1;
+    case NATIVE_TICK_PACK_IMPULSE_HEADING:case NATIVE_TICK_PACK_DEATH_CLIP:
+    case NATIVE_TICK_PACK_MODE10_DURATION:case NATIVE_TICK_PACK_MODE10_CLIP_PHASE:return 1;
     default:return 0;
     }
 }
 static inline unsigned native_pack_pose_field(uint32_t site) {
     const uint32_t bases[]={NATIVE_TICK_PACK_POSE_QUERY,NATIVE_TICK_PACK_POSE_COMMIT};
-    for (unsigned i=0;i<2;++i) if(site>=bases[i] && site-bases[i]<=25 && (site-bases[i])%5==0)
+    for (unsigned i=0;i<2;++i) if(site>=bases[i] && site-bases[i]<=20 && (site-bases[i])%5==0)
         return (site-bases[i])/5+1;
+    return 0;
+}
+static inline unsigned native_pack_goal_field(uint32_t site) {
+    const uint32_t bases[]={NATIVE_TICK_PACK_GOAL_MOVE,NATIVE_TICK_PACK_GOAL_ACTIVE};
+    for(unsigned i=0;i<2;++i)if(site>=bases[i] && site-bases[i]<NATIVE_TICK_PACK_GOAL_FIELDS)
+        return site-bases[i]+1;
     return 0;
 }
 static inline int native_track_time_valid(uint32_t sample) {
     return (sample&0x7fffffffu)<0x7f800000u;
 }
+static inline int native_smoothing_valid(uint32_t sample) {
+    return sample<=0x3f800000u || sample==0x80000000u;
+}
+static inline uint32_t native_clock_coefficient_site(unsigned index) {
+    const uint32_t sites[]={0xfb0fc4,0xfb0fa8,0xfb0fb4,0xfb102c,0xfb0fb0,0xfb0fac,
+        0xfb1028,0xfb0fa0,0xfb1014,0xfb0fc0,0xfb1070,0xfb1018,0xfb101c,0xfb0fb8,
+        0xfb0fa4,0xfb0fbc,0xfb0fc8};
+    return index<NATIVE_TICK_CLOCK_COEFFICIENTS ? sites[index] : 0;
+}
+static inline int native_clock_coefficient_site_valid(uint32_t site) {
+    for(unsigned i=0;i<NATIVE_TICK_CLOCK_COEFFICIENTS;++i)
+        if(site==native_clock_coefficient_site(i))return 1;
+    return 0;
+}
+static inline int native_turn_angle_valid(uint32_t sample) {
+    return (int32_t)sample>=-32768 && (int32_t)sample<=32768;
+}
 static inline int native_tick_gate_valid(const SyncTickGate *gate) {
     if(gate) {
+        if(gate->site>=NATIVE_TICK_ACTOR_TURN_INPUT && gate->site<=NATIVE_TICK_ACTOR_TURN_INPUT+4) {
+            const unsigned field=gate->site-NATIVE_TICK_ACTOR_TURN_INPUT;
+            return field==0 ? gate->value<SYNC_MAX_ACTORS : field==1 ? gate->value!=0 :
+                field==2 ? gate->value>0 && gate->value<0x900000 : gate->value<=UINT16_MAX;
+        }
+        if(gate->site>=NATIVE_TICK_RTS_TURN_INPUT && gate->site<=NATIVE_TICK_RTS_TURN_INPUT+3) {
+            const unsigned field=gate->site-NATIVE_TICK_RTS_TURN_INPUT;
+            return field==0 ? gate->value<SYNC_MAX_ACTORS : field==1 ? gate->value!=0 : native_turn_angle_valid(gate->value);
+        }
+        if(gate->site>=NATIVE_TICK_RTS_WAIT_RNG && gate->site<=NATIVE_TICK_RTS_WAIT_RNG+4)return 1;
         if(gate->site>=NATIVE_TICK_GIZMO_TURRET_SOURCE && gate->site<=NATIVE_TICK_GIZMO_TURRET_SOURCE+6) {
             const unsigned field=gate->site-NATIVE_TICK_GIZMO_TURRET_SOURCE;
             return field==4 ? gate->value<=UINT16_MAX : field==6 ? native_track_time_valid(gate->value) : 1;
         }
+        const unsigned goal_field=native_pack_goal_field(gate->site);
+        if(goal_field) return goal_field==1 ? 1 : goal_field==5 || goal_field==9 ? gate->value<=UINT16_MAX :
+            goal_field==10 ? gate->value<=15 : native_track_time_valid(gate->value);
         const unsigned field=native_pack_pose_field(gate->site);
-        if(field) return field==1 || (field==6 ? gate->value<=UINT16_MAX : native_track_time_valid(gate->value));
+        if(field) return field==1 || (field==5 ? gate->value<=UINT16_MAX : native_track_time_valid(gate->value));
     }
     return gate && ((gate->site==0x8888cd && gate->value<=UINT8_MAX) ||
         (gate->site==NATIVE_TICK_GAME_TIME && native_track_time_valid(gate->value)) ||
+        (native_clock_coefficient_site_valid(gate->site) && native_smoothing_valid(gate->value)) ||
         (gate->site==0x888889 && gate->value<=1) ||
         (gate->site==NATIVE_TICK_RTS_PACK_ADMISSION && gate->value<32) ||
         ((gate->site==NATIVE_TICK_RTS_TURRET_HEADING || gate->site==NATIVE_TICK_RTS_TURRET_AIM) && (gate->value>>16)<SYNC_MAX_ACTORS) ||
@@ -127,6 +175,38 @@ static inline int native_tick_stream_valid(const SyncTickGate *gates,uint32_t co
     if (count>SYNC_MAX_TICK_GATES || (count && !gates)) return 0;
     for (uint32_t i=0;i<count;++i) {
         if (!native_tick_gate_valid(gates+i)) return 0;
+        if(gates[i].site==NATIVE_TICK_GAME_TIME) {
+            if(count-i<1+NATIVE_TICK_CLOCK_COEFFICIENTS)return 0;
+            for(unsigned j=0;j<NATIVE_TICK_CLOCK_COEFFICIENTS;++j)
+                if(gates[i+j+1].site!=native_clock_coefficient_site(j) ||
+                   gates[i+j+1].clock!=gates[i].clock || !native_tick_gate_valid(gates+i+j+1))return 0;
+            i+=NATIVE_TICK_CLOCK_COEFFICIENTS;continue;
+        } else if(native_clock_coefficient_site_valid(gates[i].site))return 0;
+        if(native_pack_goal_field(gates[i].site)==1) {
+            if(count-i<NATIVE_TICK_PACK_GOAL_FIELDS)return 0;
+            for(unsigned j=1;j<NATIVE_TICK_PACK_GOAL_FIELDS;++j)
+                if(gates[i+j].site!=gates[i].site+j || gates[i+j].clock!=gates[i].clock || !native_tick_gate_valid(gates+i+j))return 0;
+            if(!(gates[i+9].value&1u) && gates[i+8].value)return 0;
+            i+=NATIVE_TICK_PACK_GOAL_FIELDS-1;continue;
+        } else if(native_pack_goal_field(gates[i].site))return 0;
+        if(gates[i].site==NATIVE_TICK_ACTOR_TURN_INPUT) {
+            if(count-i<5)return 0;
+            for(unsigned j=1;j<5;++j)
+                if(gates[i+j].site!=NATIVE_TICK_ACTOR_TURN_INPUT+j || gates[i+j].clock!=gates[i].clock || !native_tick_gate_valid(gates+i+j))return 0;
+            i+=4;continue;
+        } else if(gates[i].site>NATIVE_TICK_ACTOR_TURN_INPUT && gates[i].site<=NATIVE_TICK_ACTOR_TURN_INPUT+4)return 0;
+        if(gates[i].site==NATIVE_TICK_RTS_TURN_INPUT) {
+            if(count-i<4)return 0;
+            for(unsigned j=1;j<4;++j)
+                if(gates[i+j].site!=NATIVE_TICK_RTS_TURN_INPUT+j || gates[i+j].clock!=gates[i].clock || !native_tick_gate_valid(gates+i+j))return 0;
+            i+=3;continue;
+        } else if(gates[i].site>NATIVE_TICK_RTS_TURN_INPUT && gates[i].site<=NATIVE_TICK_RTS_TURN_INPUT+3)return 0;
+        if(gates[i].site==NATIVE_TICK_RTS_WAIT_RNG) {
+            if(count-i<5)return 0;
+            for(unsigned j=1;j<5;++j)
+                if(gates[i+j].site!=NATIVE_TICK_RTS_WAIT_RNG+j || gates[i+j].clock!=gates[i].clock)return 0;
+            i+=4;continue;
+        } else if(gates[i].site>NATIVE_TICK_RTS_WAIT_RNG && gates[i].site<=NATIVE_TICK_RTS_WAIT_RNG+4)return 0;
         if (gates[i].site==NATIVE_TICK_GIZMO_TURRET_SOURCE) {
             if(count-i<7)return 0;
             for(unsigned j=1;j<7;++j)
@@ -139,10 +219,10 @@ static inline int native_tick_stream_valid(const SyncTickGate *gates,uint32_t co
             ++i;
         } else if(native_pack_hit_rng_site(gates[i].site-5))return 0;
         else if (native_pack_pose_field(gates[i].site)==1) {
-            if(count-i<6)return 0;
-            for(unsigned j=1;j<6;++j)
+            if(count-i<5)return 0;
+            for(unsigned j=1;j<5;++j)
                 if(gates[i+j].site!=gates[i].site+j*5 || gates[i+j].clock!=gates[i].clock || !native_tick_gate_valid(gates+i+j))return 0;
-            i+=5;
+            i+=4;
         } else if (native_pack_pose_field(gates[i].site)) return 0;
         else if (gates[i].site==0x7b8ae1) {
             if (count-i<3 || gates[i+1].site!=0x7b8afd || gates[i+2].site!=0x7b8b08 ||

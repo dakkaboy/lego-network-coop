@@ -355,7 +355,7 @@ int rts_spawn_timers_install(void) {
     constexpr unsigned char visibility_native[]={0x8b,0x91,0x38,0x02,0,0};
     constexpr unsigned char order_native[]={0x55,0x8b,0xec,0x83,0xe4,0xf0};
     constexpr unsigned char timer_native[]={0xd9,0x05,0x40,0x14,0xae,0x00};
-    return install_rts_hook(0x5525e0,visibility_native,&rts_visibility_hook,original_rts_visibility) && install_rts_hook(0x544b10,order_native,&rts_body_hook,original_rts_body) && install_rts_hook(0x547d30,order_native,&rts_generator_hook,original_rts_generator) && rts_order_input_install() && install_rts_hook(0x55e2c0,order_native,&rts_order_hook,original_rts_order) &&
+    return rts_visibility_attack_install() && install_rts_hook(0x5525e0,visibility_native,&rts_visibility_hook,original_rts_visibility) && install_rts_hook(0x544b10,order_native,&rts_body_hook,original_rts_body) && install_rts_hook(0x547d30,order_native,&rts_generator_hook,original_rts_generator) && rts_order_input_install() && install_rts_hook(0x55e2c0,order_native,&rts_order_hook,original_rts_order) &&
         install_rts_hook(0x50afc0,timer_native,&rts_timer_set_hook,original_rts_timer_set) &&
         install_module_timer_hook() && install_pack_ground_query_hooks();
 }

@@ -22,11 +22,14 @@ int native_rts_order_source(void *order,NativeRtsOrderSource *out){
     if(!out || !readable(order,0x330))return 0;
     NativeRtsOrderSource s{};s.order=order;s.order_class=field<uint32_t>(order,0);
     s.building=field<void *>(order,0x24);s.team=field<void *>(order,0x28);
-    if(s.order_class<0x400000 || s.order_class>=0xb00000 || !readable(s.building,0x604) ||
+    if(s.order_class<0x400000 || s.order_class>=0xb00000 || !readable(s.building,0x118) ||
        !readable(s.team,0x1a34) || field<uint32_t>(s.team,0)!=0xaef0fc || field<void *>(s.building,0x114)!=order)return 0;
     s.descriptor=field<void *>(s.team,0x1c);
     if(!readable(s.descriptor,0x34))return 0;
-    s.team_slot=field<uint32_t>(s.descriptor,0x30);s.building_id=field<uint32_t>(s.building,0x600);
+    if(!native_gizmo_source_resolve(field<void *>(s.building,0x28),s.building,s.gizmo))return 0;
+    auto *resource=field<void *>(s.team,0x10d0);
+    if(!readable(resource,0x10) || field<void *>(resource,0xc)!=s.gizmo.world)return 0;
+    s.team_slot=field<uint32_t>(s.descriptor,0x30);s.building_ordinal=s.gizmo.ordinal;
     if(s.team_slot>=SYNC_MAX_RTS_TEAMS)return 0;
     *out=s;return 1;
 }

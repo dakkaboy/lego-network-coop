@@ -19,6 +19,8 @@ static unsigned phase,faults;
 static bool alive;
 static long lan_state;
 extern "C" long lan_status(void) { return lan_state; }
+extern "C" int game_sync_status(void) {return alive?2:0;}
+extern "C" uint32_t game_sync_epoch(void) {return bound.epoch;}
 extern "C" int world_vars_cohort_valid(const CoherentFrameToken *token,uint32_t phases) {
  return alive && token && token->frame==bound.frame && token->epoch==bound.epoch &&
   token->sequence==bound.sequence && token->cohort_nonce==bound.cohort_nonce && (phases&COHERENT_PHASE_BIT(phase));
@@ -28,9 +30,47 @@ extern "C" uint32_t __cdecl native_tick_decision(uint32_t,uint32_t);
 extern "C" void __cdecl native_flow_request(unsigned char *);
 extern "C" void __cdecl native_rts_registry_rng(void *);
 extern "C" void __cdecl native_rts_producer_rng(void *);
+extern "C" void __cdecl native_rts_wait_seed(void *);
+extern "C" void native_rts_wait_seed_input(void);
+static unsigned wait_draws;
+static float __cdecl wait_original() {++wait_draws;return .25f;}
+__attribute__((naked)) static float invoke_wait(void *) {
+ __asm__ volatile("pushl %esi\n\tmovl 8(%esp),%esi\n\tcall _native_rts_wait_seed_input\n\tpopl %esi\n\tret");
+}
+extern "C" void native_pickup_render_primary_bridge(void);
+__attribute__((naked)) static uint32_t invoke_pickup_render(void *) {
+ __asm__ volatile("pushl %ebx\n\tpushl %edi\n\tmovl 12(%esp),%edi\n\tmovl $0x1234babe,%ebx\n\t"
+  "call _native_pickup_render_primary_bridge\n\tmovl %ebx,%eax\n\tpopl %edi\n\tpopl %ebx\n\tret");
+}
 extern "C" uint32_t __cdecl native_rts_pack_admission(const void *,int32_t,int32_t,uint32_t);
 extern "C" uint32_t __cdecl native_rts_turret_heading(const void *,uint32_t);
 extern "C" void __cdecl native_rts_turret_aim(void *);
+extern "C" uint32_t __cdecl native_rts_turn_input(void *,uint32_t,uint32_t *);
+extern "C" void native_rts_turn_input_bridge(void);
+extern "C" uint32_t __cdecl native_actor_turn_input(void *,uint32_t,uint16_t *);
+extern "C" void native_actor_turn_input_bridge(void);
+extern "C" uint32_t actor_turn_bridge_observed[4];
+uint32_t actor_turn_bridge_observed[4];
+__attribute__((naked)) static uint32_t invoke_actor_turn(void *,uint32_t,uint16_t *) {
+ __asm__ volatile("pushl %ebx\n\tpushl %esi\n\tpushl %edi\n\t"
+  "movl 16(%esp),%esi\n\tmovl 20(%esp),%eax\n\tmovl 24(%esp),%ebx\n\t"
+  "movl $0x1234babe,%ecx\n\tmovl $0x87654321,%edx\n\t"
+  "call _native_actor_turn_input_bridge\n\tmovl %eax,_actor_turn_bridge_observed\n\t"
+  "movl %ecx,_actor_turn_bridge_observed+4\n\tmovl %edx,_actor_turn_bridge_observed+8\n\t"
+  "pushfl\n\tpopl %edx\n\tmovl %edx,_actor_turn_bridge_observed+12\n\tmovl %edi,%eax\n\t"
+  "popl %edi\n\tpopl %esi\n\tpopl %ebx\n\tret");
+}
+extern "C" uint32_t rts_turn_bridge_observed[4];
+uint32_t rts_turn_bridge_observed[4];
+__attribute__((naked)) static uint32_t invoke_turn(void *,uint32_t,uint32_t *) {
+ __asm__ volatile("pushl %ebx\n\tpushl %edi\n\tsubl $32,%esp\n\t"
+  "movl 44(%esp),%ebx\n\tmovl 48(%esp),%eax\n\tmovl 52(%esp),%edx\n\t"
+  "movl (%edx),%ecx\n\tmovl %ecx,24(%esp)\n\tmovl $0x1234babe,%ecx\n\tcmpl %ecx,%ecx\n\tstc\n\t"
+  "call _native_rts_turn_input_bridge\n\tmovl %eax,_rts_turn_bridge_observed\n\tmovl %edx,_rts_turn_bridge_observed+4\n\t"
+  "movl %ecx,_rts_turn_bridge_observed+8\n\tpushfl\n\tpopl %edx\n\tmovl %edx,_rts_turn_bridge_observed+12\n\t"
+  "movl 52(%esp),%edx\n\tmovl 24(%esp),%ecx\n\tmovl %ecx,(%edx)\n\tmovl %edi,%eax\n\t"
+  "addl $32,%esp\n\tpopl %edi\n\tpopl %ebx\n\tret");
+}
 extern "C" uint32_t __cdecl native_fire_visibility(const void *,uint32_t);
 extern "C" void __cdecl native_weapon_commands(unsigned char *);
 extern "C" void __cdecl native_gizmo_turret_input(unsigned char *);
@@ -58,6 +98,27 @@ extern "C" void __cdecl native_pack_rearm_seed(const unsigned char *);
 extern "C" uint32_t __cdecl native_pack_formation(const unsigned char *,uint32_t);
 extern "C" void __cdecl native_pack_mode(unsigned char *,unsigned char *);
 extern "C" void __cdecl native_pack_animation(unsigned char *,uint32_t *);
+extern "C" void __cdecl native_pack_goal_input(unsigned char *,unsigned char *,uint32_t);
+extern "C" void native_pack_goal_move_bridge(void);
+extern "C" void native_pack_goal_active_bridge(void);
+extern "C" uint32_t goal_bridge_observed[4];
+uint32_t goal_bridge_observed[4];
+#define INVOKE_GOAL(bridge,offset,position) \
+ "pushl %ebx\n\tpushl %esi\n\tpushl %edi\n\tsubl $128,%esp\n\t" \
+ "movl 148(%esp),%esi\n\tleal " #offset "(%esp),%edi\n\tmovl $8,%ecx\n\tcld\n\trep movsl\n\t" \
+ "movl 144(%esp),%esi\n\t" position \
+ "movl $0x12345678,%eax\n\tmovl $0x87654321,%ecx\n\tmovl $0xcafebabe,%edx\n\tstc\n\t" \
+ "call _" #bridge "\n\tmovl %eax,_goal_bridge_observed\n\tmovl %ecx,_goal_bridge_observed+4\n\t" \
+ "movl %edx,_goal_bridge_observed+8\n\tpushfl\n\tpopl %eax\n\tmovl %eax,_goal_bridge_observed+12\n\t" \
+ "movl 148(%esp),%edi\n\tleal " #offset "(%esp),%esi\n\tmovl $8,%ecx\n\tcld\n\trep movsl\n\t" \
+ "addl $128,%esp\n\tpopl %edi\n\tpopl %esi\n\tpopl %ebx\n\tret"
+__attribute__((naked)) static float invoke_goal_move(void *,void *) {
+ __asm__ volatile(INVOKE_GOAL(native_pack_goal_move_bridge,60,"leal 0x20(%esi),%edi\n\tmovl $0x11223344,%ebx\n\t"));
+}
+__attribute__((naked)) static float invoke_goal_active(void *,void *) {
+ __asm__ volatile(INVOKE_GOAL(native_pack_goal_active_bridge,92,"leal 0x20(%esi),%ebx\n\tmovl $0x11223344,%edi\n\t"));
+}
+#undef INVOKE_GOAL
 extern "C" void __cdecl native_pack_move_timer_seed(const unsigned char *);
 extern "C" void __cdecl native_pack_move_heading_seed(const unsigned char *);
 extern "C" void __cdecl native_pack_move_choice_seed(const unsigned char *);
@@ -72,6 +133,7 @@ extern "C" int entities_slot(const void *actor) { return actor==turret_pilot ? 1
 extern "C" uint32_t entities_generation(const void *actor) { return actor==turret_pilot ? turret_pilot_generation : 0; }
 extern "C" int entities_bind_native_actor(const SyncFrame *,const void *) {return 0;}
 extern "C" volatile uint32_t clonewars_native_tick_failure[16],clonewars_native_tick_correction[6];
+extern "C" volatile uint32_t clonewars_native_pack_mode10_rng_debug[4];
 extern "C" uint32_t game_sync_preload_flow_input(void *,uint32_t request) { return request; }
 extern "C" int game_sync_preload_level(void) { return -1; }
 extern "C" uint32_t game_sync_preload_track_input(const uint32_t *,uint32_t time) { return time; }
@@ -267,6 +329,76 @@ int main(){
  begin(false);const auto stale_pilot=faults;
  assert(native_rts_turret_heading(turret,0xcbdb)==0xcbdb && !native_tick_finish() && faults==stale_pilot+1);
  put(party,4,0);
+ uint32_t look=1000;
+ for(unsigned mutation=0;mutation<7;++mutation) {
+  next(true);look=1000;SetLastError(741);assert(native_rts_turn_input(turret,static_cast<uint32_t>(-500),&look)==static_cast<uint32_t>(-500));
+  assert(native_tick_finish() && GetLastError()==741 && frame->tick_gate_count==4 && native_tick_stream_valid(frame->tick_gates,4));
+  assert(!native_tick_stream_valid(frame->tick_gates,3) && !native_tick_stream_valid(frame->tick_gates+1,3));
+  if(mutation==1)frame->tick_gates[0].value++;
+  if(mutation==2)frame->tick_gates[1].value++;
+  if(mutation==3)frame->tick_gates[2].clock++;
+  if(mutation==4)frame->tick_gate_count=3;
+  if(mutation==5)frame->tick_gates[3].site++;
+  if(mutation==6)frame->tick_gates[3].value=0x80000000;
+  begin(false);look=1100;const auto before=faults;SetLastError(742);
+  const auto actual=native_rts_turn_input(turret,static_cast<uint32_t>(-570),&look);
+  if(!mutation)assert(actual==static_cast<uint32_t>(-500) && look==1000 && native_tick_finish());
+  else assert(actual==static_cast<uint32_t>(-570) && look==1100 && !native_tick_finish() && faults==before+1);
+  assert(GetLastError()==742);
+ }
+ uint32_t turn_vtable[0x164/4]{};turn_vtable[0x160/4]=0x12344321;put(turret,0,reinterpret_cast<uintptr_t>(turn_vtable));
+ assert(VirtualProtect(reinterpret_cast<void *>(0x546c21),1,PAGE_EXECUTE_READWRITE,&old));
+ *reinterpret_cast<unsigned char *>(0x546c21)=0xc3;assert(FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<void *>(0x546c21),1));
+ next(true);look=1000;SetLastError(743);
+ double turn_retained;uint16_t turn_cw_before,turn_cw_after;uint32_t turn_mx_before,turn_mx_after;
+ __asm__ volatile("fnstcw %0\n\tstmxcsr %1\n\tfld1":"=m"(turn_cw_before),"=m"(turn_mx_before));
+ assert(invoke_turn(turret,static_cast<uint32_t>(-500),&look)==static_cast<uint32_t>(-500));
+ __asm__ volatile("fstpl %0\n\tfnstcw %1\n\tstmxcsr %2":"=m"(turn_retained),"=m"(turn_cw_after),"=m"(turn_mx_after));
+ assert(native_tick_finish() && GetLastError()==743 && turn_retained==1 && turn_cw_before==turn_cw_after && turn_mx_before==turn_mx_after);
+ assert(rts_turn_bridge_observed[0]==reinterpret_cast<uintptr_t>(turn_vtable) && rts_turn_bridge_observed[1]==0x12344321 &&
+        rts_turn_bridge_observed[2]==0x1234babe && (rts_turn_bridge_observed[3]&0x41)==0x41);
+ begin(false);look=1100;assert(invoke_turn(turret,static_cast<uint32_t>(-570),&look)==static_cast<uint32_t>(-500) && look==1000 && native_tick_finish());
+ unsigned char turn_task[0x10]{};put(turn_task,0,0xaddb5c);put(turn_task,0xc,reinterpret_cast<uintptr_t>(turret_pilot));
+ uint16_t desired=16468;
+ for(unsigned mutation=0;mutation<9;++mutation) {
+  next(true);desired=16468;SetLastError(751);assert(native_actor_turn_input(turn_task,16382,&desired)==16382);
+  assert(desired==16468 && native_tick_finish() && GetLastError()==751 && frame->tick_gate_count==5 && native_tick_stream_valid(frame->tick_gates,5));
+  assert(!native_tick_stream_valid(frame->tick_gates,4) && !native_tick_stream_valid(frame->tick_gates+1,4));
+  if(mutation==1)frame->tick_gates[0].value++;
+  if(mutation==2)frame->tick_gates[1].value++;
+  if(mutation==3)frame->tick_gates[2].value++;
+  if(mutation==4)frame->tick_gates[4].clock++;
+  if(mutation==5)frame->tick_gate_count=4;
+  if(mutation==6)frame->tick_gates[3].site++;
+  if(mutation==7)frame->tick_gates[3].value=65536;
+  if(mutation==8)frame->tick_gates[4].value=65536;
+  begin(false);desired=16497;const auto before=faults;SetLastError(752);
+  const auto actual=native_actor_turn_input(turn_task,0xabcd3ffc,&desired);
+  if(!mutation)assert(actual==0xabcd3ffe && desired==16468 && static_cast<int16_t>(actual-desired)==-86 && native_tick_finish());
+  else assert(actual==0xabcd3ffc && desired==16497 && !native_tick_finish() && faults==before+1);
+  assert(GetLastError()==752);
+ }
+ next(true);frame->tick_gate_count=SYNC_MAX_TICK_GATES-4;const auto full_turn=faults;
+ desired=16468;assert(native_actor_turn_input(turn_task,16382,&desired)==16382 && desired==16468);
+ assert(!native_tick_finish() && faults==full_turn+1 && frame->tick_gate_count==SYNC_MAX_TICK_GATES-4);
+ next(true);const auto absent_task=faults;assert(native_actor_turn_input(nullptr,16382,&desired)==16382 && !native_tick_finish() && faults==absent_task+1);
+ assert(VirtualProtect(reinterpret_cast<void *>(0x46b0d2),1,PAGE_EXECUTE_READWRITE,&old));
+ *reinterpret_cast<unsigned char *>(0x46b0d2)=0xc3;assert(FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<void *>(0x46b0d2),1));
+ next(true);desired=16468;SetLastError(753);
+ double actor_turn_retained;uint16_t actor_turn_cw_before,actor_turn_cw_after;uint32_t actor_turn_mx_before,actor_turn_mx_after;
+ __asm__ volatile("fnstcw %0\n\tstmxcsr %1\n\tfld1":"=m"(actor_turn_cw_before),"=m"(actor_turn_mx_before));
+ assert(invoke_actor_turn(turn_task,0x11113ffe,&desired)==16382);
+ __asm__ volatile("fstpl %0\n\tfnstcw %1\n\tstmxcsr %2":"=m"(actor_turn_retained),"=m"(actor_turn_cw_after),"=m"(actor_turn_mx_after));
+ assert(native_tick_finish() && GetLastError()==753 && actor_turn_retained==1 && actor_turn_cw_before==actor_turn_cw_after && actor_turn_mx_before==actor_turn_mx_after);
+ assert(actor_turn_bridge_observed[0]==0x11113ffe && actor_turn_bridge_observed[1]==0x1234ffaa &&
+        actor_turn_bridge_observed[2]==0x87654321 && (actor_turn_bridge_observed[3]&0xc1)==0x81);
+ begin(false);desired=16497;assert(invoke_actor_turn(turn_task,0xabcd3ffc,&desired)==16382 && desired==16468 && native_tick_finish());
+ native_tick_cancel(&bound);assert(native_actor_turn_input(nullptr,123,nullptr)==123);
+ next(true);assert(native_rts_turret_heading(turret,0xcbdb)==0xcbdb && native_tick_finish() && frame->tick_gate_count==2);
+ begin(false);assert(native_rts_turret_heading(turret,0xd001)==0xcbdb && native_tick_finish());
+ next(true);turret_aim=0x4b6b;native_rts_turret_aim(turret);assert(native_tick_finish());
+ begin(false);turret_aim=0x4ae5;native_rts_turret_aim(turret);assert(turret_aim==0x4b6b && native_tick_finish());
+ put(turret,0x2fc,0);
  next(true);assert(native_rts_turret_heading(turret,0xcbdb)==0xcbdb && native_tick_finish() && frame->tick_gate_count==0);
  unsigned char manager_list[4]{},krawly_manager[0x200]{},pack[0x148]{},pack_definition[0x34]{};
  unsigned char first_member[0xa0]{},second_member[0xa0]{};
@@ -310,23 +442,110 @@ int main(){
  assert(native_tick_finish() && *reinterpret_cast<uint32_t *>(first_member+0x84)==0x3f000000);
  clip_table[40+0x12]=0;
  for(uint32_t site:{static_cast<uint32_t>(NATIVE_TICK_PACK_POSE_QUERY),static_cast<uint32_t>(NATIVE_TICK_PACK_POSE_COMMIT)}) {
-  const uint32_t pose[]={0x3f800000,0x40000000,0x40400000,0x3f800000};
+  const uint32_t pose[]={0x3f800000,0x40000000,0x40400000};
   std::memcpy(first_member+0x20,pose,sizeof pose);first_member[0x48]=0x34;first_member[0x49]=0x12;
+  put(first_member,0x2c,UINT32_MAX);
   next(true);native_pack_pose(first_member,site);
-  assert(native_tick_finish() && frame->tick_gate_count==6 && native_tick_stream_valid(frame->tick_gates,6));
-  for(unsigned count=1;count<6;++count)assert(!native_tick_stream_valid(frame->tick_gates,count));
-  assert(!native_tick_stream_valid(frame->tick_gates+1,5));
+  assert(native_tick_finish() && frame->tick_gate_count==5 && native_tick_stream_valid(frame->tick_gates,5));
+  assert(*reinterpret_cast<uint32_t *>(first_member+0x2c)==UINT32_MAX);
+  for(unsigned count=1;count<5;++count)assert(!native_tick_stream_valid(frame->tick_gates,count));
+  assert(!native_tick_stream_valid(frame->tick_gates+1,4));
   begin(false);std::memset(first_member+0x20,0,16);first_member[0x48]=0;first_member[0x49]=0;
+  put(first_member,0x2c,0xbf800000);
   first_member[0x4a]=0x56;first_member[0x4b]=0x78;SetLastError(654);
   native_pack_pose(first_member,site);
   assert(native_tick_finish() && GetLastError()==654 && !std::memcmp(first_member+0x20,pose,sizeof pose));
+  assert(*reinterpret_cast<uint32_t *>(first_member+0x2c)==0xbf800000);
   assert(first_member[0x48]==0x34 && first_member[0x49]==0x12 && first_member[0x4a]==0x56 && first_member[0x4b]==0x78);
   begin(false);const auto wrong_pose_member=faults;native_pack_pose(second_member,site);
   assert(!native_tick_finish() && faults==wrong_pose_member+1);
   begin(false);const auto wrong_pose_site=faults;
   native_pack_pose(first_member,site==NATIVE_TICK_PACK_POSE_QUERY?NATIVE_TICK_PACK_POSE_COMMIT:NATIVE_TICK_PACK_POSE_QUERY);
   assert(!native_tick_finish() && faults==wrong_pose_site+1);
-  frame->tick_gates[1].value=0x7fc00000;assert(!native_tick_stream_valid(frame->tick_gates,6));
+  frame->tick_gates[1].value=0x7fc00000;assert(!native_tick_stream_valid(frame->tick_gates,5));
+  put(first_member,0x20,0x7fc00000);next(true);const auto invalid_xyz=faults;
+  native_pack_pose(first_member,site);assert(!native_tick_finish() && faults==invalid_xyz+1);
+ }
+ {
+  unsigned char original_member[0xa0];std::memcpy(original_member,first_member,sizeof original_member);
+  unsigned char goal[0x20];
+  const uint32_t host_pose[]={3257444079u,1056341087u,1085206242u};
+  const uint32_t peer_pose[]={3257448332u,1056341087u,1085118358u};
+  auto reset_goal=[&](bool peer,bool heading_valid) {
+   std::memset(goal,0xcd,sizeof goal);std::memcpy(first_member+0x20,peer?peer_pose:host_pose,12);
+   put(first_member,0x2c,peer?0x7fc00000u:UINT32_MAX);first_member[0x63]=peer?20:22;
+   uint16_t h=peer?0x4321:15469;std::memcpy(first_member+0x48,&h,2);
+   float point[3];std::memcpy(point,host_pose,12);point[2]+=1.999f;
+   if(peer)point[0]-=.5f;
+   std::memcpy(goal,point,12);put(goal,0xc,peer?0x7fc00000u:UINT32_MAX);
+   h=peer?1234:54321;std::memcpy(goal+0x10,&h,2);goal[0x1c]=(peer?0xb0:0xa0)|(heading_valid?1:0);
+  };
+  auto distance=[](const unsigned char *p,const unsigned char *g) {
+   float position[3],target[3];std::memcpy(position,p+0x20,12);std::memcpy(target,g,12);
+   const float x=target[0]-position[0],z=target[2]-position[2];return x*x+z*z;
+  };
+  for(uint32_t site:{uint32_t(NATIVE_TICK_PACK_GOAL_MOVE),uint32_t(NATIVE_TICK_PACK_GOAL_ACTIVE)}) {
+   for(bool heading_valid:{false,true})for(unsigned mutation=0;mutation<11;++mutation) {
+    reset_goal(false,heading_valid);next(true);SetLastError(901);native_pack_goal_input(first_member,goal,site);
+    assert(native_tick_finish() && GetLastError()==901 && frame->tick_gate_count==10 && native_tick_stream_valid(frame->tick_gates,10));
+    assert(frame->tick_gates[8].value==(heading_valid?54321u:0u));
+    for(unsigned n=1;n<10;++n)assert(!native_tick_stream_valid(frame->tick_gates,n));
+    assert(!native_tick_stream_valid(frame->tick_gates+1,9));
+    unsigned char canonical[0x20];std::memcpy(canonical,goal,sizeof goal);
+    if(mutation==1)frame->tick_gates[0].value++;
+    if(mutation==2)frame->tick_gates[9].clock++;
+    if(mutation==3)frame->tick_gates[3].site++;
+    if(mutation==4)frame->tick_gate_count=9;
+    if(mutation==5)frame->tick_gates[5].value=0x7fc00000;
+    if(mutation==6)frame->tick_gates[4].value=65536;
+    if(mutation==7)frame->tick_gates[9].value=16;
+    if(mutation==8){frame->tick_gates[9].value=0;frame->tick_gates[8].value=7;}
+    if(mutation==9){const auto a=frame->tick_gates[1];frame->tick_gates[1]=frame->tick_gates[2];frame->tick_gates[2]=a;}
+    reset_goal(true,heading_valid);unsigned char before_member[0xa0],before_goal[0x20];
+    std::memcpy(before_member,first_member,sizeof before_member);std::memcpy(before_goal,goal,sizeof goal);
+    assert(distance(first_member,canonical)>4.f);
+    begin(false);const auto before_faults=faults;SetLastError(902);
+    native_pack_goal_input(mutation==10?second_member:first_member,goal,site);
+    if(!mutation) {
+     assert(native_tick_finish() && !std::memcmp(first_member+0x20,host_pose,12) && distance(first_member,goal)<4.f);
+     assert(!std::memcmp(goal,canonical,12) && first_member[0x48]==uint8_t(15469) && first_member[0x49]==uint8_t(15469>>8));
+     assert(first_member[0x63]==20 && word(first_member,0x2c)==0x7fc00000 && word(goal,0xc)==0x7fc00000);
+     assert((goal[0x1c]&0xf0)==0xb0 && (goal[0x1c]&15)==unsigned(heading_valid));
+     uint16_t h;std::memcpy(&h,goal+0x10,2);assert(h==(heading_valid?54321:1234));
+     assert(!std::memcmp(goal+0x14,before_goal+0x14,8));
+    } else {
+     assert(!native_tick_finish() && faults==before_faults+1);
+     assert(!std::memcmp(first_member,before_member,sizeof before_member) && !std::memcmp(goal,before_goal,sizeof goal));
+    }
+    assert(GetLastError()==902);
+   }
+   for(unsigned field:{1u,2u,3u,5u,6u,7u}) {
+    reset_goal(false,true);next(true);put(field<4?first_member:goal,field<4?0x20+(field-1)*4:(field-5)*4,0x7fc00000);
+    const auto before=faults;native_pack_goal_input(first_member,goal,site);assert(!native_tick_finish() && faults==before+1);
+   }
+   reset_goal(false,true);next(true);frame->tick_gate_count=SYNC_MAX_TICK_GATES-9;
+   const auto full=faults;native_pack_goal_input(first_member,goal,site);
+   assert(!native_tick_finish() && faults==full+1 && frame->tick_gate_count==SYNC_MAX_TICK_GATES-9);
+  }
+  for(unsigned which=0;which<2;++which) {
+   const auto site=which?NATIVE_TICK_PACK_GOAL_ACTIVE:NATIVE_TICK_PACK_GOAL_MOVE;
+   const uintptr_t resume=which?0x45fdf3:0x431685;
+   assert(VirtualProtect(reinterpret_cast<void *>(resume),1,PAGE_EXECUTE_READWRITE,&old));
+   *reinterpret_cast<unsigned char *>(resume)=0xc3;assert(FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<void *>(resume),1));
+   auto invoke=which?invoke_goal_active:invoke_goal_move;
+   reset_goal(false,true);next(true);SetLastError(903);
+   double retained;uint16_t cw0,cw1;uint32_t mx0,mx1;
+   __asm__ volatile("fnstcw %0\n\tstmxcsr %1\n\tfld1":"=m"(cw0),"=m"(mx0));
+   volatile float result=invoke(first_member,goal);
+   __asm__ volatile("fstpl %0\n\tfnstcw %1\n\tstmxcsr %2":"=m"(retained),"=m"(cw1),"=m"(mx1));
+   assert(native_tick_finish() && frame->tick_gates[0].site==unsigned(site) && result==0.f && retained==1 && cw0==cw1 && mx0==mx1 && GetLastError()==903);
+   assert(goal_bridge_observed[0]==0x12345678 && goal_bridge_observed[1]==0x87654321 && goal_bridge_observed[2]==0xcafebabe && (goal_bridge_observed[3]&1));
+   reset_goal(true,true);begin(false);SetLastError(904);result=invoke(first_member,goal);
+   assert(result==0.f && native_tick_finish() && GetLastError()==904 && distance(first_member,goal)<4.f);
+  }
+  reset_goal(true,true);native_tick_cancel(&bound);unsigned char unchanged[0x20];std::memcpy(unchanged,goal,sizeof goal);
+  native_pack_goal_input(first_member,goal,NATIVE_TICK_PACK_GOAL_MOVE);assert(!std::memcmp(unchanged,goal,sizeof goal));
+  std::memcpy(first_member,original_member,sizeof original_member);
  }
  {
   auto *constructor_bound=reinterpret_cast<unsigned char *>(0x47699b);const unsigned char code[]={0x83,0xfe,3};
@@ -362,7 +581,7 @@ int main(){
    put(pack_definition,0x18,1);std::memcpy(constructor_bound,code,3);put(pack,0x140,1);put(native_pool,4,0);
   }
   put(first_member,0x20,0x3f800000);next(true);native_pack_pose(first_member,NATIVE_TICK_PACK_POSE_QUERY);
-  assert(native_tick_finish() && frame->tick_gate_count==6 && native_tick_stream_valid(frame->tick_gates,6));
+  assert(native_tick_finish() && frame->tick_gate_count==5 && native_tick_stream_valid(frame->tick_gates,5));
   begin(false);put(first_member,0x20,0);native_pack_pose(first_member,NATIVE_TICK_PACK_POSE_QUERY);
   assert(native_tick_finish() && word(first_member,0x20)==0x3f800000);
   begin(false);const auto wrong_global=faults;native_pack_pose(second_member,NATIVE_TICK_PACK_POSE_QUERY);
@@ -372,6 +591,26 @@ int main(){
   assert(native_tick_finish() && frame->tick_gates[0].value==0xfffe0000u && native_tick_stream_valid(frame->tick_gates,6));
   begin(false);put(first_member,0x88,0);put(first_member,0x8c,0);native_pack_mode(first_member,&entered);
   assert(native_tick_finish() && word(first_member,0x88)==0x3f800000 && word(first_member,0x8c)==0x40000000);
+  const uint32_t before_rng[]={clonewars_native_pack_mode10_rng_debug[0],clonewars_native_pack_mode10_rng_debug[1],
+                              clonewars_native_pack_mode10_rng_debug[2]};
+  next(true);engine_rng=0x9f29a3b1;
+  native_pack_hit_seed(first_member,NATIVE_TICK_PACK_MODE10_DURATION);
+  engine_rng=0x7d013ba7;
+  native_pack_hit_seed(first_member,NATIVE_TICK_PACK_MODE10_CLIP_PHASE);
+  assert(native_tick_finish() && frame->tick_gate_count==4 && native_tick_stream_valid(frame->tick_gates,4));
+  assert(frame->tick_gates[0].value==frame->tick_gates[2].value);
+  begin(false);engine_rng=0x19d2d8e7;SetLastError(913);
+  native_pack_hit_seed(first_member,NATIVE_TICK_PACK_MODE10_DURATION);
+  assert(engine_rng==0x9f29a3b1 && GetLastError()==913);
+  engine_rng=0xb4cf38d9;
+  native_pack_hit_seed(first_member,NATIVE_TICK_PACK_MODE10_CLIP_PHASE);
+  assert(engine_rng==0x7d013ba7 && native_tick_finish());
+  assert(clonewars_native_pack_mode10_rng_debug[0]==before_rng[0]+2 &&
+         clonewars_native_pack_mode10_rng_debug[1]==before_rng[1]+2 &&
+         clonewars_native_pack_mode10_rng_debug[2]==before_rng[2]+2);
+  begin(false);engine_rng=0x19d2d8e7;const auto swapped_phase_draw=faults;
+  native_pack_hit_seed(first_member,NATIVE_TICK_PACK_MODE10_CLIP_PHASE);
+  assert(engine_rng==0x19d2d8e7 && !native_tick_finish() && faults==swapped_phase_draw+1);
   put(manager_list,0,reinterpret_cast<uintptr_t>(pack));put(pack,0x13c,0);put(pack,0x140,0);put(pack_definition,0x1c,0);
  }
  next(true);assert(native_pack_cell_admission(first_member,0xe0)==0x60 && native_tick_finish());
@@ -421,7 +660,7 @@ int main(){
  for(uint32_t site:{NATIVE_TICK_PACK_HIT_REACTION,NATIVE_TICK_PACK_HIT_AVOIDANCE,NATIVE_TICK_PACK_HIT_DEBRIS,
                    NATIVE_TICK_PACK_HIT_SHOCK,NATIVE_TICK_PACK_HIT_HEADING,
                    NATIVE_TICK_PACK_IMPULSE_TIMER,NATIVE_TICK_PACK_IMPULSE_SPEED,NATIVE_TICK_PACK_IMPULSE_HEADING,
-                   NATIVE_TICK_PACK_DEATH_CLIP}) {
+                   NATIVE_TICK_PACK_DEATH_CLIP,NATIVE_TICK_PACK_MODE10_DURATION,NATIVE_TICK_PACK_MODE10_CLIP_PHASE}) {
   next(true);engine_rng=0x1234abcd;native_pack_hit_seed(first_member,site);
   assert(native_tick_finish() && native_tick_stream_valid(frame->tick_gates,2));
   assert(!native_tick_stream_valid(frame->tick_gates,1) && !native_tick_stream_valid(frame->tick_gates+1,1));
@@ -532,7 +771,7 @@ int main(){
   assert(((flags&0x40)!=0)==(command==0xff));
   assert((((flags&0x40)!=0) || (((flags&0x80)!=0)!=((flags&0x800)!=0)))==(static_cast<int8_t>(command)<=-1));
  }
- unsigned char gizmo_world[0x22e8]={},gizmo_container[16]={},gizmo_registry[0x2c]={},gizmo_manager[0x28]={},gizmo[0x1bc]={};
+ unsigned char gizmo_world[0x22e8]={},gizmo_container[16]={},gizmo_registry[0x2c]={},gizmo_manager[0x28]={},gizmo[0x280]={};
  void *gizmo_table[]={gizmo_manager};void *gizmo_handle=gizmo_table;
  auto put_gizmo=[](void *p,unsigned offset,uintptr_t value){std::memcpy(static_cast<unsigned char *>(p)+offset,&value,4);};
  put_gizmo(reinterpret_cast<void *>(0xfb4a20),0,reinterpret_cast<uintptr_t>(gizmo_world));
@@ -546,6 +785,20 @@ int main(){
  std::memcpy(gizmo+0x30,"AuthoredTurret",15);
  auto &gizmo_game_seed=*reinterpret_cast<uint16_t *>(0xe637b4);
  auto &gizmo_engine_seed=*reinterpret_cast<uint32_t *>(0xea178c);
+ assert(VirtualProtect(reinterpret_cast<void *>(0x806379),1,PAGE_EXECUTE_READWRITE,&old));
+ *reinterpret_cast<unsigned char *>(0x806379)=0xc3;assert(FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<void *>(0x806379),1));
+ const auto prior_render_lan=lan_state;lan_state=LAN_CONNECTED;
+ *reinterpret_cast<unsigned char *>(0xfb0b1d)=1;SetLastError(456);
+ double render_retained;uint16_t render_cw_before,render_cw_after;uint32_t render_mx_before,render_mx_after;
+ __asm__ volatile("fnstcw %0\n\tstmxcsr %1\n\tfld1":"=m"(render_cw_before),"=m"(render_mx_before));
+ assert(invoke_pickup_render(gizmo_manager)==0x1234ba01);
+ __asm__ volatile("fstpl %0\n\tfnstcw %1\n\tstmxcsr %2":"=m"(render_retained),"=m"(render_cw_after),"=m"(render_mx_after));
+ assert(render_retained==1 && render_cw_before==render_cw_after && render_mx_before==render_mx_after && GetLastError()==456);
+ assert(invoke_pickup_render(gizmo_manager)==0x1234ba00);
+ ++clock;assert(invoke_pickup_render(gizmo_manager)==0x1234ba01);
+ alive=false;assert(invoke_pickup_render(gizmo_manager)==0x1234ba01);alive=true;
+ lan_state=LAN_OFF;assert(invoke_pickup_render(gizmo_manager)==0x1234ba01);lan_state=prior_render_lan;
+
  for(unsigned mutation=0;mutation<8;++mutation) {
   next(true);gizmo_game_seed=123;gizmo_engine_seed=456;put_gizmo(gizmo,0x154,0x3e800000);
   SetLastError(432);native_gizmo_turret_input(gizmo);
@@ -578,13 +831,109 @@ int main(){
  __asm__ volatile("fstpl %0\n\tfnstcw %1\n\tstmxcsr %2":"=m"(gizmo_retained),"=m"(gizmo_cw_after),"=m"(gizmo_mx_after));
  assert(gizmo_flags!=UINT32_MAX && (gizmo_flags&0x41)==0x41 && native_tick_finish() && GetLastError()==876);
  assert(gizmo_retained==1 && gizmo_cw_before==gizmo_cw_after && gizmo_mx_before==gizmo_mx_after);
+ unsigned char wait_object[0x940]{},wait_team[0x10d4]{},wait_resource[0x10]{},wait_descriptor[0x34]{};
+ put(wait_object,0,0xaee6dc);put(wait_object,0x24,reinterpret_cast<uintptr_t>(gizmo));
+ put(wait_object,0x28,reinterpret_cast<uintptr_t>(wait_team));
+ put(gizmo,0x28,reinterpret_cast<uintptr_t>(gizmo_manager));
+ put(wait_team,0,0xaef0fc);put(wait_team,0x1c,reinterpret_cast<uintptr_t>(wait_descriptor));
+ put(wait_team,0x10d0,reinterpret_cast<uintptr_t>(wait_resource));
+ put(wait_resource,0xc,reinterpret_cast<uintptr_t>(gizmo_world));
+ put(wait_object,0x874,0x3f400000);
+ for(unsigned mutation=0;mutation<7;++mutation) {
+  next(true);engine_rng=1289609241;SetLastError(831);native_rts_wait_seed(wait_object);
+  assert(native_tick_finish() && frame->tick_gate_count==5 && native_tick_stream_valid(frame->tick_gates,5) && GetLastError()==831);
+  assert(!native_tick_stream_valid(frame->tick_gates,4) && !native_tick_stream_valid(frame->tick_gates+1,4));
+  if(mutation==1)frame->tick_gates[2].value++;
+  if(mutation==2)frame->tick_gates[4].clock++;
+  if(mutation==3)frame->tick_gate_count=4;
+  if(mutation==4)frame->tick_gates[2].site++;
+  if(mutation==5)gizmo[0x30]='X';
+  if(mutation==6)put(wait_resource,0xc,0);
+  begin(false);engine_rng=2976555279u;const auto before_fault=faults;SetLastError(832);
+  native_rts_wait_seed(wait_object);
+  if(!mutation)assert(native_tick_finish() && engine_rng==1289609241 && faults==before_fault);
+  else assert(!native_tick_finish() && engine_rng==2976555279u && faults==before_fault+1);
+  assert(GetLastError()==832 && word(wait_object,0x874)==0x3f400000);
+  gizmo[0x30]='A';put(wait_resource,0xc,reinterpret_cast<uintptr_t>(gizmo_world));
+ }
+ assert(VirtualProtect(reinterpret_cast<void *>(0x573100),5,PAGE_EXECUTE_READWRITE,&old));
+ const int32_t wait_jump=reinterpret_cast<uintptr_t>(wait_original)-0x573105;
+ *reinterpret_cast<unsigned char *>(0x573100)=0xe9;std::memcpy(reinterpret_cast<void *>(0x573101),&wait_jump,4);
+ assert(FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<void *>(0x573100),5));
+ next(true);engine_rng=91;SetLastError(833);
+ double wait_retained;uint16_t wait_cw_before,wait_cw_after;uint32_t wait_mx_before,wait_mx_after;
+ __asm__ volatile("fnstcw %0\n\tstmxcsr %1\n\tfld1":"=m"(wait_cw_before),"=m"(wait_mx_before));
+ volatile float wait_result=invoke_wait(wait_object);
+ __asm__ volatile("fstpl %0\n\tfnstcw %1\n\tstmxcsr %2":"=m"(wait_retained),"=m"(wait_cw_after),"=m"(wait_mx_after));
+ assert(wait_draws==1 && wait_result==.25f && wait_retained==1 && wait_cw_before==wait_cw_after && wait_mx_before==wait_mx_after);
+ assert(native_tick_finish() && GetLastError()==833);
+ begin(false);engine_rng=92;assert(invoke_wait(wait_object)==.25f && wait_draws==2 && engine_rng==91 && native_tick_finish());
+ native_tick_cancel(&bound);engine_rng=93;native_rts_wait_seed(wait_object);assert(engine_rng==93);
  auto &elapsed=*reinterpret_cast<uint32_t *>(0xfb4ad4);
- next(true);elapsed=0x3f800000;SetLastError(321);assert(native_tick_elapsed_input() && GetLastError()==321 && native_tick_finish());
- assert(frame->tick_gate_count==1 && frame->tick_gates[0].site==NATIVE_TICK_GAME_TIME && native_tick_stream_valid(frame->tick_gates,1));
- begin(false);elapsed=0x40000000;SetLastError(654);assert(native_tick_elapsed_input() && elapsed==0x3f800000 && GetLastError()==654 && native_tick_finish());
- native_tick_cancel(&bound);elapsed=0x40400000;assert(!native_tick_elapsed_input() && elapsed==0x40400000);
+ const uint32_t host_coefficient=1050015258,peer_coefficient=1042662704;
+ const unsigned char stock_smoothing[]={0x8b,0x44,0x24,0x04,0xd9,0x44,0x24,0x08,0xd8,0x20,0xd9,0x5c,0x24,0x08,
+  0xd9,0x44,0x24,0x08,0xd8,0x4c,0x24,0x0c,0xd8,0x00,0xd9,0x18,0xc3};
+ assert(VirtualProtect(reinterpret_cast<void *>(0x764d40),sizeof stock_smoothing,PAGE_EXECUTE_READWRITE,&old));
+ std::memcpy(reinterpret_cast<void *>(0x764d40),stock_smoothing,sizeof stock_smoothing);
+ assert(FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<void *>(0x764d40),sizeof stock_smoothing));
+ auto smooth=[](uint32_t &state,uint32_t coefficient) {
+  const uint32_t goal_bits=1036920420;float goal,factor;
+  std::memcpy(&goal,&goal_bits,4);std::memcpy(&factor,&coefficient,4);
+  reinterpret_cast<void (__cdecl *)(void *,float,float)>(0x764d40)(&state,goal,factor);
+ };
+ uint32_t host_turn=1028531812,peer_turn=host_turn;
+ smooth(host_turn,host_coefficient);smooth(peer_turn,peer_coefficient);
+ assert(host_turn==1032143828 && peer_turn==1030718918);
+ const uint32_t host_clock[]={1064859521,1061258580,1057064875,1052772632,1050157484,1042645436,
+  1038292912,1034734560,1032548832,1024321328,1016014720,1010790080,1007667328,1004945920,1002438272,1000645376,999299584};
+ const uint32_t peer_clock[]={1065336832,1064304640,1061158912,1058695173,1056964608,1042645436,
+  1045643308,1042476044,1040485988,1032398328,1024165472,1018895072,1015856064,1013026944,1010577344,1008824128,1007507456};
+ auto set_clocks=[](const uint32_t *values){
+  for(unsigned i=0;i<NATIVE_TICK_CLOCK_COEFFICIENTS;++i)*reinterpret_cast<uint32_t *>(native_clock_coefficient_site(i))=values[i];
+ };
+ auto clocks_equal=[](const uint32_t *values){
+  for(unsigned i=0;i<NATIVE_TICK_CLOCK_COEFFICIENTS;++i)
+   if(*reinterpret_cast<uint32_t *>(native_clock_coefficient_site(i))!=values[i])return false;
+  return true;
+ };
+ assert(host_clock[5]==peer_clock[5]);
+ host_turn=1028531812;peer_turn=host_turn;
+ smooth(host_turn,host_clock[2]);smooth(peer_turn,peer_clock[2]);assert(host_turn!=peer_turn);
+ next(true);elapsed=0x3f800000;set_clocks(host_clock);SetLastError(321);
+ assert(native_tick_elapsed_input() && GetLastError()==321 && native_tick_finish());
+ assert(frame->tick_gate_count==18 && frame->tick_gates[0].site==NATIVE_TICK_GAME_TIME &&
+  frame->tick_gates[6].site==NATIVE_TICK_TURN_SMOOTHING && native_tick_stream_valid(frame->tick_gates,18));
+ for(unsigned n=0;n<18;++n)assert(!native_tick_stream_valid(frame->tick_gates,n) || !n);
+ assert(!native_tick_stream_valid(frame->tick_gates+1,17));
+ begin(false);elapsed=0x40000000;set_clocks(peer_clock);SetLastError(654);
+ assert(native_tick_elapsed_input() && elapsed==0x3f800000 && clocks_equal(host_clock) && GetLastError()==654 && native_tick_finish());
+ peer_turn=1028531812;smooth(peer_turn,*reinterpret_cast<uint32_t *>(native_clock_coefficient_site(2)));assert(peer_turn==host_turn);
+ native_tick_cancel(&bound);elapsed=0x40400000;set_clocks(peer_clock);
+ assert(!native_tick_elapsed_input() && elapsed==0x40400000 && clocks_equal(peer_clock));
  ++frame->epoch;++bound.epoch;frame->tick_gates[0].clock++;begin(false);elapsed=0x40800000;
- assert(!native_tick_elapsed_input() && elapsed==0x40800000 && !native_tick_finish());
- next(true);elapsed=0x7fc00000;assert(!native_tick_elapsed_input() && !native_tick_finish());
+ assert(!native_tick_elapsed_input() && elapsed==0x40800000 && clocks_equal(peer_clock) && !native_tick_finish());
+ for(unsigned mutation=0;mutation<7;++mutation) {
+  next(true);elapsed=0x3f800000;set_clocks(host_clock);
+  assert(native_tick_elapsed_input() && native_tick_finish());
+  if(mutation==0)frame->tick_gates[1].clock++;
+  if(mutation==1)frame->tick_gates[9].site++;
+  if(mutation==2)frame->tick_gate_count=17;
+  if(mutation==3)frame->tick_gates[17].value=0x7fc00000;
+  if(mutation==4)frame->tick_gates[6].value=0x3f800001;
+  if(mutation==5)frame->tick_gates[1].value=0xbf000000;
+  if(mutation==6){const auto first=frame->tick_gates[1];frame->tick_gates[1]=frame->tick_gates[2];frame->tick_gates[2]=first;}
+  assert(!native_tick_stream_valid(frame->tick_gates,frame->tick_gate_count));
+  begin(false);elapsed=0x40000000;set_clocks(peer_clock);
+  assert(!native_tick_elapsed_input() && elapsed==0x40000000 && clocks_equal(peer_clock) && !native_tick_finish());
+ }
+ for(uint32_t bad:{0x7fc00000u,0x7f800000u,0xbf000000u,0x3f800001u}) {
+  for(unsigned index:{0u,5u,16u}) {
+   uint32_t invalid[NATIVE_TICK_CLOCK_COEFFICIENTS];std::memcpy(invalid,host_clock,sizeof invalid);invalid[index]=bad;
+   next(true);elapsed=0x3f800000;set_clocks(invalid);
+   assert(!native_tick_elapsed_input() && elapsed==0x3f800000 && clocks_equal(invalid) && !native_tick_finish());
+  }
+ }
+ next(true);elapsed=0x7fc00000;set_clocks(host_clock);
+ assert(!native_tick_elapsed_input() && !native_tick_finish());
  puts("Native world journal host/client correction, order, clock, count, retired lease and LastError checks passed.");
 }

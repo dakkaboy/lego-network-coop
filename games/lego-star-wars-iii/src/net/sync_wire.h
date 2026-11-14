@@ -13,7 +13,7 @@
 #define SYNC_QUEUE_SIZE 64
 #define SYNC_PROFILE_BYTES 0xb5c0
 #define SYNC_LAYOUT_VERSION 54
-#define SYNC_WIRE_VERSION 147
+#define SYNC_WIRE_VERSION 162
 #define SYNC_NATIVE_SPAN_PLAN_MASK 7u
 #define SYNC_NATIVE_SPAN_MAIN_CALL 1u
 #define SYNC_NATIVE_SPAN_OPTIONAL_CALL 2u
@@ -441,9 +441,9 @@ typedef struct SyncPhysicsBreakupBasisInput {
     float matrix[16];
 } SyncPhysicsBreakupBasisInput;
 typedef struct SyncPhysicsRtsOrderInput {
-    uint32_t clock,team_slot,building_id,order_class,state,previous_state;
+    uint32_t clock,team_slot,building_ordinal,order_class,state,previous_state;
     float elapsed,progress;
-    uint32_t ready,reserved[11];
+    uint32_t ready,source_key[4],reserved[7];
 } SyncPhysicsRtsOrderInput;
 
 typedef struct SyncPhysicsRtsGeneratorInput {

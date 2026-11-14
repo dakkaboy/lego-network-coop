@@ -25,7 +25,7 @@ void reject(const Scope &s,unsigned reason){
     ++clonewars_rts_order_input_debug[3];
     if(!clonewars_rts_order_input_failure[0]){
         const uint32_t row[]={reason,s.token.epoch,s.token.sequence,s.clock,reinterpret_cast<uintptr_t>(s.order),
-            s.source.team_slot,s.source.building_id,s.source.order_class};
+            s.source.team_slot,s.source.building_ordinal,s.source.order_class};
         std::memcpy(const_cast<uint32_t *>(clonewars_rts_order_input_failure),row,sizeof row);
     }
     game_sync_native_fault(15);
@@ -33,7 +33,8 @@ void reject(const Scope &s,unsigned reason){
 SyncPhysicsChoice input(const Scope &s,uint32_t site){
     SyncPhysicsChoice c{};c.kind=SYNC_PHYSICS_RTS_ORDER;c.site=site;
     c.rts_order.clock=s.clock;c.rts_order.team_slot=s.source.team_slot;
-    c.rts_order.building_id=s.source.building_id;c.rts_order.order_class=s.source.order_class;return c;
+    c.rts_order.building_ordinal=s.source.building_ordinal;c.rts_order.order_class=s.source.order_class;
+    std::memcpy(c.rts_order.source_key,s.source.gizmo.key,sizeof c.rts_order.source_key);return c;
 }
 bool exchange(Scope &s,SyncPhysicsChoice &c){
     const auto before=c;

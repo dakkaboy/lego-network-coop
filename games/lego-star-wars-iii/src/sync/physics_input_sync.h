@@ -26,7 +26,7 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
     if (!choice) return 0;
     if(choice->kind==SYNC_PHYSICS_RTS_VISIBILITY){
         const SyncPhysicsWorldInput *v=&choice->world;
-        if(choice->site!=0x5525e0||v->value>1||v->gizmo_class<0x400000||v->gizmo_class>=0xb00000||v->gizmo_ordinal>=65536||!(v->source_name[0]|v->source_name[1]|v->source_name[2]|v->source_name[3]))return 0;
+        if((choice->site!=0x5525e0&&choice->site!=0x546674)||v->value>1||v->gizmo_class<0x400000||v->gizmo_class>=0xb00000||v->gizmo_ordinal>=65536||!(v->source_name[0]|v->source_name[1]|v->source_name[2]|v->source_name[3]))return 0;
         for(unsigned i=32;i<sizeof(*v);++i)if(((const unsigned char *)v)[i])return 0;
         return 1;
     }
@@ -40,9 +40,10 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
     }
     if(choice->kind==SYNC_PHYSICS_RTS_ORDER){
         const SyncPhysicsRtsOrderInput *v=&choice->rts_order;
-        if((choice->site!=0x55e2c0 && choice->site!=0x55e65c) || v->team_slot>=SYNC_MAX_RTS_TEAMS ||
+        if((choice->site!=0x55e2c0 && choice->site!=0x55e65c) || v->team_slot>=SYNC_MAX_RTS_TEAMS || v->building_ordinal>=65536 ||
+           !(v->source_key[0]|v->source_key[1]|v->source_key[2]|v->source_key[3]) ||
            v->order_class<0x400000 || v->order_class>=0xb00000 || !isfinite(v->elapsed) || !isfinite(v->progress))return 0;
-        for(unsigned i=0;i<11;++i)if(v->reserved[i])return 0;
+        for(unsigned i=0;i<7;++i)if(v->reserved[i])return 0;
         if(choice->site==0x55e2c0)return !v->ready;
         return !(v->ready&~2u) && !v->state && !v->previous_state && v->elapsed==0 && v->progress==0;
     }
@@ -79,6 +80,10 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
         if(choice->site!=((choice->kind==SYNC_PHYSICS_RTS_BODY_BASIS||choice->kind==SYNC_PHYSICS_RTS_BODY_MOTION)?0x544b10u:0x840660u)||!body->body_class||body->body_class>=0x1000000||body->piece_ordinal>=65536||body->reserved||
            !(body->key[0]|body->key[1]|body->key[2]|body->key[3]))return 0;
         for(unsigned i=0;i<12;++i)if(!isfinite(body->values[i]))return 0;
+        if(choice->kind==SYNC_PHYSICS_RTS_BODY_MOTION){
+            uint32_t lanes[2];memcpy(lanes,body->values+7,4);memcpy(lanes+1,body->values+11,4);
+            if(lanes[0]||lanes[1])return 0;
+        }
         return 1;
     }
     if(choice->kind==SYNC_PHYSICS_SPELLIT_SELECTION) {
@@ -163,7 +168,8 @@ static inline int physics_choice_valid(const SyncPhysicsChoice *choice) {
 static inline int physics_choice_same_source(const SyncPhysicsChoice *a,const SyncPhysicsChoice *b) {
     if (!physics_choice_valid(a) || !physics_choice_valid(b) || a->kind!=b->kind || a->site!=b->site) return 0;
     if(a->kind==SYNC_PHYSICS_RTS_GENERATOR)return !memcmp(&a->rts_generator,&b->rts_generator,24);
-    if(a->kind==SYNC_PHYSICS_RTS_ORDER)return !memcmp(&a->rts_order,&b->rts_order,16);
+    if(a->kind==SYNC_PHYSICS_RTS_ORDER)return !memcmp(&a->rts_order,&b->rts_order,16) &&
+        !memcmp(a->rts_order.source_key,b->rts_order.source_key,sizeof(a->rts_order.source_key));
     if (a->kind==SYNC_PHYSICS_BREAKUP_BASIS) return !memcmp(&a->breakup_basis,&b->breakup_basis,16);
     if (a->kind==SYNC_PHYSICS_BREAKUP_SCALE || a->kind==SYNC_PHYSICS_EFFECT_BIRTH) return a->flags==b->flags && a->model==b->model &&
         a->clock==b->clock && !memcmp(a->name_hash,b->name_hash,sizeof(a->name_hash));

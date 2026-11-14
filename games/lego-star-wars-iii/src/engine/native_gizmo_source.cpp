@@ -58,14 +58,13 @@ struct Hash {
         number(length);for(unsigned i=0;i<length;++i)byte(value[i]);return true;
     }
 };
-bool snapshot(void *manager,void *gizmo,NativeGizmoSource &s) {
-    s={};ReadContext read;
+bool manager_snapshot(void *manager,NativeGizmoSource &s,ReadContext &read) {
+    s={};
     s.world=read.pointer(reinterpret_cast<void *>(0xfb4a20));
     s.registry=read.pointer(reinterpret_cast<void *>(0xe90184));
-    s.manager=manager;s.gizmo=gizmo;
+    s.manager=manager;
     if(!read.readable(s.world,0x22e8) || !read.readable(s.registry,0x2c) ||
-       !read.readable(gizmo,0x80) || !read.readable(manager,0x28) ||
-       !read.image_class(gizmo,s.gizmo_class) || !read.image_class(manager,s.manager_class))return false;
+       !read.readable(manager,0x28) || !read.image_class(manager,s.manager_class))return false;
     s.container=read.pointer(s.world,0x22e4);s.handle=read.pointer(s.world,0x400);
     if(!read.readable(s.container,0x10) || read.pointer(s.container,0xc)!=s.world || !read.readable(s.handle,4))return false;
     s.table=read.pointer(s.handle);
@@ -75,6 +74,15 @@ bool snapshot(void *manager,void *gizmo,NativeGizmoSource &s) {
     for(unsigned i=0;i<count;++i)if(read.pointer(s.table,i*4)==manager){s.manager_index=i;++managers;}
     if(managers!=1)return false;
     s.head=read.pointer(manager,0x24);
+    Hash hash;
+    if(!hash.text(read,static_cast<Byte *>(s.world)+0x81,512,true))return false;
+    hash.number(s.manager_class);hash.number(s.manager_index);
+    std::memcpy(s.key,hash.words,sizeof s.key);return true;
+}
+bool snapshot(void *manager,void *gizmo,NativeGizmoSource &s) {
+    ReadContext read;
+    if(!manager_snapshot(manager,s,read) || !read.readable(gizmo,0x80) || !read.image_class(gizmo,s.gizmo_class))return false;
+    s.gizmo=gizmo;
     auto *node=static_cast<Byte *>(s.head);unsigned matches=0;
     while(node && s.count<65536) {
         if(!read.readable(node,0x28))return false;
@@ -119,4 +127,9 @@ bool native_gizmo_source_find(void *gizmo,uintptr_t native_update,NativeGizmoSou
         }
     }
     SetLastError(error);return found;
+}
+
+bool native_gizmo_manager_source_resolve(void *manager,NativeGizmoSource &source) {
+    const DWORD error=GetLastError();ReadContext read;const bool result=manager_snapshot(manager,source,read);
+    SetLastError(error);return result;
 }
