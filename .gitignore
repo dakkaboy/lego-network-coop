@@ -5,6 +5,9 @@
 *.obj
 *.pdb
 *.lib
+**/.zig-cache/
+**/zig-out/
+**/zig-pkg/
 
 # Local development notes
 /games/lego-star-wars-iii/SYNC_NOTES.md

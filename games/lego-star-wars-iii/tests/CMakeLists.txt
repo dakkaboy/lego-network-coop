@@ -1,242 +1,268 @@
-add_library(clonewars-network-test-core STATIC
-    ../src/net/lan.c
-    ../src/net/sync_wire.cpp
-    ../src/sync/preload_state.cpp
-    ../src/sync/profile_bootstrap_state.cpp
-    ../src/sync/epoch_state.cpp
-    ../src/sync/geometry_journal.c
-    ../src/sync/input_buffer.cpp
-    ../src/sync/model_input_journal.c
-    ../src/sync/reaction_journal.c
-)
+if(CLONEWARS_ZIG_CORE)
+    function(clonewars_native_zig_test unit step)
+        cmake_parse_arguments(NATIVE "NO_TEST" "" "ARGS" ${ARGN})
+        clonewars_zig_dependencies(sources "${CMAKE_CURRENT_SOURCE_DIR}/../src/zig/${unit}_test.zig")
+        set(executable "${CMAKE_CURRENT_BINARY_DIR}/native-zig/bin/test_${unit}.exe")
+        set_property(GLOBAL APPEND PROPERTY CLONEWARS_NATIVE_EXECUTABLES "${executable}")
+        set_property(GLOBAL APPEND PROPERTY CLONEWARS_NATIVE_SOURCES ${sources})
+        add_custom_target(test_${unit} ALL)
+        add_dependencies(test_${unit} clonewars-native-suite)
+        if(NOT NATIVE_NO_TEST)
+            add_test(NAME clonewars-${unit} COMMAND "${executable}" ${NATIVE_ARGS})
+        endif()
+    endfunction()
 
-add_executable(test_native_numeric test_native_numeric.cpp)
-target_compile_features(test_native_numeric PRIVATE cxx_std_23)
-add_test(NAME clonewars-native_numeric COMMAND test_native_numeric)
+endif()
+if(CLONEWARS_ZIG_CORE)
+    clonewars_native_zig_test(fixture_loader native-fixture-loader NO_TEST)
+    add_subdirectory(owner)
+    add_subdirectory(mapping)
+    foreach(mode IN ITEMS Debug ReleaseSafe)
+        set(environment_test "${CMAKE_CURRENT_BINARY_DIR}/test_environment_${mode}.exe")
+        add_custom_command(OUTPUT "${environment_test}"
+            COMMAND "${CLONEWARS_ZIG_EXECUTABLE}" build-exe "${CMAKE_CURRENT_SOURCE_DIR}/../src/zig/machine_environment_test.zig"
+                -target x86-windows-msvc "-O${mode}" "-femit-bin=${environment_test}"
+            DEPENDS ../src/zig/machine_environment_test.zig ../src/zig/machine_environment.zig VERBATIM)
+        add_custom_target(clonewars-environment-${mode} ALL DEPENDS "${environment_test}")
+        add_test(NAME clonewars-environment-${mode} COMMAND "${environment_test}")
+    endforeach()
+    set(CLONEWARS_SEH_TEST "${CMAKE_CURRENT_BINARY_DIR}/test_seh_guard.exe")
+    add_custom_command(OUTPUT "${CLONEWARS_SEH_TEST}"
+        COMMAND "${CLONEWARS_ZIG_EXECUTABLE}" build-exe "${CMAKE_CURRENT_SOURCE_DIR}/../src/zig/seh_guard_test.zig"
+            -target x86-windows-msvc -ODebug -lc "-femit-bin=${CLONEWARS_SEH_TEST}"
+        DEPENDS ../src/zig/seh_guard.zig ../src/zig/seh_guard_test.zig ../src/zig/win32.zig VERBATIM)
+    add_custom_target(clonewars-seh-check ALL DEPENDS "${CLONEWARS_SEH_TEST}")
+    add_test(NAME clonewars-seh_guard COMMAND "${CLONEWARS_SEH_TEST}")
+    clonewars_native_zig_test(wire_abi native-wire-abi)
+endif()
+
+clonewars_native_zig_test(native_numeric native-numeric)
 set_tests_properties(clonewars-native_numeric PROPERTIES TIMEOUT 15)
-target_include_directories(clonewars-network-test-core PUBLIC ../src ../../../common)
-target_compile_features(clonewars-network-test-core PRIVATE cxx_std_23)
-target_compile_options(clonewars-network-test-core PRIVATE -fms-extensions)
-target_compile_definitions(clonewars-network-test-core PUBLIC CLONEWARS_LAN_PORT=32521)
-target_link_libraries(clonewars-network-test-core PUBLIC ws2_32)
 
-foreach(check input_buffer epoch_state sync_wire lan_version transition_publication)
-    add_executable(test_${check} test_${check}.c)
-    target_link_libraries(test_${check} PRIVATE clonewars-network-test-core)
+clonewars_native_zig_test(input_buffer native-input-buffer)
+clonewars_native_zig_test(epoch_state native-epoch-state)
+clonewars_native_zig_test(lan_version native-lan-version)
+clonewars_native_zig_test(lan_transport native-lan-transport)
+clonewars_native_zig_test(sync_wire native-sync-wire ARGS 4)
+foreach(group RANGE 0 3)
+    add_test(NAME clonewars-sync_wire-${group} COMMAND "${CMAKE_CURRENT_BINARY_DIR}/native-zig/bin/test_sync_wire.exe" ${group})
+endforeach()
+foreach(check transition_publication)
+        clonewars_zig_dependencies(publication_sources "${CMAKE_CURRENT_SOURCE_DIR}/../src/zig/lan_publication_test.zig")
+        set(publication_test "${CMAKE_CURRENT_BINARY_DIR}/test_transition_publication_zig.exe")
+        add_custom_command(OUTPUT "${publication_test}"
+            COMMAND "${CLONEWARS_ZIG_EXECUTABLE}" build-exe "${CMAKE_CURRENT_SOURCE_DIR}/../src/zig/lan_publication_test.zig"
+                -target x86-windows-msvc -OReleaseSafe -lc -fcompiler-rt "${CLONEWARS_ZIG_LIBRARY}" "-femit-bin=${publication_test}"
+            DEPENDS ${publication_sources} "${CLONEWARS_ZIG_LIBRARY}" clonewars-zig-build VERBATIM)
+        add_custom_target(clonewars-publication-check ALL DEPENDS "${publication_test}")
+        add_executable(test_transition_publication IMPORTED)
+        set_target_properties(test_transition_publication PROPERTIES IMPORTED_LOCATION "${publication_test}")
+        add_dependencies(test_transition_publication clonewars-publication-check)
     add_test(NAME clonewars-${check} COMMAND test_${check})
     set_tests_properties(clonewars-${check} PROPERTIES TIMEOUT 15)
 endforeach()
 
-add_executable(test_entity_entry test_entity_entry.c ../src/sync/entity_sync.c ../src/sync/entity_match.c)
-target_include_directories(test_entity_entry PRIVATE ../src)
-target_compile_definitions(test_entity_entry PRIVATE ENTITY_SYNC_TEST ENTITY_SYNC_API=)
-target_compile_options(test_entity_entry PRIVATE -fms-extensions)
-add_test(NAME clonewars-entity_entry COMMAND test_entity_entry)
+set_tests_properties(clonewars-lan_version clonewars-lan_transport PROPERTIES RESOURCE_LOCK clonewars-lan-test-port TIMEOUT 15)
+clonewars_native_zig_test(entity_entry native-entity-entry)
 set_tests_properties(clonewars-entity_entry PROPERTIES TIMEOUT 15)
 
-add_executable(test_breakup_visibility test_breakup_visibility.cpp)
-target_compile_features(test_breakup_visibility PRIVATE cxx_std_23)
-target_compile_options(test_breakup_visibility PRIVATE -fms-extensions)
-add_test(NAME clonewars-breakup_visibility COMMAND test_breakup_visibility)
-set_tests_properties(clonewars-breakup_visibility PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(breakup_visibility native-breakup-visibility)
 
-add_executable(test_breakup_launch test_breakup_launch.cpp)
-target_compile_features(test_breakup_launch PRIVATE cxx_std_23)
-target_compile_options(test_breakup_launch PRIVATE -fms-extensions)
-add_test(NAME clonewars-breakup_launch COMMAND test_breakup_launch)
-set_tests_properties(clonewars-breakup_launch PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(breakup_launch native-breakup-launch)
 
-add_executable(test_vehicle_rng_thunk test_vehicle_rng_thunk.cpp)
-target_compile_features(test_vehicle_rng_thunk PRIVATE cxx_std_23)
-target_compile_options(test_vehicle_rng_thunk PRIVATE -fms-extensions)
-add_test(NAME clonewars-vehicle_rng_thunk COMMAND test_vehicle_rng_thunk)
-set_tests_properties(clonewars-vehicle_rng_thunk PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(vehicle_rng_thunk native-vehicle-rng-thunk)
 
-add_executable(test_rigid_body_binding test_rigid_body_binding.cpp ../src/engine/rigid_body_binding.cpp)
-target_compile_features(test_rigid_body_binding PRIVATE cxx_std_23)
-target_compile_options(test_rigid_body_binding PRIVATE -fms-extensions)
-add_test(NAME clonewars-rigid_body_binding COMMAND test_rigid_body_binding)
-set_tests_properties(clonewars-rigid_body_binding PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(rigid_body_binding native-rigid-body-binding)
 
-add_executable(test_aim_task test_aim_task.cpp)
-target_compile_features(test_aim_task PRIVATE cxx_std_23)
-target_compile_options(test_aim_task PRIVATE -fms-extensions)
-add_test(NAME clonewars-aim_task COMMAND test_aim_task)
-set_tests_properties(clonewars-aim_task PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(aim_task native-aim-task)
 
-add_executable(test_rts_competitor test_rts_competitor.cpp)
-target_compile_features(test_rts_competitor PRIVATE cxx_std_23)
-target_compile_options(test_rts_competitor PRIVATE -fms-extensions)
-add_test(NAME clonewars-rts_competitor COMMAND test_rts_competitor)
-set_tests_properties(clonewars-rts_competitor PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(rts_competitor native-rts-competitor)
 
-add_executable(test_native_world_admission test_native_world_admission.cpp)
-target_compile_features(test_native_world_admission PRIVATE cxx_std_23)
-target_compile_options(test_native_world_admission PRIVATE -fms-extensions)
-add_test(NAME clonewars-native_world_admission COMMAND test_native_world_admission)
-set_tests_properties(clonewars-native_world_admission PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(world_admission native-world-admission)
 
-add_executable(test_native_tick_journal test_native_tick_journal.cpp ../src/sync/native_tick_sync.cpp ../src/engine/native_gizmo_source.cpp ../src/engine/native_global_pack_source.cpp ../src/engine/native_rts_body_source.cpp)
-target_compile_features(test_native_tick_journal PRIVATE cxx_std_23)
-target_compile_options(test_native_tick_journal PRIVATE -fms-extensions)
-add_test(NAME clonewars-native_tick_journal COMMAND test_native_tick_journal)
-target_link_options(test_native_tick_journal PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-set_tests_properties(clonewars-native_tick_journal PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(native_tick_journal native-tick-journal ARGS 0)
+foreach(group RANGE 1 5)
+    add_test(NAME clonewars-native_tick_journal-${group} COMMAND "${CMAKE_CURRENT_BINARY_DIR}/native-zig/bin/test_native_tick_journal.exe" ${group})
+endforeach()
 
-add_executable(test_native_gizmo_source test_native_gizmo_source.cpp ../src/engine/native_gizmo_source.cpp)
-target_compile_features(test_native_gizmo_source PRIVATE cxx_std_23)
-target_compile_options(test_native_gizmo_source PRIVATE -fms-extensions)
-target_link_options(test_native_gizmo_source PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-add_test(NAME clonewars-native_gizmo_source COMMAND test_native_gizmo_source)
-set_tests_properties(clonewars-native_gizmo_source PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(gizmo_source native-gizmo-source)
 
-add_executable(test_spellit_pose test_spellit_pose.cpp)
-target_compile_features(test_spellit_pose PRIVATE cxx_std_23)
-target_compile_options(test_spellit_pose PRIVATE -fms-extensions)
-target_link_options(test_spellit_pose PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-add_test(NAME clonewars-spellit_pose COMMAND test_spellit_pose)
+clonewars_native_zig_test(spellit_pose native-spellit-pose)
 set_tests_properties(clonewars-spellit_pose PROPERTIES TIMEOUT 15)
 
-add_executable(test_input_device_source test_input_device_source.cpp)
-target_compile_features(test_input_device_source PRIVATE cxx_std_23)
-add_test(NAME clonewars-input_device_source COMMAND test_input_device_source)
+clonewars_native_zig_test(input_device_source native-input-device)
 set_tests_properties(clonewars-input_device_source PROPERTIES TIMEOUT 15)
 
-add_executable(test_native_flow_request test_native_flow_request.cpp)
-target_compile_features(test_native_flow_request PRIVATE cxx_std_23)
-target_compile_options(test_native_flow_request PRIVATE -fms-extensions)
-add_test(NAME clonewars-native_flow_request COMMAND test_native_flow_request)
-set_tests_properties(clonewars-native_flow_request PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(flow_request native-flow-request)
 
-add_executable(test_force_target test_force_target.cpp)
-target_compile_features(test_force_target PRIVATE cxx_std_23)
-target_compile_options(test_force_target PRIVATE -fms-extensions)
-add_test(NAME clonewars-force_target COMMAND test_force_target)
-set_tests_properties(clonewars-force_target PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(force_target native-force-target)
 
-add_executable(test_aim_base test_aim_base.cpp)
-target_compile_features(test_aim_base PRIVATE cxx_std_23)
-target_compile_options(test_aim_base PRIVATE -fms-extensions)
-add_test(NAME clonewars-aim_base COMMAND test_aim_base)
-set_tests_properties(clonewars-aim_base PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(aim_base native-aim-base)
 
-add_executable(test_force_geometry test_force_geometry.cpp)
-target_compile_features(test_force_geometry PRIVATE cxx_std_23)
-target_compile_options(test_force_geometry PRIVATE -fms-extensions)
-add_test(NAME clonewars-force_geometry COMMAND test_force_geometry)
-set_tests_properties(clonewars-force_geometry PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(force_geometry native-force-geometry)
 
-add_executable(test_spellit_query test_spellit_query.cpp)
-target_compile_features(test_spellit_query PRIVATE cxx_std_23)
-target_compile_options(test_spellit_query PRIVATE -fms-extensions)
-add_test(NAME clonewars-spellit_query COMMAND test_spellit_query)
+clonewars_native_zig_test(spellit_query native-spellit-query)
 set_tests_properties(clonewars-spellit_query PROPERTIES TIMEOUT 15)
 
-add_executable(test_character_motion test_character_motion.cpp)
-target_compile_features(test_character_motion PRIVATE cxx_std_23)
-target_compile_options(test_character_motion PRIVATE -fms-extensions)
-add_test(NAME clonewars-character_motion COMMAND test_character_motion)
-set_tests_properties(clonewars-character_motion PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(character_motion native-character-motion)
 
-add_executable(test_preload_state test_preload_state.cpp ../src/sync/preload_state.cpp)
-target_compile_features(test_preload_state PRIVATE cxx_std_23)
-add_test(NAME clonewars-preload_state COMMAND test_preload_state)
+clonewars_native_zig_test(preload_state native-preload-state)
 set_tests_properties(clonewars-preload_state PROPERTIES TIMEOUT 15)
 
-add_executable(test_native_scene_readiness test_native_scene_readiness.cpp)
-target_compile_features(test_native_scene_readiness PRIVATE cxx_std_23)
-target_compile_options(test_native_scene_readiness PRIVATE -fms-extensions)
-add_test(NAME clonewars-native_scene_readiness COMMAND test_native_scene_readiness)
-set_tests_properties(clonewars-native_scene_readiness PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(native_scene_readiness native-scene-readiness)
 
-add_executable(test_profile_bootstrap_state test_profile_bootstrap_state.cpp)
-target_compile_features(test_profile_bootstrap_state PRIVATE cxx_std_23)
-target_link_libraries(test_profile_bootstrap_state PRIVATE clonewars-network-test-core)
-add_test(NAME clonewars-profile_bootstrap_state COMMAND test_profile_bootstrap_state)
+clonewars_native_zig_test(profile_bootstrap_state native-profile-bootstrap)
 set_tests_properties(clonewars-profile_bootstrap_state PROPERTIES TIMEOUT 15)
 
-add_executable(test_native_authored_poi test_native_authored_poi.cpp ../src/engine/native_authored_poi.cpp)
-target_include_directories(test_native_authored_poi PRIVATE ../src)
-target_compile_features(test_native_authored_poi PRIVATE cxx_std_23)
-target_compile_options(test_native_authored_poi PRIVATE -fms-extensions)
-add_test(NAME clonewars-native_authored_poi COMMAND test_native_authored_poi)
-set_tests_properties(clonewars-native_authored_poi PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(authored_poi native-authored-poi)
 
-add_executable(test_native_resource_identity test_native_resource_identity.cpp ../src/engine/native_resource_identity.cpp)
-target_include_directories(test_native_resource_identity PRIVATE ../src)
-target_compile_features(test_native_resource_identity PRIVATE cxx_std_23)
-target_compile_options(test_native_resource_identity PRIVATE -fms-extensions)
-target_link_options(test_native_resource_identity PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-add_test(NAME clonewars-native_resource_identity COMMAND test_native_resource_identity)
-set_tests_properties(clonewars-native_resource_identity PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(resource_identity native-resource-identity)
 
-add_executable(test_camera_family test_camera_family.c)
-target_include_directories(test_camera_family PRIVATE ../src)
-target_compile_options(test_camera_family PRIVATE -fms-extensions)
-target_link_options(test_camera_family PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-add_test(NAME clonewars-camera_family COMMAND test_camera_family)
+if(CLONEWARS_ZIG_CORE)
+    clonewars_native_zig_test(camera_family native-camera-family)
+    clonewars_native_zig_test(camera_graphics native-camera-graphics)
+    clonewars_native_zig_test(camera_install native-camera-install)
+    clonewars_native_zig_test(sync_input native-sync-input)
+    clonewars_native_zig_test(sync_preload native-sync-preload)
+    clonewars_native_zig_test(sync_core native-sync-core)
+    clonewars_native_zig_test(sync_profiling native-sync-profiling)
+    clonewars_native_zig_test(hit_entry native-hit-entry)
+    clonewars_native_zig_test(constructor_observer native-constructor-observer)
+    clonewars_native_zig_test(constructor_query native-constructor-query)
+    clonewars_native_zig_test(projectile_constructor native-projectile-constructor)
+
+endif()
 set_tests_properties(clonewars-camera_family PROPERTIES TIMEOUT 15)
 
-add_executable(test_native_script_shoot test_native_script_shoot.cpp ../src/engine/native_script_shoot_source.cpp)
-target_include_directories(test_native_script_shoot PRIVATE ../src)
-target_compile_features(test_native_script_shoot PRIVATE cxx_std_23)
-target_compile_options(test_native_script_shoot PRIVATE -fms-extensions)
-target_link_options(test_native_script_shoot PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-add_test(NAME clonewars-native_script_shoot COMMAND test_native_script_shoot)
-set_tests_properties(clonewars-native_script_shoot PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(script_shoot native-script-shoot)
+set_tests_properties(clonewars-script_shoot PROPERTIES TIMEOUT 15)
 
-add_executable(test_spellit_body test_spellit_body.cpp)
-target_compile_features(test_spellit_body PRIVATE cxx_std_23)
-target_compile_options(test_spellit_body PRIVATE -fms-extensions)
-target_link_options(test_spellit_body PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-add_test(NAME clonewars-spellit_body COMMAND test_spellit_body)
+clonewars_native_zig_test(spellit_body native-spellit-body)
 set_tests_properties(clonewars-spellit_body PROPERTIES TIMEOUT 15)
 
-add_executable(test_projectile_pool test_projectile_pool.c ../src/engine/constructor_lexical_seh.c)
-target_compile_options(test_projectile_pool PRIVATE -fms-extensions -ffunction-sections -fdata-sections)
-target_link_options(test_projectile_pool PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x10000000" "SHELL:-Xlinker /opt:ref")
-add_test(NAME clonewars-projectile_pool COMMAND test_projectile_pool)
+clonewars_native_zig_test(projectile_pool native-projectile-pool)
 set_tests_properties(clonewars-projectile_pool PROPERTIES TIMEOUT 15)
 
-add_executable(test_character_support test_character_support.cpp)
-target_compile_features(test_character_support PRIVATE cxx_std_23)
-target_compile_options(test_character_support PRIVATE -fms-extensions)
-target_link_options(test_character_support PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-add_test(NAME clonewars-character_support COMMAND test_character_support)
-set_tests_properties(clonewars-character_support PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(character_support native-character-support)
 
-add_executable(test_reaction_receipt test_reaction_receipt.c ../src/sync/reaction_journal.c)
-add_test(NAME clonewars-reaction_receipt COMMAND test_reaction_receipt)
+clonewars_native_zig_test(reaction_receipt native-reaction-receipt)
 set_tests_properties(clonewars-reaction_receipt PROPERTIES TIMEOUT 15)
 
-add_executable(test_spellit_completion test_spellit_completion.cpp)
-target_compile_features(test_spellit_completion PRIVATE cxx_std_23)
-target_compile_options(test_spellit_completion PRIVATE -fms-extensions)
-add_test(NAME clonewars-spellit_completion COMMAND test_spellit_completion)
-set_tests_properties(clonewars-spellit_completion PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(spellit_completion native-spellit-completion)
 
-add_executable(test_rts_order_input test_rts_order_input.cpp ../src/engine/native_rts_order_source.cpp ../src/engine/native_gizmo_source.cpp)
-target_compile_features(test_rts_order_input PRIVATE cxx_std_23)
-target_compile_options(test_rts_order_input PRIVATE -fms-extensions)
-target_link_options(test_rts_order_input PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-add_test(NAME clonewars-rts_order_input COMMAND test_rts_order_input)
-set_tests_properties(clonewars-rts_order_input PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(rts_order native-rts-order)
 
-add_executable(test_rts_order_ready test_rts_order_ready.cpp)
-target_compile_features(test_rts_order_ready PRIVATE cxx_std_23)
-target_compile_options(test_rts_order_ready PRIVATE -fms-extensions)
-add_test(NAME clonewars-rts_order_ready COMMAND test_rts_order_ready)
-set_tests_properties(clonewars-rts_order_ready PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(rts_order_ready native-rts-order-ready)
 
-add_executable(test_rts_generator_input test_rts_generator_input.cpp ../src/engine/native_rts_generator_source.cpp)
-target_compile_features(test_rts_generator_input PRIVATE cxx_std_23)
-target_compile_options(test_rts_generator_input PRIVATE -fms-extensions)
-target_link_options(test_rts_generator_input PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-add_test(NAME clonewars-rts_generator_input COMMAND test_rts_generator_input)
-set_tests_properties(clonewars-rts_generator_input PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(rts_generator native-rts-generator)
 
-add_executable(test_rts_body_input test_rts_body_input.cpp ../src/engine/native_rts_body_source.cpp ../src/engine/native_gizmo_source.cpp)
-target_compile_features(test_rts_body_input PRIVATE cxx_std_23)
-target_link_options(test_rts_body_input PRIVATE "SHELL:-Xlinker /dynamicbase:no" "SHELL:-Xlinker /base:0x400000")
-add_test(NAME clonewars-rts_body_input COMMAND test_rts_body_input)
-set_tests_properties(clonewars-rts_body_input PROPERTIES TIMEOUT 15)
+clonewars_native_zig_test(rts_body native-rts-body)
+
+if(CLONEWARS_ZIG_CORE)
+    clonewars_native_zig_test(saved_sources native-saved-sources)
+    clonewars_native_zig_test(spellit_source native-spellit-source)
+    clonewars_native_zig_test(script_dispatch native-script-dispatch)
+    clonewars_native_zig_test(span_installer native-span-installer)
+    clonewars_native_zig_test(span_marker native-span-marker)
+    clonewars_native_zig_test(frame_queue native-frame-queue)
+    clonewars_native_zig_test(list_memory native-list-memory)
+    clonewars_native_zig_test(page_access native-page-access)
+    clonewars_native_zig_test(span_engine native-span-engine NO_TEST)
+    foreach(scenario RANGE 0 9)
+        add_test(NAME clonewars-span_engine-${scenario} COMMAND "${CMAKE_CURRENT_BINARY_DIR}/native-zig/bin/test_span_engine.exe" ${scenario})
+    endforeach()
+    clonewars_native_zig_test(lexical_seh native-lexical-seh)
+    clonewars_native_zig_test(loading native-loading)
+    clonewars_native_zig_test(proxy native-proxy ARGS "$<TARGET_FILE:d3d9-artifact>")
+    add_dependencies(test_proxy d3d9)
+    clonewars_native_zig_test(game_dll native-game-dll ARGS "$<TARGET_FILE:clonewars-camera-artifact>")
+    add_dependencies(test_game_dll clonewars-camera)
+    clonewars_native_zig_test(capture native-capture)
+    clonewars_native_zig_test(game_state native-game-state)
+
+    clonewars_native_zig_test(world_vars native-world-vars)
+
+    clonewars_native_zig_test(npc_input native-npc-input)
+    clonewars_native_zig_test(remote_trace native-remote-trace)
+
+    clonewars_native_zig_test(diagnostics native-diagnostics)
+
+    clonewars_native_zig_test(vehicle_rng native-vehicle-rng)
+
+    clonewars_native_zig_test(module_rng native-module-rng)
+
+    clonewars_native_zig_test(tick_install native-tick)
+    clonewars_native_zig_test(tag_runtime native-tag)
+
+    clonewars_native_zig_test(projectile_runtime native-projectile-runtime)
+
+    clonewars_native_zig_test(cadence_runtime native-cadence-runtime)
+
+    clonewars_native_zig_test(entity_runtime native-entity-runtime)
+
+    clonewars_native_zig_test(reaction_runtime native-reaction-runtime)
+
+    clonewars_native_zig_test(model_runtime native-model-runtime)
+
+    clonewars_native_zig_test(spellit_input native-spellit-input)
+    clonewars_native_zig_test(spellit_admission native-spellit-admission)
+    clonewars_native_zig_test(spellit_admission_thunk native-spellit-admission-thunk)
+    clonewars_native_zig_test(hazard_death_thunk native-hazard-death-thunk)
+    clonewars_native_zig_test(tick_pack_behavior native-pack-behavior)
+
+    clonewars_native_zig_test(spawn_observation native-spawn-observation)
+    clonewars_native_zig_test(rts_dispatch_thunk native-rts-dispatch-thunk)
+
+    clonewars_native_zig_test(combat native-combat)
+
+    clonewars_native_zig_test(decision native-decision)
+
+    clonewars_native_zig_test(camera_observation native-camera-observation)
+
+    clonewars_native_zig_test(collision native-collision)
+
+    clonewars_native_zig_test(overlay native-overlay)
+
+    clonewars_native_zig_test(network_window native-network-window)
+
+    clonewars_native_zig_test(shooter native-shooter)
+
+    clonewars_native_zig_test(pool_birth native-pool-birth)
+
+    clonewars_native_zig_test(geometry_runtime native-geometry-runtime)
+
+    clonewars_native_zig_test(object_progress native-object-progress)
+
+    clonewars_native_zig_test(spawn_timers native-spawn-timers)
+
+    clonewars_native_zig_test(physics_runtime native-physics-runtime)
+
+    clonewars_native_zig_test(mapping_session native-mapping-session NO_TEST)
+    foreach(scenario RANGE 0 7)
+        add_test(NAME clonewars-mapping_session-${scenario} COMMAND "${CMAKE_CURRENT_BINARY_DIR}/native-zig/bin/test_mapping_session.exe" ${scenario})
+    endforeach()
+endif()
+
+if(CLONEWARS_ZIG_CORE)
+    get_property(native_executables GLOBAL PROPERTY CLONEWARS_NATIVE_EXECUTABLES)
+    get_property(native_sources GLOBAL PROPERTY CLONEWARS_NATIVE_SOURCES)
+    list(REMOVE_DUPLICATES native_sources)
+    add_custom_target(clonewars-native-suite ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/native-zig/suite.stamp")
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/native-zig/suite.stamp"
+        BYPRODUCTS ${native_executables}
+        COMMAND "${CLONEWARS_ZIG_EXECUTABLE}" build native-tests -j4 --prefix "${CMAKE_CURRENT_BINARY_DIR}/native-zig"
+        COMMAND "${CMAKE_COMMAND}" -E touch "${CMAKE_CURRENT_BINARY_DIR}/native-zig/suite.stamp"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        DEPENDS ${native_sources} ../build.zig ../src/zig/native_tests.manifest COMMAND_EXPAND_LISTS VERBATIM)
+endif()
+
+get_property(CLONEWARS_CHECKS DIRECTORY PROPERTY TESTS)
+foreach(check IN LISTS CLONEWARS_CHECKS)
+    if(check MATCHES "^clonewars-(wire_abi|input_buffer|epoch_state|sync_wire(-[0-3])?|preload_state|profile_bootstrap_state|reaction_receipt)$")
+        set_tests_properties(${check} PROPERTIES LABELS core TIMEOUT 15)
+    elseif(check MATCHES "^clonewars-lan_(version|transport)$")
+        set_tests_properties(${check} PROPERTIES LABELS network)
+    else()
+        set_tests_properties(${check} PROPERTIES LABELS native)
+    endif()
+endforeach()

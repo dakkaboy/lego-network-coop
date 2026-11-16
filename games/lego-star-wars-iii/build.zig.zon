@@ -1,0 +1,14 @@
+.{
+    .name = .clonewars_coop,
+    .fingerprint = 0xc61d0b09c2be927e,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.1",
+    .paths = .{ "build.zig", "build.zig.zon", "src", "tests" },
+    .dependencies = .{
+        .tracy = .{
+            .url = "https://github.com/wolfpld/tracy/archive/30997d5ca6bb632cc10807a1da8a6d3de0aeeb3c.tar.gz",
+            .hash = "N-V-__8AAAZPdAFgj1aBjx6lJYpLGTkVPsg9ZYez7rnpV96O",
+            .lazy = true,
+        },
+    },
+}

@@ -6,12 +6,12 @@
 
 | Игра | Статус | Задачи | Скачать |
 | --- | --- | --- | --- |
-| [LEGO Star Wars III: The Clone Wars](games/lego-star-wars-iii/README.ru.md) | 0.0.15 | [Прогресс и задачи](https://github.com/dakkaboy/lego-network-coop/milestone/1) | [Релиз на GitHub](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.0.15) |
+| [LEGO Star Wars III: The Clone Wars](games/lego-star-wars-iii/README.ru.md) | 0.1.0 Beta 1 | [Прогресс и задачи](https://github.com/dakkaboy/lego-network-coop/milestone/1) | [Релиз на GitHub](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.1.0) |
 | LEGO Star Wars: The Complete Saga | В разработке | [Прогресс и задачи](https://github.com/dakkaboy/lego-network-coop/milestone/2) | — |
 | LEGO Indiana Jones: The Original Adventures | В планах | [Раздел](https://github.com/dakkaboy/lego-network-coop/milestone/3) | — |
 | LEGO Indiana Jones 2: The Adventure Continues | В планах | [Раздел](https://github.com/dakkaboy/lego-network-coop/milestone/4) | — |
 
-У каждой игры своя папка в `games/` и отдельная сборка. Адреса в исполняемом файле, перехватчики, состояние игры, сетевой протокол и упаковка хранятся в папке игры. В `common/` лежит код без привязки к конкретной игре. Пока там обработка нажатий и удержаний кнопок.
+У каждой игры своя папка в `games/` и отдельная сборка. Адреса в исполняемом файле, перехватчики, состояние игры, сетевой протокол и упаковка хранятся в папке игры.
 
 ## Участие в разработке
 
@@ -19,6 +19,8 @@
 
 ## Лицензия
 
-Исходный код мода доступен по [лицензии MIT](LICENSE).
+Исходный код мода доступен по [GNU GPLv3](LICENSE) (`GPL-3.0-only`). Copyright (c) 2026 dakkaboy.
 
-Это неофициальный фанатский проект. The LEGO Group и Lucasfilm не спонсируют и не одобряют его. LEGO и Star Wars являются товарными знаками своих владельцев. Для запуска нужна отдельная копия игры. Лицензия MIT распространяется на код мода.
+Это неофициальный фанатский проект. The LEGO Group и Lucasfilm не спонсируют и не одобряют его. LEGO и Star Wars являются товарными знаками своих владельцев. Для запуска нужна отдельная копия игры. Лицензия распространяется на код мода и не даёт прав на игру или её ресурсы.
+
+У сторонних компонентов свои лицензии. См. [лицензионные уведомления](THIRD_PARTY_NOTICES).

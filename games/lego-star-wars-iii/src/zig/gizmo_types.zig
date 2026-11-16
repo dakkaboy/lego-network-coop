@@ -1,0 +1,16 @@
+pub const Source = extern struct {
+    key: [4]u32,
+    manager_class: u32,
+    gizmo_class: u32,
+    manager_index: u32,
+    ordinal: u32,
+    count: u32,
+    world: usize,
+    container: usize,
+    registry: usize,
+    handle: usize,
+    table: usize,
+    manager: usize,
+    gizmo: usize,
+    head: usize,
+};

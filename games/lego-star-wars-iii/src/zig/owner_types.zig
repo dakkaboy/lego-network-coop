@@ -1,0 +1,32 @@
+pub const Input = extern struct { fx: [*]const u8, regs: [*]const u32, last_error: u32, caller_esp: u32 };
+pub const Callbacks = extern struct {
+    version: c_uint,
+    begin: ?*const fn (*Scope, *const Input, ?*anyopaque) callconv(.c) void,
+    end: ?*const fn (*Scope, c_int, ?*anyopaque) callconv(.c) void,
+    reject: ?*const fn (?*Scope, ?*Scope, c_int, ?*anyopaque) callconv(.c) void,
+};
+pub const Scope = extern struct {
+    in_fx: [512]u8 align(16),
+    out_fx: [512]u8,
+    in_regs: [9]u32,
+    out_regs: [9]u32,
+    in_error: u32,
+    out_error: u32,
+    entry_esp: u32,
+    saved_esp: u32,
+    target: usize,
+    reserved: u32,
+    helper_fx: [512]u8,
+    parent: ?*Scope,
+    nonce: u32,
+    thread: u32,
+    depth: u32,
+    linked: u32,
+    usable: u32,
+    begin_entered: u32,
+    end_done: u32,
+    storage: [64]u8,
+    callbacks: Callbacks,
+    delegate_esp: u32,
+    delegate_active: u32,
+};

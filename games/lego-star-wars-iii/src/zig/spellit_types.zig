@@ -1,0 +1,57 @@
+const types = @import("identity_types.zig");
+pub const SourceKey = extern struct { name: [4]u32, gizmo_class: u32, gizmo_ordinal: u32 };
+pub const PieceKey = extern struct { resource: [4]u32, poi_name: [4]u32, poi_ordinal: u32, poi_count: u32, receiver_class: u32, piece_ordinal: u32 };
+pub const Source = extern struct {
+    key: SourceKey,
+    world: usize,
+    container: usize,
+    provider: usize,
+    manager_registry: usize,
+    handle: usize,
+    table: usize,
+    manager: usize,
+    gizmo: usize,
+    scene: usize,
+    piece_head: usize,
+    piece_tail: usize,
+    adapter: usize,
+    counted_name: usize,
+    manager_index: u32,
+    manager_count: u32,
+    manager_class: u32,
+    piece_count: u32,
+    adapter_count: u32,
+};
+pub const Piece = extern struct {
+    key: PieceKey,
+    piece: usize,
+    previous: usize,
+    next: usize,
+    source_entity: usize,
+    model: usize,
+    live_record: usize,
+    receiver: usize,
+    resource: usize,
+    root_resource: usize,
+    runtime: usize,
+    array: usize,
+    poi: usize,
+    registry: usize,
+    entry: usize,
+    container: usize,
+    source_world: usize,
+    filename: usize,
+    logical_name: usize,
+    poi_name: usize,
+    models: [16]usize,
+    receivers: [16]usize,
+    chain_resources: [16]usize,
+    chain_pois: [16]usize,
+    chain_count: u32,
+    authored_receiver_class: u32,
+    authored: types.AuthoredPoi,
+    resource_identity: types.ResourceIdentity,
+};
+pub const Body = extern struct { key: [4]u32, name_key: [4]u32, body_class: u32, piece_ordinal: u32, piece: usize, model: usize, receiver: usize, body: usize, dynamics: usize, name: usize };
+pub const State = extern struct { basis: [12]f32, position: [4]f32, linear: [4]f32, angular: [4]f32 };
+pub const Live = *const fn (usize) callconv(.c) c_int;

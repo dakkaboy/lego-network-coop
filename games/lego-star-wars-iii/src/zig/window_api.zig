@@ -1,0 +1,11 @@
+pub const Point = extern struct { x: i32, y: i32 };
+pub const Rect = extern struct { left: i32, top: i32, right: i32, bottom: i32 };
+pub extern "user32" fn GetCapture() callconv(.winapi) usize;
+pub extern "user32" fn ReleaseCapture() callconv(.winapi) i32;
+pub extern "user32" fn SetCapture(usize) callconv(.winapi) usize;
+pub extern "user32" fn GetCursorPos(*Point) callconv(.winapi) i32;
+pub extern "user32" fn GetWindowRect(usize, *Rect) callconv(.winapi) i32;
+pub extern "user32" fn GetForegroundWindow() callconv(.winapi) usize;
+pub extern "user32" fn SetWindowPos(usize, usize, i32, i32, i32, i32, u32) callconv(.winapi) i32;
+pub extern "user32" fn GetWindowThreadProcessId(usize, ?*u32) callconv(.winapi) u32;
+pub extern "kernel32" fn GetTickCount() callconv(.winapi) u32;

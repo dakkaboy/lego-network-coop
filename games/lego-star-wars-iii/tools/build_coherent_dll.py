@@ -1,61 +1,79 @@
 from pathlib import Path
-import argparse,hashlib,json,re,shutil,subprocess
+import argparse
+import hashlib
+import json
+import re
+import shutil
+import subprocess
 
-here=Path(__file__).resolve().parents[1]
-common=here.parents[1]/'common'
-parser=argparse.ArgumentParser()
-parser.add_argument('--with-hit-entry-observer',action='store_true')
-parser.add_argument('--source',type=Path,default=here/'src')
-parser.add_argument('--output',type=Path,default=here/'build/net-live28')
-parser.set_defaults(bootstrap=True,remote_trace_off=True)
-args=parser.parse_args()
-src=args.source.resolve()
-out=args.output.resolve()
-out.mkdir(parents=True,exist_ok=True)
-layout=re.search(r'#define\s+SYNC_LAYOUT_VERSION\s+(\d+)',(src/'net/sync_wire.h').read_text())
-wire=re.search(r'#define\s+SYNC_WIRE_VERSION\s+(\d+)',(src/'net/sync_wire.h').read_text()) or layout
-if not layout or int(layout[1]) not in (28,29,30) or not (src/'sync/coherent_core_body.inc').is_file() or not (src/'engine/user_mapping_install.c').is_file():
-    raise SystemExit('Integrated coherent Core sources are required')
-zig=shutil.which('zig')
-clang=shutil.which('clang')
-assert zig and clang
-results=[]
-def run(args):
-    p=subprocess.run(list(map(str,args)),capture_output=True,text=True,creationflags=subprocess.CREATE_NO_WINDOW,timeout=180)
-    results.append({'command':list(map(str,args)),'code':p.returncode,'stdout':p.stdout,'stderr':p.stderr})
-    (out/'commands.json').write_text(json.dumps(results,indent=2))
-    if p.returncode:
-        print(p.stderr)
-        p.check_returncode()
+here = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser()
+parser.add_argument('--with-hit-entry-observer', action='store_true')
+parser.add_argument('--with-constructor-query-observer', action='store_true')
+parser.add_argument('--tracy', action='store_true')
+parser.add_argument('--source', type=Path, default=here / 'src')
+parser.add_argument('--output', type=Path, default=here / 'build/net-live')
+parser.add_argument('--zig', default='zig')
+args = parser.parse_args()
+src = args.source.resolve()
+out = args.output.resolve()
+project = src.parent
+zig = shutil.which(args.zig)
+if not zig:
+    raise SystemExit('Zig 0.17.1 is required; pass --zig.')
+version = subprocess.check_output([zig, 'version'], text=True).strip()
+if version != '0.17.1':
+    raise SystemExit(f'Zig 0.17.1 is required; found {version}.')
+protocol = (src / 'zig/protocol.zig').read_text()
+versions = {}
+for name in ('LAYOUT', 'WIRE'):
+    match = re.search(r'SYNC_' + name + r'_VERSION = @as\(c_int, (\d+)\)', protocol)
+    if not match:
+        raise SystemExit(f'Missing {name.lower()} version in Zig protocol.')
+    versions[name.lower()] = int(match[1])
+out.mkdir(parents=True, exist_ok=True)
+results = []
+
+
+def run(command):
+    command = list(map(str, command))
+    result = subprocess.run(command, cwd=project, capture_output=True, text=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=300)
+    results.append({'command': command, 'code': result.returncode,
+                    'stdout': result.stdout, 'stderr': result.stderr})
+    (out / 'commands.json').write_text(json.dumps(results, indent=2))
+    if result.returncode:
+        print(result.stdout)
+        print(result.stderr)
+        result.check_returncode()
+
 
 def source_hashes():
-    hashes={p.relative_to(src).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(src.rglob('*')) if p.is_file()}
-    header=Path('net/input_edges.h')
-    hashes[(Path('common')/header).as_posix()]=hashlib.sha256((common/header).read_bytes()).hexdigest()
-    return hashes
+    files = sorted(path for path in (src / 'zig').rglob('*') if path.is_file())
+    files += [src / 'engine/proxy.def', project / 'build.zig', project / 'build.zig.zon']
+    return {path.relative_to(project).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in files}
 
-before=source_hashes()
-seh=sorted(src.rglob('*seh.c'))
-for source in seh:
-    run([clang,'-target','i686-pc-windows-msvc','-O2','-I'+str(src),'-c',source,'-o',out/(source.stem+'.obj')])
-excluded=set([source.stem for source in seh]+['proxy','pose_observer','intent_frame_observer','intent_scope_observer','steering_sync','steering_journal','equipment_oracle','action_transition_observer','base_aim_observer','constructor_observer','constructor_query_observer'])
-if not args.with_hit_entry_observer:excluded.add('hit_entry_observer')
-sources=[p for p in src.rglob('*.c') if p.stem not in excluded]
-sources+=list(src.rglob('*.S'))
-cpp_objects=[]
-for source in sorted(src.rglob('*.cpp')):
-    obj=out/(source.stem+'.cpp.obj')
-    run([zig,'c++','-target','x86-windows-gnu','-std=c++23','-O2','-fno-exceptions','-fno-rtti','-I'+str(src),'-I'+str(common),'-c',source,'-o',obj])
-    cpp_objects.append(obj)
-dll=out/'clonewars-camera.dll'
-defines=[]
-if args.with_hit_entry_observer:defines.append('-DCLONEWARS_HIT_ENTRY_OBSERVER')
-if args.bootstrap:defines.append('-DCOHERENT_CORE_REVIEWED_BOOTSTRAP')
-if args.remote_trace_off:defines.append('-DCLONEWARS_REMOTE_INPUT_TRACE_DISABLED')
-run([zig,'cc','-target','x86-windows-gnu','-shared','-O2','-fms-extensions','-I'+str(src),*defines,*sources,*cpp_objects,*[out/(source.stem+'.obj') for source in seh],'-o',dll,'-luser32','-lws2_32','-lshell32'])
-proxy=out/'d3d9.dll'
-run([zig,'cc','-target','x86-windows-gnu','-shared','-O2',src/'engine/proxy.c',src/'engine/proxy.def','-o',proxy])
-assert before==source_hashes(),'Sources changed during build'
-(out/'build-info.json').write_text(json.dumps({'dll_sha256':hashlib.sha256(dll.read_bytes()).hexdigest(),'proxy_sha256':hashlib.sha256(proxy.read_bytes()).hexdigest(),'layout_version':int(layout[1]),'wire_version':int(wire[1]),'mode':'normal','model_input_authority':True,'optional_observers':args.with_hit_entry_observer,'hit_entry_observer':args.with_hit_entry_observer,'linked':True,'runtime_verified':False,'installed':False,'bootstrap_requested':args.bootstrap,'remote_trace_disabled':args.remote_trace_off,'sources':before},indent=2))
-print('Linked',dll,'not runtime-verified or installed')
+
+before = source_hashes()
+run([zig, 'build', 'dll', '--prefix', out, '--prefix-exe-dir', '.',
+     '-Dhit-entry=' + str(args.with_hit_entry_observer).lower(),
+     '-Dconstructor-query=' + str(args.with_constructor_query_observer).lower(),
+     '-Dtracy=' + str(args.tracy).lower()])
+if before != source_hashes():
+    raise SystemExit('Sources changed during build.')
+dll = out / 'clonewars-camera.dll'
+proxy = out / 'd3d9.dll'
+(out / 'build-info.json').write_text(json.dumps({
+    'dll_sha256': hashlib.sha256(dll.read_bytes()).hexdigest(),
+    'proxy_sha256': hashlib.sha256(proxy.read_bytes()).hexdigest(),
+    'layout_version': versions['layout'], 'wire_version': versions['wire'],
+    'zig_version': version, 'mode': 'normal', 'model_input_authority': True,
+    'optional_observers': args.with_hit_entry_observer or args.with_constructor_query_observer,
+    'hit_entry_observer': args.with_hit_entry_observer,
+    'constructor_query_observer': args.with_constructor_query_observer,
+    'tracy': args.tracy,
+    'linked': True, 'runtime_verified': False, 'installed': False,
+    'bootstrap_requested': True, 'remote_trace_disabled': True, 'sources': before,
+}, indent=2))
+print('Linked', dll, 'not runtime-verified or installed')
