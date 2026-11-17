@@ -9,6 +9,7 @@ extern fn native_hub_source_resolve(usize, usize, *const [12]u32, *s.Hub, *u32) 
 fn create(site: u32, source: p.SyncSpawnSource) usize {
     const original: *const fn () callconv(.c) usize = @ptrFromInt(s.original_create);
     const actor = original();
+    @import("target_retirement.zig").invalidate(actor);
     s.currentPool();
     const raw = s.rawSlot(actor);
     if (raw >= 0) {

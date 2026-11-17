@@ -5,9 +5,9 @@ export var breakup_launch_native: usize = 0;
 export var effect_birth_resume: usize = 0;
 var projections: u32 = 0;
 pub export fn physics_effect_birth(_: usize) void {}
-pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, matrix: usize, scale: usize) void {
+pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, matrix: usize, scale: usize, model: usize) void {
     const err = win.GetLastError();
-    check(@src(), descriptor == 0x66666666 and handle == (if (f.iterator < 40) @as(usize, 0x11223344) else 0) and matrix == 0x8899aabb and scale == 0x99aabbcc);
+    check(@src(), model == 0x77777777 and descriptor == 0x66666666 and handle == (if (f.iterator < 40) @as(usize, 0x11223344) else 0) and matrix == 0x8899aabb and scale == 0x99aabbcc);
     projections += 1;
     f.projected = 1;
     asm volatile ("fninit; pcmpeqd %%xmm0,%%xmm0; pxor %%xmm7,%%xmm7" ::: .{ .xmm0 = true, .xmm7 = true });

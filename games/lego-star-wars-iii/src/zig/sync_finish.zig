@@ -5,33 +5,39 @@ const authority = @import("sync_authority.zig");
 const prep = @import("sync_prep.zig");
 const actors = @import("sync_actors.zig");
 const equal = @import("validation.zig").equal;
+pub export var clonewars_dispatch_drain_failure: [12]u32 = @splat(0);
+fn drainFailure(reason: u32, iteration: usize, projectile: c_int, tag: c_int, revisions: [4]u64) bool {
+    if (s.live() and clonewars_dispatch_drain_failure[0] == 0) clonewars_dispatch_drain_failure = .{ reason, s.working.epoch, s.working.sequence, @intCast(iteration), @bitCast(projectile), @bitCast(tag), @truncate(revisions[0]), @truncate(revisions[1]), @truncate(revisions[2]), @truncate(revisions[3]), s.core.token.release, s.core.bound_mask };
+    return false;
+}
 fn fault(code: c_int) void {
     if (s.fault == 0) s.fault = code;
 }
 pub fn drain() bool {
-    for (0..s.p.SYNC_MAX_SHOTS + s.p.SYNC_MAX_TAGS + 1) |_| {
+    for (0..s.p.SYNC_MAX_SHOTS + s.p.SYNC_MAX_TAGS + 1) |iteration| {
         if (!s.live() or api.coherent_frame_valid(&s.core.token, 4) == 0) return false;
         var projectile_before: u64 = 0;
         var tag_before: u64 = 0;
         var projectile_after: u64 = 0;
         var tag_after: u64 = 0;
-        if (api.projectiles_dispatch_revision(&s.core.token, &projectile_before) == 0 or api.tags_dispatch_revision(&s.core.token, &tag_before) == 0) return false;
+        if (api.projectiles_dispatch_revision(&s.core.token, &projectile_before) == 0) return drainFailure(1, iteration, -99, -99, .{ projectile_before, tag_before, 0, 0 });
+        if (api.tags_dispatch_revision(&s.core.token, &tag_before) == 0) return drainFailure(2, iteration, -99, -99, .{ projectile_before, tag_before, 0, 0 });
         var projectile_pending = api.projectiles_dispatch_pending();
         var tag_pending = api.tags_dispatch_pending();
-        if (projectile_pending < 0 or tag_pending < 0) return false;
+        if (projectile_pending < 0 or tag_pending < 0) return drainFailure(3, iteration, projectile_pending, tag_pending, .{ projectile_before, tag_before, 0, 0 });
         if (projectile_pending == 0 and tag_pending == 0) return true;
-        if (projectile_pending != 0 and api.projectiles_dispatch_complete() == 0) return false;
+        if (projectile_pending != 0 and api.projectiles_dispatch_complete() == 0) return drainFailure(4, iteration, projectile_pending, tag_pending, .{ projectile_before, tag_before, 0, 0 });
         if (!s.live()) return false;
         tag_pending = api.tags_dispatch_pending();
-        if (tag_pending < 0) return false;
-        if (tag_pending != 0 and api.tags_dispatch_complete() != 1) return false;
+        if (tag_pending < 0) return drainFailure(5, iteration, projectile_pending, tag_pending, .{ projectile_before, tag_before, 0, 0 });
+        if (tag_pending != 0 and api.tags_dispatch_complete() != 1) return drainFailure(6, iteration, projectile_pending, tag_pending, .{ projectile_before, tag_before, 0, 0 });
         if (!s.live()) return false;
         projectile_pending = api.projectiles_dispatch_pending();
         tag_pending = api.tags_dispatch_pending();
-        if (projectile_pending < 0 or tag_pending < 0) return false;
+        if (projectile_pending < 0 or tag_pending < 0) return drainFailure(7, iteration, projectile_pending, tag_pending, .{ projectile_before, tag_before, 0, 0 });
         if (projectile_pending == 0 and tag_pending == 0) return true;
-        if (api.projectiles_dispatch_revision(&s.core.token, &projectile_after) == 0 or api.tags_dispatch_revision(&s.core.token, &tag_after) == 0) return false;
-        if (projectile_before == projectile_after and tag_before == tag_after) return false;
+        if (api.projectiles_dispatch_revision(&s.core.token, &projectile_after) == 0 or api.tags_dispatch_revision(&s.core.token, &tag_after) == 0) return drainFailure(8, iteration, projectile_pending, tag_pending, .{ projectile_before, tag_before, projectile_after, tag_after });
+        if (projectile_before == projectile_after and tag_before == tag_after) return drainFailure(9, iteration, projectile_pending, tag_pending, .{ projectile_before, tag_before, projectile_after, tag_after });
     }
     return false;
 }

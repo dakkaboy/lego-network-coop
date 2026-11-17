@@ -4,11 +4,11 @@
 
 Network co-op for two Windows PCs. One player hosts, the other joins by IP, and each player has their own camera and the original HUD.
 
-**Beta 1 — 0.1.0.** A new LEGO-style co-op menu with room creation, IP connection, camera selection and button sounds. Start missions from the Resolute map and return to the ship in the same co-op session.
+**Beta 1 — 0.1.1.** Fixes for combat, debris and troop synchronization, with lower synchronization overhead in large battles.
 
-Desyncs can still occur. We're working on fixes for the next update.
+Some mission desyncs remain unresolved. Install the same version on both PCs.
 
-- [Download 0.1.0 Beta 1](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.1.0)
+- [Download 0.1.1 Beta 1](https://github.com/dakkaboy/lego-network-coop/releases/tag/v0.1.1)
 - [Nexus Mods](https://www.nexusmods.com/legostarwars3theclonewars/mods/28)
 
 ![Network Co-op menu](images/network-coop.png)

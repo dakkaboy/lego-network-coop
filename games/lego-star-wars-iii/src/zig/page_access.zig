@@ -37,17 +37,62 @@ pub const ResidentPages = ResidentPagesWithQuery(K32QueryWorkingSetEx);
 pub fn ResidentPagesWithQuery(comptime query: anytype) type {
     return struct {
         const Self = @This();
-        pages: [128]Page = @splat(.{ .address = 0, .flags = 0 }),
+        const page_count = 128;
+        pages: [page_count]Page = @splat(.{ .address = 0, .flags = 0 }),
+        used: [page_count]bool = @splat(false),
+        prefetched: bool = false,
         allocation_info: ?allocation.Info = null,
+        fn indexOf(address: usize) usize {
+            const page = address >> 12;
+            return (page ^ (page >> 7) ^ (page >> 14)) & (page_count - 1);
+        }
+        pub fn prefetch(self: *Self, addresses: []const usize) void {
+            var batch: [128]Page = undefined;
+            var count: usize = 0;
+            for (addresses) |address| {
+                if (address == 0 or address & 0xfff != 0 or count == batch.len) continue;
+                batch[count] = .{ .address = address, .flags = 0 };
+                count += 1;
+            }
+            if (count == 0 or query(win.GetCurrentProcess(), &batch[0], @intCast(count * @sizeOf(Page))) == 0) return;
+            self.prefetched = true;
+            for (batch[0..count]) |page| {
+                const index = indexOf(page.address);
+                self.pages[index] = page;
+                self.used[index] = false;
+            }
+        }
+        pub fn hints(self: *const Self, addresses: []usize) usize {
+            var count: usize = 0;
+            for (self.pages, self.used) |page, used| {
+                if (used and count < addresses.len) {
+                    addresses[count] = page.address;
+                    count += 1;
+                }
+            }
+            return count;
+        }
         fn get(self: *Self, address: usize) ?Page {
-            const index = (address >> 12) & (self.pages.len - 1);
+            const index = indexOf(address);
             if (self.pages[index].address != address) {
+                if (self.prefetched) {
+                    var page: Page = .{ .address = address, .flags = 0 };
+                    if (query(win.GetCurrentProcess(), &page, @sizeOf(Page)) == 0) return null;
+                    self.pages[index] = page;
+                    self.used[index] = true;
+                    return page;
+                }
                 var batch: [16]Page = undefined;
                 const first = address & ~@as(usize, 0xffff);
                 for (&batch, 0..) |*page, i| page.* = .{ .address = first + i * 0x1000, .flags = 0 };
                 if (query(win.GetCurrentProcess(), &batch[0], @sizeOf(@TypeOf(batch))) == 0) return null;
-                for (batch) |page| self.pages[(page.address >> 12) & (self.pages.len - 1)] = page;
+                for (batch) |page| {
+                    const slot = indexOf(page.address);
+                    if (self.pages[slot].address != page.address) self.used[slot] = false;
+                    self.pages[slot] = page;
+                }
             }
+            self.used[index] = true;
             return self.pages[index];
         }
         pub fn readable(self: *Self, address: usize, bytes: usize) ?bool {

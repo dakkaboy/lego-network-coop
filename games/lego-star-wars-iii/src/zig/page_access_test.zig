@@ -86,6 +86,7 @@ pub fn main() void {
     allocationBoundary();
     mappedPages();
     batchedPages();
+    prefetchedPages();
     const allocation = win.VirtualAlloc(0, 0x4000, 0x3000, 4);
     check(@src(), allocation != 0);
     defer _ = win.VirtualFree(allocation, 0, 0x8000);
@@ -113,4 +114,40 @@ pub fn main() void {
     const region = @import("allocation_region.zig").private(allocation + 0x1010).?;
     check(@src(), region.base == allocation and region.size == 0x4000 and region.committed == 0x4000);
     check(@src(), access.residentReadable(allocation + 0x1ff0, 32) == true and access.residentReadable(allocation + 16, 0x4000) == null);
+}
+fn prefetchedPages() void {
+    const allocation = win.VirtualAlloc(0, 0x400000, 0x3000, 4);
+    check(@src(), allocation != 0);
+    defer _ = win.VirtualFree(allocation, 0, 0x8000);
+    @memset(@as([*]u8, @ptrFromInt(allocation))[0..0x400000], 1);
+    var cache: Batch = .{};
+    var addresses: [6]usize = undefined;
+    for (&addresses, 0..) |*address, i| address.* = allocation + i * 0x80000;
+    working_set_calls = 0;
+    cache.prefetch(&addresses);
+    for (addresses) |address| check(@src(), cache.readable(address + 16, 32) == true);
+    check(@src(), working_set_calls == 1);
+    var remembered: [128]usize = undefined;
+    const count = cache.hints(&remembered);
+    check(@src(), count == addresses.len);
+    check(@src(), cache.readable(addresses[0] + 0x1010, 32) == true);
+    for (addresses) |address| check(@src(), cache.readable(address + 16, 32) == true);
+    check(@src(), working_set_calls <= 3);
+    var old: u32 = 0;
+    check(@src(), win.VirtualProtect(addresses[2], 0x1000, 1, &old) != 0);
+    cache = .{};
+    cache.prefetch(remembered[0..count]);
+    check(@src(), cache.readable(addresses[2] + 16, 32) != true);
+    check(@src(), win.VirtualProtect(addresses[2], 0x1000, 4, &old) != 0);
+    @as(*volatile u8, @ptrFromInt(addresses[2])).* = 1;
+    cache = .{};
+    working_set_failure = true;
+    working_set_calls = 0;
+    cache.prefetch(&addresses);
+    check(@src(), working_set_calls == 1);
+    working_set_failure = false;
+    check(@src(), cache.readable(addresses[2] + 16, 32) == true and working_set_calls == 2);
+    cache = .{};
+    cache.prefetch(&.{ 0, allocation + 1 });
+    check(@src(), working_set_calls == 2);
 }

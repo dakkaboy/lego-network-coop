@@ -75,7 +75,7 @@ fn bytes(address: usize, source: []const u8) void {
     @memcpy(@as([*]u8, @ptrFromInt(address))[0..source.len], source);
 }
 fn hasBodies() bool {
-    return mode == 7 or mode == 8 or mode == 9 or mode == 15 or mode == 19;
+    return mode == 7 or mode == 8 or mode == 9 or mode == 15 or mode == 19 or mode == 20 or mode == 21;
 }
 export fn coherent_frame_get(token: *Token, phase: u32) c_int {
     check(@src(), phase == 4);
@@ -168,6 +168,9 @@ export fn physics_world_input(choice: *p.SyncPhysicsChoice, _: *const Token) c_i
             }
         },
         p.SYNC_PHYSICS_SPELLIT_BODY_BASIS, p.SYNC_PHYSICS_SPELLIT_BODY_MOTION => {
+            if (mode == 20 and choice.kind == p.SYNC_PHYSICS_SPELLIT_BODY_MOTION) {
+                check(@src(), @as(u32, @bitCast(choice.payload.spellit_body.values[7])) == 0 and @as(u32, @bitCast(choice.payload.spellit_body.values[11])) == 0);
+            }
             choice.payload.spellit_body.values[0] = 19;
             if (mode == 8) choice.payload.spellit_body.values[0] = std.math.nan(f32);
             if (mode == 9) body_proof = false;
@@ -253,6 +256,11 @@ fn setup() void {
     win.store(u16, 0xe637b4, 73);
     local_body = std.mem.zeroes(types.State);
     local_body.basis[0] = 1;
+    if (mode == 20) {
+        local_body.linear[3] = @bitCast(@as(u32, 0xffffffff));
+        local_body.angular[3] = @bitCast(@as(u32, 0x7fc12345));
+    }
+    if (mode == 21) local_body.linear[0] = std.math.nan(f32);
 }
 const Snapshot = extern struct {
     native_calls: u32,
@@ -373,4 +381,13 @@ pub fn main() void {
         if (checksum != hash) std.debug.print("spellit input mode={d} hash={d} expected={d} tracefx={x}\n", .{ mode, checksum, hash, actual.trace[39] });
         check(@src(), checksum == hash);
     }
+    var actual: Snapshot = undefined;
+    mode = 20;
+    run(&actual);
+    check(@src(), actual.fault == 0 and actual.applies == 1 and actual.native_calls == 1 and actual.exception == 0);
+    check(@src(), actual.body.basis[0] == 19 and actual.body.position[0] == 19 and actual.err == 321);
+    check(@src(), @as(u32, @bitCast(actual.body.linear[3])) == 0xffffffff and @as(u32, @bitCast(actual.body.angular[3])) == 0x7fc12345);
+    mode = 21;
+    run(&actual);
+    check(@src(), actual.fault == 15 and actual.applies == 0 and actual.native_calls == 0 and actual.failure[2] == 20);
 }

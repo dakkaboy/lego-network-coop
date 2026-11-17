@@ -60,6 +60,7 @@ pub export var clonewars_projectile_retire_debug: [12]u32 = @splat(0);
 pub export var clonewars_projectile_failure_committed: i32 = 0;
 pub export var clonewars_projectile_failure_stride: u32 = @sizeOf(t.Failure);
 pub export var clonewars_projectile_failure = std.mem.zeroes(t.Failure);
+pub export var clonewars_projectile_stack_debug: [2082]u32 = @splat(0);
 pub export var clonewars_projectile_debug: [12]u32 = @splat(0);
 pub export var clonewars_projectile_pool_release_debug: [8]u32 = @splat(0);
 pub export var clonewars_fire_debug: [8]u32 = @splat(0);

@@ -14,6 +14,7 @@ comptime {
     _ = @import("saved_sources.zig");
     _ = @import("scene_readiness.zig");
     _ = @import("spellit_source.zig");
+    _ = @import("scene_support.zig");
     _ = @import("script_shoot_dispatch.zig");
     _ = @import("span_installer.zig");
     _ = @import("span_engine.zig");

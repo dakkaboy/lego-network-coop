@@ -26,7 +26,8 @@ pub fn valid(entry: ?*const p.SyncReactionChoice) bool {
     if (e.kind == p.SYNC_REACTION_DAMAGE_DRAW) return clip.source_id != 0 and clip.arena_attacker_slot == 0 and clip.arena_attacker_generation == 0 and clip.selection.damage_draw <= 65535 and v.zero(&clip.hit);
     if (e.kind != p.SYNC_REACTION_CLIP) return false;
     if (clip.hit.completed != 0) {
-        if (clip.selection.clip != -1 or clip.source_id == 0 or clip.arena_attacker_generation != 0 or !hitValid(&clip.hit)) return false;
+        if (!hitValid(&clip.hit)) return false;
+        if (clip.arena_attacker_generation == 0 and (clip.selection.clip != -1 or clip.source_id == 0)) return false;
     } else if (!v.zero(&clip.hit)) return false;
     const attacker = if (clip.arena_attacker_generation != 0) clip.arena_attacker_slot < p.SYNC_MAX_ACTORS and clip.arena_attacker_slot != e.slot and clip.source_id == 0 else clip.arena_attacker_slot == 0;
     return attacker and clip.selection.clip >= @as(i32, if (clip.arena_attacker_generation != 0) -2 else -1) and clip.selection.clip < 4096;

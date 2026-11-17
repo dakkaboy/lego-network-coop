@@ -158,7 +158,106 @@ pub fn main(init: std.process.Init) !void {
         const index = try std.fmt.parseInt(usize, args[1], 10);
         check(@src(), index < groups.len);
         run(groups[index]);
+        if (index == 4) accumulatedTagTime();
     } else {
         for (groups) |group| run(group);
+        accumulatedTagTime();
     }
+}
+fn accumulatedTagTime() void {
+    const memory = win.VirtualAlloc(0, @sizeOf(p.SyncFrame) * 2, 0x3000, 4);
+    check(@src(), memory != 0);
+    defer check(@src(), win.VirtualFree(memory, 0, 0x8000) != 0);
+    const f: *p.SyncFrame = @ptrFromInt(memory);
+    const decoded: *p.SyncFrame = @ptrFromInt(memory + @sizeOf(p.SyncFrame));
+    f.epoch = 1;
+    f.sequence = 3285;
+    f.level = 12;
+    f.delta = 0.0538174;
+    f.engine_delta = 0.050997;
+    f.tag_count = 1;
+    f.cadence_count = 1;
+    const tag = &f.tags[0];
+    tag.* = std.mem.zeroes(p.SyncTag);
+    tag.id = 8;
+    tag.from = 11;
+    tag.to = 5;
+    tag.from_generation = 23;
+    tag.to_generation = 17;
+    tag.clock = 3285;
+    tag.delta = 0.40869495;
+    tag.from_identity = .{ .character = 229, .spawn_tag = 927624, .spawn_source = .{ .producer = 3905926279, .serial = 0 } };
+    tag.to_identity = .{ .character = 123, .spawn_tag = 6054833, .spawn_source = .{ .producer = 3, .serial = 0 } };
+    const cadence = &f.cadence[0];
+    cadence.* = std.mem.zeroes(p.SyncCadence);
+    cadence.slot = 11;
+    cadence.generation = 23;
+    cadence.character = tag.from_identity.character;
+    cadence.spawn_tag = tag.from_identity.spawn_tag;
+    cadence.spawn_source = tag.from_identity.spawn_source;
+    cadence.period = 8;
+    cadence.phase = 11;
+    cadence.elapsed = tag.delta;
+    const original_tag = tag.*;
+    const original_cadence = cadence.*;
+    var packet: [2048]u8 = undefined;
+    check(@src(), sync_frame_valid(f, sync_frame_size(f)) != 0);
+    const size = sync_frame_encode(f, &packet, packet.len);
+    check(@src(), size != 0 and sync_frame_decode(decoded, &packet, size) != 0 and @import("validation.zig").equal(&decoded.tags[0], tag));
+    for (0..19) |mutation| {
+        tag.* = original_tag;
+        cadence.* = original_cadence;
+        f.cadence_count = 1;
+        switch (mutation) {
+            0 => tag.delta = std.math.nan(f32),
+            1 => tag.delta = std.math.inf(f32),
+            2 => tag.delta = -0.4,
+            3 => tag.delta = 0.4,
+            4 => tag.phase = 1,
+            5 => f.cadence_count = 0,
+            6 => cadence.generation += 1,
+            7 => cadence.slot += 1,
+            8 => cadence.character += 1,
+            9 => cadence.spawn_tag += 1,
+            10 => cadence.spawn_source.serial += 1,
+            11 => cadence.elapsed = 0.05,
+            12 => cadence.period = 0,
+            13 => cadence.period = 256,
+            14 => cadence.phase += 1,
+            15 => tag.clock += 1,
+            16 => {
+                tag.delta = 26;
+                cadence.elapsed = tag.delta;
+            },
+            17 => {
+                f.cadence_count = 2;
+                f.cadence[1] = cadence.*;
+            },
+            18 => tag.parent = 7,
+            else => unreachable,
+        }
+        check(@src(), sync_frame_valid(f, sync_frame_size(f)) == 0);
+    }
+    tag.* = original_tag;
+    cadence.* = original_cadence;
+    f.cadence_count = 1;
+    cadence.period = 1;
+    check(@src(), sync_frame_valid(f, sync_frame_size(f)) != 0);
+    cadence.* = original_cadence;
+    f.tag_count = 2;
+    f.tags[1] = tag.*;
+    f.tags[1].id = 9;
+    f.tags[1].parent = 8;
+    check(@src(), sync_frame_valid(f, sync_frame_size(f)) != 0);
+    f.tags[1].delta = 0.4;
+    check(@src(), sync_frame_valid(f, sync_frame_size(f)) == 0);
+    f.tag_count = 1;
+    cadence.period = 255;
+    cadence.phase = 30;
+    cadence.elapsed = 25.5;
+    tag.delta = cadence.elapsed;
+    check(@src(), sync_frame_valid(f, sync_frame_size(f)) != 0);
+    f.cadence_count = 0;
+    tag.delta = 0.05;
+    check(@src(), sync_frame_valid(f, sync_frame_size(f)) != 0);
 }

@@ -23,6 +23,30 @@ const shortPut = f.shortPut;
 const copy = f.copy;
 const equal = f.equal;
 const buffer = f.buffer;
+const probe = @import("native_probe_fixture.zig");
+pub export var pack_probe_member: usize = 0;
+pub const probe_registers =
+    \\movl _pack_probe_member,%esi
+    \\movl $1,12(%esp)
+;
+extern fn native_pack_mode_input() void;
+extern fn pack_mode_native_exit() void;
+extern fn pack_mode_success_exit() void;
+extern fn pack_mode_abort_exit() void;
+comptime {
+    asm (
+        \\.text
+        \\_pack_mode_native_exit:
+        \\movl _projected,%eax
+        \\cmpl $0x1d,%eax
+        \\_pack_mode_success_exit:
+        \\movl $1,_branch
+        \\ret
+        \\_pack_mode_abort_exit:
+        \\movl $2,_branch
+        \\ret
+    );
+}
 fn decisions() void {
     begin(true);
     check(@src(), state.native_tick_decision(0x888889, 0) == 0 and state.native_tick_decision(0x8888cd, 1) == 1 and finish());
@@ -911,6 +935,72 @@ fn packs() void {
         const before = f.faults;
         pack.native_pack_hit_seed(addr(scene.second), site);
         check(@src(), word(0xea178c, 0) == 0xabcd1234 and !finish() and f.faults == before + 1);
+        if (site == sites.PACK_HIT_DEBRIS) {
+            check(@src(), state.clonewars_native_pack_seed_context[4] == addr(scene.second));
+            check(@src(), state.clonewars_native_pack_seed_context[7] != state.clonewars_native_pack_seed_context[9]);
+            check(@src(), state.clonewars_native_pack_seed_context[10] == site);
+            check(@src(), state.clonewars_native_tick_failure_stack[0] > 0);
+        }
+    }
+    const native_stack = buffer(36);
+    put(native_stack, 0, sites.PACK_HIT_DEBRIS + 5);
+    put(native_stack, 28, 0x408700);
+    put(native_stack, 32, 0x12345678);
+    const stack_before = win.load([36]u8, addr(native_stack));
+    const member_before = win.load([0xa0]u8, addr(scene.first));
+    next(true);
+    win.SetLastError(765);
+    pack.native_pack_hit_seed_bridge(addr(scene.first), sites.PACK_HIT_DEBRIS, addr(native_stack));
+    check(@src(), win.GetLastError() == 765 and finish() and stream(0, 2));
+    check(@src(), state.clonewars_native_pack_hit_caller[3] == addr(scene.first) and state.clonewars_native_pack_hit_caller[5] == 0x408700 and state.clonewars_native_pack_hit_caller[6] == 0x12345678);
+    check(@src(), std.mem.eql(u8, &stack_before, native_stack) and std.mem.eql(u8, &member_before, scene.first));
+    const captured_caller = state.clonewars_native_pack_hit_caller;
+    pack.native_pack_hit_seed_bridge(1, sites.PACK_HIT_DEBRIS, 1);
+    check(@src(), std.mem.eql(u32, &captured_caller, &state.clonewars_native_pack_hit_caller));
+    const observation = @import("pack_hit_query_observer.zig");
+    const event_stack = buffer(0x860);
+    const event_query = buffer(0x4c);
+    const event_value = buffer(12);
+    const event_owner = buffer(0x1440);
+    put(event_query, 0x20, 1);
+    put(event_value, 0, 3);
+    put(event_value, 8, event_owner);
+    put(event_stack, 0, 0x45f5a2);
+    put(event_stack, 12, 2);
+    put(event_stack, 28, 0x7a9379);
+    put(event_stack, 32, event_value);
+    put(event_stack, 40, 0x408729);
+    put(event_stack, 48, 0x6f097c);
+    put(event_stack, 68, scene.first);
+    put(event_stack, 72, scene.second);
+    put(event_stack, 0x844, 0x6fc9da);
+    put(event_stack, 0x848, event_query);
+    put(event_stack, 0x84c, event_value);
+    put(event_stack, 0x85c, 0x88abcd);
+    const observation_stack = win.load([0x860]u8, addr(event_stack));
+    const observation_owner = win.load([0x1440]u8, addr(event_owner));
+    const observation_query = win.load([0x4c]u8, addr(event_query));
+    next(true);
+    win.SetLastError(765);
+    pack.native_pack_hit_seed_bridge(addr(scene.first), sites.PACK_HIT_DEBRIS, addr(event_stack));
+    check(@src(), win.GetLastError() == 765 and finish() and stream(0, 2));
+    check(@src(), observation.clonewars_pack_hit_queries_cursor == 1);
+    const observed = observation.clonewars_pack_hit_queries[0];
+    check(@src(), observed[0] == frame.epoch and observed[1] == frame.sequence and observed[3] == addr(scene.first));
+    check(@src(), observed[9] == 2 and observed[10] == 0 and observed[14] == 2 and observed[15] == state.clonewars_native_pack_seed_context[7]);
+    check(@src(), observed[40] == addr(scene.first) and observed[52] == addr(scene.second) and observed[51] >> 8 == 1 and observed[63] >> 8 == 2);
+    begin(false);
+    pack.native_pack_hit_seed_bridge(addr(scene.first), sites.PACK_HIT_DEBRIS, addr(event_stack));
+    check(@src(), finish() and observation.clonewars_pack_hit_queries_cursor == 2 and observation.clonewars_pack_hit_queries[1][33] == observed[15]);
+    check(@src(), std.mem.eql(u8, &observation_stack, event_stack) and std.mem.eql(u8, &observation_owner, event_owner) and std.mem.eql(u8, &observation_query, event_query));
+    check(@src(), std.mem.eql(u8, &member_before, scene.first));
+    next(true);
+    for ([_]usize{ 0, 12, 28, 32, 40, 48, 68, 0x844, 0x848, 0x84c }) |offset| {
+        const original = word(event_stack, offset);
+        put(event_stack, offset, 0);
+        observation.observe(addr(scene.first), addr(event_stack));
+        check(@src(), observation.clonewars_pack_hit_queries_cursor == 0 and frame.tick_gate_count == 0);
+        put(event_stack, offset, original);
     }
     next(true);
     check(@src(), pack.native_pack_formation(addr(scene.first), 0) == 0 and finish() and stream(0, 2));
@@ -1003,6 +1093,414 @@ fn packs() void {
     check(@src(), word(0xea178c, 0) == 0x9876abcd and f.faults == local_only);
     pack.native_pack_mode(addr(scene.first), addr(&entry));
     check(@src(), scene.first[0x60] == 5 and entry == 0 and finish() and frame.tick_gate_count == 0);
+    ordinalMemo();
+    packFireTargets();
+    packSpawnChecks();
+}
+fn spawnRandom(seed: *u32) f32 {
+    seed.* = seed.* *% 0x19660d +% 0x3c6ef35f;
+    const width: f32 = @floatCast(0.25 + 0.10000000149011612);
+    const value: f32 = @floatCast(@as(f64, @floatFromInt(seed.* & 0x7fffff)) / 8388608.0 * @as(f64, width) - 0.125);
+    return @min(0.125, @max(-0.125, value));
+}
+fn spawnPair(source: []u8, pool: []u8, stack: []u8, position: []u8) void {
+    const spawn = @import("tick_pack_spawn.zig");
+    var seed = word(0xea178c, 0);
+    put(stack, 0, sites.PACK_SPAWN_X + 5);
+    spawn.native_pack_spawn_input(addr(source), addr(pool), addr(stack), sites.PACK_SPAWN_X);
+    seed = word(0xea178c, 0);
+    const x = spawnRandom(&seed);
+    put(0xea178c, 0, seed);
+    put(stack, 0, sites.PACK_SPAWN_Z + 5);
+    spawn.native_pack_spawn_input(addr(source), addr(pool), addr(stack), sites.PACK_SPAWN_Z);
+    seed = word(0xea178c, 0);
+    const z = spawnRandom(&seed);
+    put(0xea178c, 0, seed);
+    put(position, 0, @as(u32, @bitCast(win.load(f32, addr(source) + 0x60) + x)));
+    put(position, 4, word(source, 0x64));
+    put(position, 8, @as(u32, @bitCast(win.load(f32, addr(source) + 0x68) + z)));
+    put(position, 12, @as(u32, @bitCast(@as(f32, 1))));
+    put(stack, 0, sites.PACK_SPAWN_BIRTH + 5);
+    put(stack, 4, word(source, 0xc8));
+    put(stack, 8, position);
+    put(stack, 12, 123);
+    spawn.native_pack_spawn_input(addr(source), addr(pool), addr(stack), sites.PACK_SPAWN_BIRTH);
+}
+fn packSpawnChecks() void {
+    const spawn = @import("tick_pack_spawn.zig");
+    const scene = PackScene.init();
+    put(scene.pack, 0xa0, 0);
+    const source = buffer(0xcc);
+    const pool = buffer(0x24);
+    const stack = buffer(16);
+    const position = buffer(16);
+    put(pool, 8, scene.manager);
+    const base = [_]f32{ 12.840703010559082, -0.05330193042755127, -6.237250328063965, 1, 0.25 };
+    var old_seed: u32 = 1462045;
+    const old_position = [_]f32{ base[0] + spawnRandom(&old_seed), base[1], base[2] + spawnRandom(&old_seed) };
+    check(@src(), old_position[0] == 12.965703010559082 and old_position[2] == -6.1412858963012695);
+    for (0..25) |mutation| {
+        @memset(source, 0);
+        for (base, 0..) |value, i| put(source, 0x60 + i * 4, @as(u32, @bitCast(value)));
+        put(source, 0x80, 1);
+        put(source, 0xac, scene.pack);
+        put(source, 0xb0, 39);
+        put(scene.pack, 0xb0, pool);
+        put(pool, 8, scene.manager);
+        put(stack, 4, @as(u32, @bitCast(@as(f32, -0.125))));
+        put(stack, 8, @as(u32, @bitCast(@as(f32, 0.125))));
+        next(true);
+        put(0xea178c, 0, 5430013);
+        spawnPair(source, pool, stack, position);
+        const canonical = win.load([4]u32, addr(position));
+        const final_seed = word(0xea178c, 0);
+        check(@src(), finish() and frame.tick_gate_count == 16 and stream(0, 16));
+        for (1..16) |count| check(@src(), !stream(0, count));
+        check(@src(), @as(f32, @bitCast(canonical[0])) == 12.786457061767578 and @as(f32, @bitCast(canonical[2])) == -6.324928283691406);
+        check(@src(), spawn.clonewars_pack_spawn_births_cursor == 1 and std.mem.eql(u32, spawn.clonewars_pack_spawn_births[0][13..17], &canonical));
+        put(stack, 0, sites.PACK_SPAWN_X + 5);
+        put(stack, 4, @as(u32, @bitCast(@as(f32, -0.125))));
+        put(stack, 8, @as(u32, @bitCast(@as(f32, 0.125))));
+        var at: u32 = sites.PACK_SPAWN_X;
+        switch (mutation) {
+            1...7 => frame.tick_gates[mutation - 1].value +%= 1,
+            8 => frame.tick_gates[0].clock += 1,
+            9 => frame.tick_gates[0].site = sites.PACK_SPAWN_Z,
+            10 => frame.tick_gate_count = 7,
+            11 => put(source, 0xac, 1),
+            12 => put(scene.pack, 0xb0, scene.first),
+            13 => put(pool, 8, 1),
+            14 => put(source, 0x80, 0),
+            15 => put(source, 0x60, 0x7fc00000),
+            16 => put(stack, 4, 0x7fc00000),
+            17 => put(stack, 4, @as(u32, @bitCast(@as(f32, 100)))),
+            18 => put(stack, 0, sites.PACK_SPAWN_X + 6),
+            19 => put(source, 0xb4, 1),
+            20 => put(source, 0xb0, 40),
+            21 => put(source, 0xc8, 1),
+            24 => { at = sites.PACK_SPAWN_Z; put(stack, 0, at + 5); },
+            else => {},
+        }
+        begin(false);
+        if (mutation == 22) f.alive = false;
+        if (mutation == 23) f.bound.epoch += 1;
+        put(0xea178c, 0, 1462045);
+        const source_before = win.load([0xcc]u8, addr(source));
+        const pool_before = win.load([0x24]u8, addr(pool));
+        const stack_before = win.load([16]u8, addr(stack));
+        win.SetLastError(1234);
+        if (mutation == 0) {
+            spawnPair(source, pool, stack, position);
+            check(@src(), finish() and std.mem.eql(u32, &canonical, &win.load([4]u32, addr(position))) and word(0xea178c, 0) == final_seed);
+            check(@src(), spawn.clonewars_pack_spawn_debug[2] == 1 and spawn.clonewars_pack_spawn_births_cursor == 2);
+        } else {
+            spawn.native_pack_spawn_input(addr(source), addr(pool), addr(stack), at);
+            check(@src(), !finish() and word(0xea178c, 0) == 1462045);
+            check(@src(), std.mem.eql(u8, &stack_before, stack));
+        }
+        check(@src(), win.GetLastError() == 1234 and std.mem.eql(u8, &source_before, source) and std.mem.eql(u8, &pool_before, pool));
+        f.alive = true;
+        f.bound.epoch = frame.epoch;
+    }
+    packSpawnAbi(scene, source, pool, stack, position);
+}
+extern fn native_pack_spawn_rng_input() void;
+extern fn native_pack_spawn_birth_input() void;
+fn packSpawnAbi(scene: PackScene, source: []u8, pool: []u8, stack: []u8, position: []u8) void {
+    const spawn = @import("tick_pack_spawn.zig");
+    const abi = @import("pack_spawn_probe.zig");
+    const original_random = spawn.pack_spawn_random;
+    const original_allocate = spawn.pack_spawn_allocate;
+    spawn.pack_spawn_random = @intFromPtr(&abi.pack_spawn_probe_random);
+    spawn.pack_spawn_allocate = @intFromPtr(&abi.pack_spawn_probe_allocate);
+    defer { spawn.pack_spawn_random = original_random; spawn.pack_spawn_allocate = original_allocate; }
+    abi.original();
+    abi.pack_spawn_probe_source = addr(source);
+    abi.pack_spawn_probe_pool = addr(pool);
+    abi.pack_spawn_probe_position = addr(position);
+    const calls = [_]u32{ sites.PACK_SPAWN_X, sites.PACK_SPAWN_Z, sites.PACK_SPAWN_BIRTH };
+    for (0..4) |rounding| for (0..4) |behavior| {
+        put(source, 0x60, @as(u32, @bitCast(@as(f32, 12.840703010559082))));
+        put(source, 0x80, 1);
+        put(source, 0xac, scene.pack);
+        put(source, 0xb0, 39);
+        put(source, 0xb4, 0);
+        put(source, 0xc8, 0);
+        put(scene.pack, 0xb0, pool);
+        put(pool, 8, scene.manager);
+        put(stack, 4, @as(u32, @bitCast(@as(f32, -0.125))));
+        put(stack, 8, @as(u32, @bitCast(@as(f32, 0.125))));
+        next(true);
+        put(0xea178c, 0, 5430013);
+        spawnPair(source, pool, stack, position);
+        check(@src(), finish() and stream(0, 16));
+        f.cancel();
+        abi.pack_spawn_probe_cw = 0x37f | @as(u32, @intCast(rounding)) << 10;
+        abi.pack_spawn_probe_mxcsr = 0x1f80 | @as(u32, @intCast(rounding)) << 13;
+        for (&abi.pack_spawn_probe_xmm, 0..) |*byte, i| byte.* = @truncate(i * 17 + rounding * 3);
+        var registers: [3][9]u32 = undefined;
+        var floating: [3][512]u8 = undefined;
+        var seeds: [3]u32 = undefined;
+        const source_before = win.load([0xcc]u8, addr(source));
+        const pool_before = win.load([0x24]u8, addr(pool));
+        const count_before = abi.pack_spawn_probe_calls;
+        put(0xea178c, 0, if (behavior < 2) @as(u32, 5430013) else @as(u32, 1462045));
+        for (calls, 0..) |at, phase| {
+            const target = if (phase < 2) @intFromPtr(&abi.pack_spawn_probe_random) else @intFromPtr(&abi.pack_spawn_probe_allocate);
+            put(at, 0, 0xe8);
+            win.store(u8, at, 0xe8);
+            put(at, 1, target -% at -% 5);
+            win.store(u8, at + 5, 0xe9);
+            put(at, 6, @intFromPtr(&abi.pack_spawn_probe_after) -% at -% 10);
+            abi.pack_spawn_probe_site = at;
+            abi.pack_spawn_probe_kind = @intFromBool(phase == 2);
+            win.SetLastError(321);
+            abi.pack_spawn_probe();
+            registers[phase] = abi.pack_spawn_probe_regs;
+            floating[phase] = abi.pack_spawn_probe_fx;
+            seeds[phase] = word(0xea178c, 0);
+            check(@src(), win.GetLastError() == 321);
+        }
+        if (behavior != 2) begin(behavior == 0);
+        if (behavior == 3) frame.tick_gates[0].value += 1;
+        put(0xea178c, 0, if (behavior == 0) @as(u32, 5430013) else @as(u32, 1462045));
+        for (calls, 0..) |at, phase| {
+            const target = if (phase < 2) @intFromPtr(&native_pack_spawn_rng_input) else @intFromPtr(&native_pack_spawn_birth_input);
+            put(at, 1, target -% at -% 5);
+            abi.pack_spawn_probe_site = at;
+            abi.pack_spawn_probe_kind = @intFromBool(phase == 2);
+            win.SetLastError(321);
+            abi.pack_spawn_probe();
+            check(@src(), win.GetLastError() == 321 and word(0xea178c, 0) == seeds[phase]);
+            if (!std.mem.eql(u32, &registers[phase], &abi.pack_spawn_probe_regs) or !std.mem.eql(u8, &floating[phase], &abi.pack_spawn_probe_fx))
+                std.debug.print("spawn ABI rounding={d} behavior={d} phase={d}\n", .{ rounding, behavior, phase });
+            check(@src(), std.mem.eql(u32, &registers[phase], &abi.pack_spawn_probe_regs) and std.mem.eql(u8, &floating[phase], &abi.pack_spawn_probe_fx));
+        }
+        check(@src(), abi.pack_spawn_probe_calls == count_before + 6);
+        check(@src(), std.mem.eql(u8, &source_before, source) and std.mem.eql(u8, &pool_before, pool));
+        if (behavior != 2) check(@src(), finish() == (behavior != 3));
+    };
+}
+fn packFireTargets() void {
+    const scene = PackScene.init();
+    const target = buffer(0x1440);
+    @memset(target, 0xa5);
+    f.turret_pilot = addr(target);
+    defer f.turret_pilot = 0;
+    const timers = [_]u32{ 0x3e4ccccd, 0x3f000000, 0x3fc00000, 0x3f400000 };
+    const previous_pool = win.load(u32, 0xfb2f60);
+    const previous_count = win.load(u32, 0xfb2e3c);
+    defer {
+        win.store(u32, 0xfb2f60, previous_pool);
+        win.store(u32, 0xfb2e3c, previous_count);
+    }
+    put(0xfb2f60, 0, addr(target));
+    put(0xfb2e3c, 0, 1);
+    for (0..20) |mutation| {
+        f.turret_pilot_generation = 17;
+        f.pack_target_mutation = 0;
+        f.retained_target_bound = false;
+        put(target, 0x50, if (mutation == 14) @as(u32, 0x8001) else 3);
+        shortPut(target, 0xdc0, 183);
+        next(true);
+        scene.first[0x60] = 18;
+        scene.first[0x63] = 0x10;
+        put(scene.first, 0x88, if (mutation == 1) 0 else addr(target));
+        copy(scene.first[0x8c..], &timers, 16);
+        scene.first[0x9c] = 0xa5;
+        var entry: u8 = 0;
+        pack.native_pack_mode(addr(scene.first), addr(&entry));
+        check(@src(), finish() and frame.tick_gate_count == 14 and stream(0, 14) and !stream(3, 11));
+        for (0..14) |length| check(@src(), !stream(0, @intCast(length)) or length == 0);
+        switch (mutation) {
+            2 => f.turret_pilot_generation += 1,
+            3 => frame.tick_gates[5].value += 1,
+            4 => frame.tick_gates[3].value = p.SYNC_MAX_ACTORS + 1,
+            5 => frame.tick_gates[4].value = 0,
+            6 => frame.tick_gates[6].value = 0x7fc00000,
+            7 => frame.tick_gates[10].value = 2,
+            8 => frame.tick_gate_count = 10,
+            9 => f.pack_target_mutation = 1,
+            11 => put(target, 0x50, 0),
+            12 => frame.tick_gates[3].value = 0,
+            13 => frame.tick_gates[6].clock += 1,
+            15 => put(target, 0x50, 0x8001),
+            16 => f.pack_target_mutation = 2,
+            17 => {
+                f.pack_target_mutation = 3;
+                put(target, 0x50, 0x8001);
+            },
+            18 => frame.tick_gates[12].value += 1,
+            19 => frame.tick_gates[11].value += 1,
+            else => {},
+        }
+        scene.first[0x60] = 9;
+        scene.first[0x63] = 0x96;
+        entry = 1;
+        put(scene.first, 0x88, 0x3eb5d7bf);
+        put(scene.first, 0x8c, 0x3d40fcb5);
+        scene.first[0x9c] = 0xee;
+        const before = win.load([0xa0]u8, addr(scene.first));
+        const before_actor = win.load([0x1440]u8, addr(target));
+        var old: u32 = 0;
+        if (mutation == 10) check(@src(), win.VirtualProtect(addr(scene.first), scene.first.len, 2, &old) != 0);
+        begin(false);
+        win.SetLastError(890);
+        pack.native_pack_mode(addr(scene.first), addr(&entry));
+        const error_code = win.GetLastError();
+        if (mutation == 10) {
+            var ignored: u32 = 0;
+            check(@src(), win.VirtualProtect(addr(scene.first), scene.first.len, old, &ignored) != 0);
+        }
+        check(@src(), error_code == 890);
+        if (mutation <= 1 or mutation == 14 or mutation == 15 or mutation == 17) {
+            check(@src(), finish() and scene.first[0x60] == 18 and entry == 0 and scene.first[0x63] == 0x96);
+            check(@src(), word(scene.first, 0x88) == (if (mutation == 1) @as(usize, 0) else addr(target)) and equal(scene.first[0x8c..], &timers, 16) and scene.first[0x9c] == 0xef);
+            check(@src(), word(target, 0x50) == (if (mutation == 14 or mutation == 15 or mutation == 17) @as(u32, 0x8001) else 3) and win.load(i16, addr(target) + 0xdc0) == 183);
+            check(@src(), equal(target, &before_actor, before_actor.len));
+        } else check(@src(), !finish() and equal(scene.first, &before, before.len) and entry == 1);
+    }
+    const retirement = @import("target_retirement.zig");
+    for (0..4) |case| {
+        f.pack_target_mutation = 0;
+        next(true);
+        retirement.invalidate(addr(target));
+        put(target, 0x50, 0);
+        put(target, 8, 0);
+        if (case != 1) retirement.note_retired_target(addr(target));
+        if (case == 2) retirement.invalidate(addr(target));
+        if (case == 3) put(target, 8, 0x1234);
+        scene.first[0x60] = 18;
+        put(scene.first, 0x88, addr(target));
+        copy(scene.first[0x8c..], &timers, 16);
+        const actor_before = win.load([0x1440]u8, addr(target));
+        var entered: u8 = 0;
+        pack.native_pack_mode(addr(scene.first), addr(&entered));
+        check(@src(), equal(target, &actor_before, actor_before.len));
+        if (case == 0) check(@src(), finish() and word(scene.first, 0x88) == 0) else check(@src(), !finish());
+    }
+    retirement.invalidate(addr(target));
+    f.pack_target_mutation = 0;
+    f.turret_pilot_generation = 17;
+    const resumes = @import("tick_resume.zig");
+    const original_resume = resumes.pack_mode_resume;
+    const abort = resumes.pack_mode_abort;
+    resumes.pack_mode_resume = @intFromPtr(&pack_mode_success_exit);
+    resumes.pack_mode_abort = @intFromPtr(&pack_mode_abort_exit);
+    defer {
+        resumes.pack_mode_resume = original_resume;
+        resumes.pack_mode_abort = abort;
+    }
+    pack_probe_member = addr(scene.first);
+    put(target, 0x50, 3);
+    for (0..2000) |i| {
+        next(true);
+        scene.first[0x60] = 18;
+        put(scene.first, 0x88, addr(target));
+        copy(scene.first[0x8c..], &timers, 16);
+        scene.first[0x9c] = 1;
+        var entered: u8 = 0;
+        pack.native_pack_mode(addr(scene.first), addr(&entered));
+        check(@src(), finish());
+        begin(false);
+        scene.first[0x60] = 9;
+        put(scene.first, 0x88, 0x3eb5d7bf);
+        if (i % 3 == 1) frame.tick_gates[4].value = 0;
+        if (i % 3 == 2) {
+            state.active = false;
+            state.failed = true;
+        }
+        probe.projected = if (i % 3 == 2) 9 else 18;
+        probe.entry = if (i % 3 == 1) @intFromPtr(&pack_mode_abort_exit) else @intFromPtr(&pack_mode_native_exit);
+        probe.invoke_thunk();
+        const fx = probe.observed_fx;
+        const regs = probe.observed_regs;
+        const branch = probe.branch;
+        probe.entry = @intFromPtr(&native_pack_mode_input);
+        win.SetLastError(1234);
+        probe.invoke_thunk();
+        check(@src(), win.GetLastError() == 1234 and probe.branch == branch);
+        probe.expectSame(@src(), &fx, &regs);
+        if (i % 3 != 2) check(@src(), finish() == (i % 3 == 0));
+    }
+    for (0..4) |invalid| {
+        next(true);
+        scene.first[0x60] = 18;
+        put(scene.first, 0x88, if (invalid == 0) 0x3eb5d7bf else addr(target));
+        copy(scene.first[0x8c..], &timers, 16);
+        if (invalid == 1) put(scene.first, 0x90, 0x7fc00000);
+        if (invalid == 2) f.pack_target_mutation = 2;
+        if (invalid == 3) put(target, 0x50, 0);
+        const before = win.load([0xa0]u8, addr(scene.first));
+        var entered: u8 = 1;
+        check(@src(), pack.native_pack_mode_checked(addr(scene.first), addr(&entered)) == 0 and !finish() and entered == 1 and equal(scene.first, &before, before.len));
+    }
+    f.pack_target_mutation = 0;
+}
+fn ordinalMemo() void {
+    const identity = @import("tick_pack_identity.zig");
+    const membership = @import("tick_pack_mutation.zig");
+    const resumes = [_]*usize{ &membership.pack_remove_resume, &membership.pack_construct_resume, &membership.pack_destroy_resume };
+    const original_resumes = [_]usize{ membership.pack_remove_resume, membership.pack_construct_resume, membership.pack_destroy_resume };
+    const fixture_resumes = [_]usize{ @intFromPtr(&f.machine.pack_remove_fixture_resume), @intFromPtr(&f.machine.pack_construct_fixture_resume), @intFromPtr(&f.machine.pack_destroy_fixture_resume) };
+    for (resumes, fixture_resumes, 0..) |continuation, target, i| {
+        continuation.* = target;
+        const revision = membership.clonewars_pack_membership_revision;
+        win.SetLastError(812);
+        f.machine.invoke_pack_observer(@intCast(i));
+        const observed = f.machine.pack_observer_fixture_observed;
+        check(@src(), membership.clonewars_pack_membership_revision == revision +% 1 and win.GetLastError() == 812);
+        check(@src(), std.mem.eql(u8, &f.machine.pack_observer_fpu_before, &f.machine.pack_observer_fpu_after));
+        check(@src(), observed[0] == 0x12345678 and observed[1] == 0x87654321 and observed[2] == 0x13579bdf and observed[3] == (if (i == 0) @as(u32, 0x1badb002) else 0x2468ace0));
+        check(@src(), observed[4] == 0x11223344 and observed[5] == 0x55667788 and observed[6] == 0x19283746 and observed[8] & 1 == 1);
+        if (i != 0) check(@src(), observed[10] == (if (i == 1) @as(u32, 0xa9ce96) else 0xa9ced6) and observed[11] == 0xffffffff);
+        continuation.* = original_resumes[i];
+    }
+    const scene = PackScene.init();
+    const nodes = buffer(512 * 0x80);
+    for (0..512) |i| {
+        put(nodes[i * 0x80 ..], 0x68, scene.pack);
+        put(nodes[i * 0x80 ..], 0x7c, if (i + 1 < 512) addr(nodes) + (i + 1) * 0x80 else 0);
+    }
+    put(scene.pack, 0xa0, nodes);
+    put(scene.pack, 0xac, 512);
+    const member = addr(nodes) + 511 * 0x80;
+    next(true);
+    membership.clonewars_pack_membership_observer_active = 1;
+    defer membership.clonewars_pack_membership_observer_active = 0;
+    membership.changed();
+    const before = identity.clonewars_pack_memory_debug[4];
+    check(@src(), identity.resolve(member, false).?.index == 511);
+    const traversed = identity.clonewars_pack_memory_debug[4];
+    check(@src(), traversed -% before == 511);
+    const original = identity.resolve(member, false).?;
+    check(@src(), original.index == 511 and identity.clonewars_pack_memory_debug[4] == traversed);
+    put(member, 0x6c, 71);
+    check(@src(), identity.resolve(member, false).?.witness != original.witness and identity.clonewars_pack_memory_debug[4] == traversed);
+    membership.changed();
+    put(nodes[0x80..], 0x7c, nodes[3 * 0x80 ..]);
+    check(@src(), identity.resolve(member, false).?.index == 510);
+    const removed = identity.clonewars_pack_memory_debug[4];
+    check(@src(), removed -% traversed == 510);
+    check(@src(), identity.resolve(member, false).?.index == 510 and identity.clonewars_pack_memory_debug[4] == removed);
+    put(0xfb4b6c, 0, word(0xfb4b6c, 0) + 1);
+    check(@src(), identity.resolve(member, false).?.index == 510 and identity.clonewars_pack_memory_debug[4] -% removed == 510);
+    membership.changed();
+    put(nodes[10 * 0x80 ..], 0x68, 0);
+    check(@src(), identity.resolve(member, false) == null);
+    put(nodes[10 * 0x80 ..], 0x68, scene.pack);
+    check(@src(), identity.resolve(member, false).?.index == 510);
+    put(member, 0x68, 0);
+    check(@src(), identity.resolve(member, false) == null);
+    put(member, 0x68, scene.pack);
+    check(@src(), identity.resolve(member, false).?.index == 510);
+    var old: u32 = 0;
+    const page = member & ~@as(usize, 0xfff);
+    check(@src(), win.VirtualProtect(page, 0x1000, 1, &old) != 0);
+    check(@src(), identity.resolve(member, false) == null);
+    check(@src(), win.VirtualProtect(page, 0x1000, old, &old) != 0);
+    membership.changed();
+    check(@src(), identity.resolve(member, false).?.index == 510);
 }
 fn gizmos() void {
     const weapon_actor = buffer(0x1440);

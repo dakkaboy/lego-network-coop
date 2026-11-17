@@ -58,6 +58,7 @@ var describes: u32 = 0;
 var resolves: u32 = 0;
 var bound_reserves: u32 = 0;
 var fault: c_int = 0;
+var support_reads: u32 = 0;
 export var cadence_fixture_entry: usize = 0;
 export var cadence_fixture_actor: usize = 0;
 export var cadence_fixture_task: usize = 0;
@@ -114,14 +115,36 @@ export fn entities_actor(slot: u32, _: u32) usize {
 export fn entities_resolve_reference(state: *const p.SyncActor) usize {
     resolves += 1;
     if (client and mode == 39) valid = false;
+    if (client and mode == 52) put(body + 0xec, support + 0x200);
+    if (client and mode == 55) retained = false;
     if (client and mode == 25) put(poi + 0xd4, 0);
     if (client and (mode == 12 or (mode == 33 and state.slot == 8))) return 0;
     return if (state.slot == 7) actor else other;
 }
+export fn native_scene_support_source(_: usize, _: *[2]u32) c_int {
+    return 0;
+}
+export fn native_scene_support_resolve(_: u32, _: u32) usize {
+    return 0;
+}
 export fn physics_effect_body_source(object: usize, out: *[2]u32) c_int {
+    support_reads += 1;
+    if ((mode == 51 and client) or (mode == 53 and !client) or (mode == 50 and client and support_reads > 1)) return 0;
+    if (client and mode >= 45) {
+        check(@src(), object == support or object == support + 0x200);
+        out.* = .{ 13, if (object == support) 18 else if (mode == 47) 19 else 17 };
+        return 1;
+    }
     check(@src(), object == support);
-    out.* = .{ 13, if (client and mode == 28) 18 else 17 };
+    out.* = .{ 13, if (client and (mode == 28 or mode == 42)) 18 else 17 };
     return 1;
+}
+export fn physics_effect_body_resolve(sequence: u32, event: u32) usize {
+    check(@src(), sequence == 13 and event == 17 and client);
+    if (mode == 28 or mode == 41 or mode == 46) return 0;
+    if (mode >= 45) return support + 0x200;
+    if (mode == 43) win.store(u8, support + 0x19, 0x20);
+    return support;
 }
 export fn native_authored_poi_resolve(object: usize, out: *Poi) c_int {
     check(@src(), object == entity);
@@ -175,6 +198,7 @@ fn setup() void {
     describes = 0;
     resolves = 0;
     bound_reserves = 0;
+    support_reads = 0;
     @memset(std.mem.asBytes(frame), 0);
     for (0..23) |i| @memset(@as([*]u8, @ptrFromInt(0x20000000 + i * 0x10000))[0..0x2000], 0);
     native_frame.* = @splat(0);
@@ -191,6 +215,7 @@ fn setup() void {
     float(task + 0x1c, 3);
     win.store(u16, body + 0xc8, 2);
     win.store(u8, support + 0x19, 0x40);
+    win.store(u8, support + 0x219, if (mode == 48) 0x20 else 0x40);
     float(body + 0x110, 1);
     float(body + 0xf4, 1);
     win.store(u16, body + 0x102, 3);
@@ -282,10 +307,14 @@ fn perform(out: *Snapshot) void {
             out.height = csp.cadence_spellit_operand(@intFromPtr(native_frame), 1, 99);
             csp.cadence_spellit_position(@intFromPtr(native_frame), out.points[0..3]);
         },
-        26...30 => {
+        26...30, 40...55 => {
             if (mode == 26) put(body + 0xec, 0);
             if (mode == 29) out.velocity[0] = std.math.nan(f32);
             if (mode == 30) put(model + 0x38, 0);
+            if (client and mode >= 40 and mode <= 44) put(body + 0xec, 0);
+            if (client and mode == 44) put(body, 0x880004);
+            if ((!client and mode >= 49 and mode != 53) or mode == 54) put(body + 0xec, 0);
+            if (client and mode >= 49 and mode != 54) put(body + 0xec, support);
             cm.cadence_character_motion_input(actor, body, &out.velocity);
         },
         31...33 => {
@@ -369,13 +398,15 @@ fn jump(address: usize, target: usize) void {
 }
 fn installedHooks() void {
     const patches = @import("cadence_install.zig").patches();
-    check(@src(), patches.len == 24);
+    check(@src(), patches.len == 31);
     for (patches) |patch| {
         check(@src(), patch.expected.len <= 32);
         protect(patch.address & ~@as(usize, 0xffff), 0x10000, 0x40);
         @memcpy(@as([*]u8, @ptrFromInt(patch.address))[0..patch.expected.len], patch.expected);
     }
     win.store(u8, 0x96d954, 0xc3);
+    win.store(u8, 0x464b44, 0xc3);
+    win.store(u8, 0x464b71, 0xc3);
     win.store(u8, 0x8789f7, 0xc3);
     win.store(u8, 0x9ddc1f, 0xc3);
     jump(0x42fe42, @intFromPtr(&allow_cont));
@@ -470,8 +501,13 @@ pub fn main() void {
     for (expected, 0..) |hash, i| {
         mode = @intCast(i);
         const out = run();
+        var legacy = out;
+        if (mode == 26) {
+            check(@src(), out.gates[0].payload.character_motion.support_material_flags == p.SYNC_SUPPORT_ABSENT);
+            legacy.gates[0].payload.character_motion.support_material_flags = 0;
+        }
         var checksum: u32 = 2166136261;
-        for (std.mem.asBytes(&out)) |byte| checksum = (checksum ^ byte) *% 16777619;
+        for (std.mem.asBytes(&legacy)) |byte| checksum = (checksum ^ byte) *% 16777619;
         if (checksum != hash) std.debug.print("cadence runtime mode={d} hash={d} expected={d}\n", .{ mode, checksum, hash });
         check(@src(), checksum == hash);
         if (mode == 0) check(@src(), out.finish != 0 and out.period == 2);
@@ -480,5 +516,171 @@ pub fn main() void {
         if (mode == 26) check(@src(), out.finish != 0 and out.velocity[0] == 1);
         if (mode == 22) check(@src(), out.finish != 0);
     }
+    for (40..49) |i| {
+        mode = @intCast(i);
+        const out = run();
+        check(@src(), out.err == 1234);
+        if (i == 40 or i == 45) {
+            check(@src(), out.finish != 0 and out.fault == 0 and out.velocity[0] == 1);
+            check(@src(), std.mem.readInt(u32, out.body_state[0xec..0xf0], .little) == support + @as(u32, if (i == 45) 0x200 else 0));
+            check(@src(), std.mem.readInt(u32, out.body_state[0x110..0x114], .little) == @as(u32, @bitCast(@as(f32, 1))));
+            check(@src(), out.diagnostics.clonewars_character_support_debug[6] == 1);
+        } else {
+            check(@src(), out.finish == 0 and out.fault != 0 and out.velocity[0] == 7);
+            check(@src(), std.mem.readInt(u32, out.body_state[0xec..0xf0], .little) == @as(u32, if (i >= 45) support else 0));
+            check(@src(), std.mem.readInt(u32, out.body_state[0x110..0x114], .little) == @as(u32, @bitCast(@as(f32, 2))));
+        }
+    }
+    for (49..56) |i| {
+        mode = @intCast(i);
+        const out = run();
+        check(@src(), out.err == 1234);
+        const actual_support = std.mem.readInt(u32, out.body_state[0xec..0xf0], .little);
+        std.debug.print("support release mode={d} finish={d} fault={d} velocity={d} contact={x}\n", .{ i, out.finish, out.fault, out.velocity[0], actual_support });
+        if (i == 49 or i == 51 or i == 54) {
+            check(@src(), out.finish != 0 and out.fault == 0 and out.velocity[0] == 1 and actual_support == 0);
+            check(@src(), out.gates[0].payload.character_motion.support_material_flags == p.SYNC_SUPPORT_ABSENT);
+        } else {
+            check(@src(), out.finish == 0 and out.fault != 0 and out.velocity[0] == 7);
+            check(@src(), actual_support == support + @as(u32, if (i == 52) 0x200 else 0));
+        }
+    }
     installedHooks();
+    arenaRunRandomChecks();
+    arenaRunRandomAbi();
+}
+fn arenaRunRandomAbi() void {
+    const random = @import("arena_run_random.zig");
+    const arena_fixture = @import("arena_run_random_fixture.zig");
+    const original = random.arena_run_random_original;
+    random.arena_run_random_original = @intFromPtr(&arena_fixture.arena_random_probe_native);
+    defer random.arena_run_random_original = original;
+    for (0..4) |rounding| for (0..3) |kind| {
+        mode = 0;
+        setup();
+        frame.epoch = 20000 + @as(u32, @intCast(rounding * 3 + kind));
+        frame.level = 12;
+        put(task, win.GetModuleHandleA(null) + 0x6dee68);
+        put(task + 0x10, actor);
+        put(task + 0x14, other);
+        put(task + 0x40, 10);
+        put(other, win.GetModuleHandleA(null) + 0x6d83dc);
+        put(other + 0x340, task);
+        win.store(i16, actor + 0xdc0, 119);
+        var token = std.mem.zeroes(Token);
+        token.owner = actor;
+        token.owner_nonce = 1;
+        token.thread = win.GetCurrentThreadId();
+        token.release = frame.epoch;
+        token.epoch = frame.epoch;
+        token.sequence = frame.sequence;
+        token.frame = @intFromPtr(frame);
+        var lease: s.Lease = undefined;
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+        if (kind == 1) {
+            put(0xe637b4, 5000);
+            check(@src(), random.cadence_arena_run_random(task, 0x464b44, 5000) == 5000 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+            client = true;
+            token.release += 1;
+            check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+        } else if (kind == 2) check(@src(), ci.cadence_abort_frame(&lease) != 0);
+        arena_fixture.arena_random_probe_controller = task;
+        arena_fixture.arena_random_probe_cw = 0x37f | (@as(u32, @intCast(rounding)) << 10);
+        arena_fixture.arena_random_probe_mxcsr = 0x1f80 | (@as(u32, @intCast(rounding)) << 13);
+        for (&arena_fixture.arena_random_probe_xmm, 0..) |*byte, i| byte.* = @truncate(i * 13 + rounding * 7);
+        arena_fixture.arena_random_probe_entry = @intFromPtr(&arena_fixture.arena_random_probe_original);
+        put(0xe637b4, 7000);
+        const calls = arena_fixture.arena_random_probe_calls;
+        arena_fixture.arena_random_probe();
+        var regs = arena_fixture.arena_random_probe_regs;
+        const fx = arena_fixture.arena_random_probe_fx;
+        const expected_seed: u32 = if (kind == 1) 5000 else win.load(u32, 0xe637b4);
+        if (kind == 1) regs[7] = expected_seed;
+        arena_fixture.arena_random_probe_entry = 0x464b3f;
+        put(0xe637b4, 7000);
+        arena_fixture.arena_random_probe();
+        check(@src(), arena_fixture.arena_random_probe_calls == calls + 2 and win.GetLastError() == 321 and win.load(u32, 0xe637b4) == expected_seed);
+        if (!std.mem.eql(u32, &regs, &arena_fixture.arena_random_probe_regs)) std.debug.print("arena random ABI kind={d} rounding={d} regs={any} actual={any}\n", .{ kind, rounding, regs, arena_fixture.arena_random_probe_regs });
+        for (fx, arena_fixture.arena_random_probe_fx, 0..) |a, b, i| if (a != b) {
+            std.debug.print("arena random FX kind={d} rounding={d} offset={d} {d}!={d}\n", .{ kind, rounding, i, a, b });
+        };
+        check(@src(), std.mem.eql(u32, &regs, &arena_fixture.arena_random_probe_regs) and std.mem.eql(u8, &fx, &arena_fixture.arena_random_probe_fx));
+        if (kind != 2) check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+    };
+}
+fn arenaRunRandomChecks() void {
+    const random = @import("arena_run_random.zig");
+    for (0..18) |mutation| {
+        mode = 0;
+        setup();
+        frame.level = 12;
+        put(task, win.GetModuleHandleA(null) + 0x6dee68);
+        put(task + 0x10, actor);
+        put(task + 0x14, other);
+        put(task + 0x40, 10);
+        put(other, win.GetModuleHandleA(null) + 0x6d83dc);
+        put(other + 0x340, task);
+        win.store(i16, actor + 0xdc0, 119);
+        var token = std.mem.zeroes(Token);
+        token.owner = actor;
+        token.owner_nonce = 1;
+        token.thread = win.GetCurrentThreadId();
+        token.release = frame.epoch;
+        token.epoch = frame.epoch;
+        token.sequence = frame.sequence;
+        token.frame = @intFromPtr(frame);
+        var lease: s.Lease = undefined;
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+        const actor_before = win.load([0x1440]u8, actor);
+        const controller_before = win.load([0x84]u8, task);
+        put(0xe637b4, 5000);
+        check(@src(), random.cadence_arena_run_random(task, 0x464b44, 5000) == 5000);
+        put(0xe637b4, 6000);
+        check(@src(), random.cadence_arena_run_random(task, 0x464b71, 6000) == 6000 and frame.fire_task_gate_count == 2);
+        check(@src(), @import("fire_validation.zig").valid(&frame.fire_task_gates[0]) and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+        client = true;
+        frame.sequence += 1;
+        token.sequence = frame.sequence;
+        token.release += 1;
+        var caller: usize = 0x464b44;
+        var local: u32 = 7000;
+        put(0xe637b4, local);
+        switch (mutation) {
+            1 => caller += 1,
+            2 => put(task, win.GetModuleHandleA(null) + 0x6dee70),
+            3 => put(other, win.GetModuleHandleA(null) + 0x6d83e0),
+            4 => put(other + 0x340, task + 4),
+            5 => win.store(i16, actor + 0xdc0, 117),
+            6 => put(task + 0x40, 11),
+            7 => put(actor + 0x50, 1),
+            8 => retained = false,
+            9 => put(0xe637b4, 7001),
+            10 => {
+                local = 65536;
+                put(0xe637b4, local);
+            },
+            11 => frame.fire_task_gates[0].value = 65536,
+            12 => frame.fire_task_gates[0].payload.arena_run_random.clock += 1,
+            13 => frame.fire_task_gates[0].flags = 1,
+            14 => frame.fire_task_gate_count = 0,
+            15 => mode = 55,
+            16 => frame.fire_task_gates[0].payload.storage[12] = 1,
+            17 => frame.fire_task_gates[0].payload.arena_run_random.run_state = 11,
+            else => {},
+        }
+        if (mutation == 11 or mutation == 16 or mutation == 17) check(@src(), !@import("fire_validation.zig").valid(&frame.fire_task_gates[0]));
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+        win.SetLastError(1234);
+        const result = random.cadence_arena_run_random(task, caller, local);
+        check(@src(), win.GetLastError() == 1234);
+        if (mutation == 0) {
+            check(@src(), result == 5000 and win.load(u32, 0xe637b4) == 5000);
+            put(0xe637b4, 8000);
+            check(@src(), random.cadence_arena_run_random(task, 0x464b71, 8000) == 6000 and win.load(u32, 0xe637b4) == 6000);
+            check(@src(), std.mem.eql(u8, &actor_before, @as([*]const u8, @ptrFromInt(actor))[0..actor_before.len]) and std.mem.eql(u8, &controller_before, @as([*]const u8, @ptrFromInt(task))[0..controller_before.len]) and ci.cadence_finish() != 0);
+        } else {
+            check(@src(), ci.cadence_finish() == 0 and win.load(u32, 0xe637b4) == (if (mutation == 9) @as(u32, 7001) else local));
+        }
+        check(@src(), ci.cadence_abort_frame(&lease) != 0);
+    }
 }

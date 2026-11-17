@@ -2,6 +2,16 @@ const std = @import("std");
 const p = @import("protocol.zig");
 const s = @import("cadence_state.zig");
 const equal = @import("validation.zig").equal;
+extern fn physics_effect_body_resolve(u32, u32) usize;
+extern fn physics_effect_body_source(usize, *[2]u32) c_int;
+fn supportAcquisition(local: *const p.SyncCharacterMotionState, expected: *const p.SyncCharacterMotionState) bool {
+    if (!@import("character_support.zig").canAcquire(local, expected)) return false;
+    if (local.support_frame == 0) return true;
+    const body = @import("support_reference.zig").resolve(expected);
+    var source: [2]u32 = @splat(0);
+    return @import("character_support.zig").accepts(body, expected) and
+        @import("support_reference.zig").source(body, expected, &source) and source[0] == expected.support_frame and source[1] == expected.support_event;
+}
 fn length(kind: u32) usize {
     return switch (kind) {
         p.SYNC_ACTOR_RTS_COMPETITOR => @sizeOf(p.SyncRtsCompetitorState),
@@ -10,12 +20,20 @@ fn length(kind: u32) usize {
         p.SYNC_ACTOR_SPELLIT_NODE => @sizeOf(p.SyncSpellItNodeState),
         p.SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY => @sizeOf(p.SyncScriptShootState),
         p.SYNC_ACTOR_PRIMARY_PERCEPTION => @sizeOf(p.SyncPrimaryPerceptionState),
+        p.SYNC_ACTOR_RIDER_FIRE => @sizeOf(p.SyncRiderFireState),
+        p.SYNC_ACTOR_ARENA_RUN_RANDOM => @sizeOf(p.SyncArenaRunRandomState),
         else => @sizeOf(p.SyncFireTaskState),
     };
 }
 fn contextFailure(gate: *const p.SyncFireTaskGate, state: [*]const u8) u32 {
     const data = &gate.payload;
     switch (gate.kind) {
+        p.SYNC_ACTOR_ARENA_RUN_RANDOM => if (!std.mem.eql(u8, data.storage[0..@sizeOf(p.SyncArenaRunRandomState)], state[0..@sizeOf(p.SyncArenaRunRandomState)])) {
+            return 22;
+        },
+        p.SYNC_ACTOR_RIDER_FIRE => if (!std.mem.eql(u8, data.storage[0..16], state[0..16])) {
+            return 21;
+        },
         p.SYNC_ACTOR_SPELLIT_ADMISSION, p.SYNC_ACTOR_HAZARD_DEATH => if (!std.mem.eql(u8, data.storage[0..4], state[0..4])) {
             return 20;
         },
@@ -37,7 +55,8 @@ fn contextFailure(gate: *const p.SyncFireTaskGate, state: [*]const u8) u32 {
         },
         p.SYNC_ACTOR_CHARACTER_MOTION => {
             const local = s.read(p.SyncCharacterMotionState, @intFromPtr(state));
-            if (!std.mem.eql(u8, data.storage[0..8], state[0..8]) or !s.supportSame(&data.character_motion, &local)) {
+            const compatible = s.supportSame(&data.character_motion, &local) or supportAcquisition(&local, &data.character_motion) or @import("character_support.zig").canRelease(&local, &data.character_motion);
+            if (!std.mem.eql(u8, data.storage[0..8], state[0..8]) or !compatible) {
                 s.motionFailure(6, &local, &data.character_motion);
                 return 16;
             }

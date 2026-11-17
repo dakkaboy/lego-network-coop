@@ -19,6 +19,34 @@ pub var alive = true;
 pub var lan_state: i32 = 0;
 pub var turret_pilot: usize = 0;
 pub var turret_pilot_generation: u32 = 17;
+pub var pack_target_mutation: u32 = 0;
+pub var retained_target_bound = false;
+export fn entities_spawn_source(actor_value: usize, site: *u32) p.SyncSpawnSource {
+    if (actor_value != turret_pilot) return .{ .producer = 0, .serial = 0 };
+    site.* = 0x5c64b1;
+    return .{ .producer = 8, .serial = 0 };
+}
+export fn entities_bind_native_reference(ref: *const p.SyncActor, actor_value: usize) c_int {
+    if (actor_value != turret_pilot or ref.slot != 12 or ref.generation != turret_pilot_generation or ref.character != 183 or ref.spawn_tag != 0x5c64b1 or ref.spawn_source.producer != 8 or ref.spawn_source.serial != 0) return 0;
+    retained_target_bound = true;
+    return 1;
+}
+export fn entities_update() void {}
+export fn entities_observed_generation(actor_value: usize) u32 {
+    return if (actor_value == turret_pilot) 29 else 0;
+}
+export fn entities_allocation_retained(actor_value: usize, generation: u32) c_int {
+    return @intFromBool(actor_value == turret_pilot and generation == 29 and pack_target_mutation != 2 and win.load(u32, actor_value + 0x50) & 1 != 0);
+}
+export fn entities_actor(slot: u32, generation: u32) usize {
+    if (slot != 12 or generation != turret_pilot_generation) return 0;
+    if (pack_target_mutation == 3 and !retained_target_bound) return 0;
+    if (pack_target_mutation == 1) turret_pilot_generation += 1;
+    return turret_pilot;
+}
+export fn entities_resolve_identity(_: *const p.SyncFrame, _: u32, _: u32) usize {
+    return 0;
+}
 pub export var getter_calls: u32 = 0;
 pub export var getter_sample: u32 = 0;
 pub var wait_draws: u32 = 0;
@@ -31,6 +59,7 @@ comptime {
     _ = @import("global_pack.zig");
     _ = @import("rts_sources.zig");
     _ = machine;
+    _ = @import("tick_pack_mutation.zig");
 }
 export fn lan_status() i32 {
     return lan_state;

@@ -32,6 +32,8 @@ var expected: [24]f32 = @splat(0);
 var local_lanes: [2]u32 = @splat(0);
 var visibility_originals: u32 = 0;
 var canonical_visibility: u32 = 1;
+var turret_originals: u32 = 0;
+var turret_fires: u32 = 0;
 export var retained: f64 = 0;
 export var cw_before: u16 = 0;
 export var cw_after: u16 = 0;
@@ -98,6 +100,12 @@ fn jump(address: usize, target: usize) void {
     win.store(u8, address, 0xe9);
     win.store(usize, address + 1, target -% address -% 5);
     check(@src(), win.FlushInstructionCache(win.GetCurrentProcess(), address, 5) != 0);
+}
+fn turretOriginal(value: usize, delta: u32) callconv(.{ .x86_thiscall = .{} }) void {
+    check(@src(), value == @intFromPtr(&obj) and delta == 1234 and win.GetLastError() == 123);
+    turret_originals += 1;
+    turret_fires += @intFromBool(pad[0x27d] != 0);
+    win.SetLastError(321);
 }
 fn updateBody() void {
     win.SetLastError(123);
@@ -299,4 +307,56 @@ pub fn main() void {
     other = sample;
     other.site = 0x840660;
     check(@src(), !physics.valid(&other));
+    attack.site = 0x561ba9;
+    check(@src(), physics.valid(&attack));
+    attack.payload.world.value = 2;
+    check(@src(), !physics.valid(&attack));
+    attack.payload.world.value = 0;
+    attack.site += 1;
+    check(@src(), !physics.valid(&attack));
+    jump(0x546b10, @intFromPtr(&turretOriginal));
+    for (0..2) |visible| {
+        mode = 10;
+        f.alive = true;
+        canonical_visibility = @intCast(visible);
+        pad[0x27d] = @intCast(1 - visible);
+        win.SetLastError(123);
+        asm volatile (
+            \\fnstcw _cw_before
+            \\stmxcsr _mx_before
+            \\fld1
+            \\pushl $1234
+            \\movl $_obj,%%ecx
+            \\call _rts_turret_visibility_input
+            \\fstpl _retained
+            \\fnstcw _cw_after
+            \\stmxcsr _mx_after
+            ::: .{ .memory = true, .cc = true, .eax = true, .ecx = true, .edx = true });
+        check(@src(), pad[0x27d] == visible and turret_originals == visible + 1 and turret_fires == visible and win.GetLastError() == 321);
+        check(@src(), retained == 1 and cw_before == cw_after and mx_before == mx_after);
+    }
+    check(@src(), std.mem.eql(u32, &input.clonewars_rts_turret_visibility_debug, &.{ 2, 2, 0, 1 }));
+    for (11..13) |invalid| {
+        mode = @intCast(invalid);
+        f.alive = true;
+        pad[0x27d] = 0;
+        win.SetLastError(123);
+        input.rts_turret_visibility_input(@intFromPtr(&obj), 1234);
+        check(@src(), pad[0x27d] == 0 and turret_originals == 2 and win.GetLastError() == 123);
+    }
+    f.enabled = false;
+    pad[0x27d] = 1;
+    prior = inputs;
+    win.SetLastError(123);
+    input.rts_turret_visibility_input(@intFromPtr(&obj), 1234);
+    check(@src(), turret_originals == 3 and turret_fires == 2 and inputs == prior and win.GetLastError() == 321);
+    var protection: u32 = 0;
+    check(@src(), win.VirtualProtect(0x546671, 10, 0x40, &protection) != 0);
+    @memcpy(@as([*]u8, @ptrFromInt(0x546671))[0..10], "\x8b\x43\x24\x80\xb8\x7d\x02\x00\x00\x00");
+    check(@src(), input.rts_visibility_attack_install() == 0 and win.load(u8, 0x546671) == 0x8b);
+    check(@src(), win.VirtualProtect(0x561ba9, 5, 0x40, &protection) != 0);
+    @memcpy(@as([*]u8, @ptrFromInt(0x561ba9))[0..5], "\xe8\x62\x4f\xfe\xff");
+    check(@src(), input.rts_visibility_attack_install() == 1);
+    check(@src(), win.load(u8, 0x546671) == 0xe9 and win.load(u8, 0x561ba9) == 0xe8);
+    check(@src(), 0x561bae +% win.load(usize, 0x561baa) == @intFromPtr(&input.rts_turret_visibility_input));
 }

@@ -19,6 +19,7 @@ pub fn sameSource(a: *const p.SyncPhysicsChoice, b: *const p.SyncPhysicsChoice) 
     const first = std.mem.asBytes(&a.payload);
     const second = std.mem.asBytes(&b.payload);
     switch (a.kind) {
+        p.SYNC_PHYSICS_EFFECT_STEP, p.SYNC_PHYSICS_EFFECT_REST => return std.mem.eql(u8, first[0..20], second[0..20]) and std.mem.eql(u32, a.payload.basic.recipe[1..], b.payload.basic.recipe[1..]),
         p.SYNC_PHYSICS_RTS_GENERATOR => return std.mem.eql(u8, first[0..24], second[0..24]),
         p.SYNC_PHYSICS_RTS_ORDER => return std.mem.eql(u8, first[0..16], second[0..16]) and std.mem.eql(u32, &a.payload.rts_order.source_key, &b.payload.rts_order.source_key),
         p.SYNC_PHYSICS_BREAKUP_BASIS => return std.mem.eql(u8, first[0..16], second[0..16]),
@@ -49,9 +50,22 @@ pub fn vehicleSite(site: u32) bool {
 pub fn valid(choice: *const p.SyncPhysicsChoice) bool {
     const u = &choice.payload;
     switch (choice.kind) {
+        p.SYNC_PHYSICS_EFFECT_STEP => {
+            const s = &u.basic;
+            const delta: f32 = @bitCast(s.recipe[0]);
+            return choice.site == 0x743bb0 and s.flags == 0 and s.model == 0 and !nonzero(s.name_hash) and
+                v.finite(delta) and delta >= 0 and delta <= 0.1 and !nonzero(s.recipe[1..]) and s.rng == 0 and emptyTail(choice, 56);
+        },
+        p.SYNC_PHYSICS_EFFECT_REST => {
+            const s = &u.basic;
+            return choice.site == 0x743ca8 and s.flags & 0x40000000 != 0 and s.model <= 65535 and
+                s.name_hash[0] != 0 and s.name_hash[1] != 0 and s.name_hash[1] <= p.SYNC_MAX_PHYSICS_CHOICES and
+                s.recipe[0] & ~@as(u32, 0x41) == 0 and (s.recipe[1] == 0 or address(s.recipe[1])) and
+                !nonzero(s.recipe[2..]) and s.rng == 0 and emptyTail(choice, 56);
+        },
         p.SYNC_PHYSICS_RTS_VISIBILITY => {
             const s = &u.world;
-            return (choice.site == 0x5525e0 or choice.site == 0x546674) and s.value <= 1 and address(s.gizmo_class) and
+            return (choice.site == 0x5525e0 or choice.site == 0x546674 or choice.site == 0x561ba9) and s.value <= 1 and address(s.gizmo_class) and
                 s.gizmo_ordinal < 65536 and nonzero(s.source_name) and emptyTail(s, 32);
         },
         p.SYNC_PHYSICS_RTS_GENERATOR => {
@@ -69,7 +83,7 @@ pub fn valid(choice: *const p.SyncPhysicsChoice) bool {
             const s = &u.basic;
             const site: u32 = if (choice.kind == p.SYNC_PHYSICS_EFFECT_BIRTH) 0x7427d8 else 0x905f38;
             if (choice.site != site or s.flags & 0x40000000 == 0 or s.model > 65535 or !nonzero(s.name_hash) or s.rng != 0 or !emptyTail(choice, 56)) return false;
-            const first: usize = if (choice.kind == p.SYNC_PHYSICS_EFFECT_BIRTH) 0 else 3;
+            const first: usize = 3;
             for (s.recipe[0..first]) |bits| if (!v.finite(@as(f32, @bitCast(bits)))) return false;
             return !nonzero(s.recipe[first..]);
         },

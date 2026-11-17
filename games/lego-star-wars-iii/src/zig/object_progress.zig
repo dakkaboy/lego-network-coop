@@ -1,6 +1,8 @@
 const std = @import("std");
 const Token = @import("cohort_types.zig").Token;
 const win = @import("win32.zig");
+const root = @import("root");
+const ReadCache = win.AccessCacheWithQuery(if (@hasDecl(root, "object_progress_query")) root.object_progress_query else win.VirtualQuery);
 const equal = @import("validation.zig").equal;
 const Machine = @import("machine_environment.zig").Environment;
 const Update = *const fn (usize, u32) callconv(.{ .x86_thiscall = .{} }) void;
@@ -27,30 +29,41 @@ fn networked() bool {
 fn live(token: *const Token) bool {
     return coherent_frame_valid(token, 4) != 0;
 }
-fn witness(s: *Source) bool {
-    if (!readable(s.world, 0x22e8)) return false;
+fn cachedReadable(cache: *ReadCache, address: usize, length: usize) bool {
+    return length != 0 and cache.accessible(address, length, false);
+}
+fn witnessCached(s: *Source, cache: *ReadCache) bool {
+    if (!cachedReadable(cache, s.world, 0x22e8)) return false;
     s.container = read(usize, s.world + 0x22e4);
     s.handle = read(usize, s.world + 0x400);
     s.provider = read(usize, 0xe901dc);
     const registry = read(usize, 0xe90184);
-    if (!readable(s.container, 0x10) or read(usize, s.container + 0xc) != s.world or !readable(s.handle, 4) or !readable(s.provider, 0x3c) or !readable(registry, 0x2c)) return false;
+    if (!cachedReadable(cache, s.container, 0x10) or read(usize, s.container + 0xc) != s.world or !cachedReadable(cache, s.handle, 4) or !cachedReadable(cache, s.provider, 0x3c) or !cachedReadable(cache, registry, 0x2c)) return false;
     s.index = read(u32, s.provider + 0x38);
     s.count = read(u32, registry + 0x28);
     s.table = read(usize, s.handle);
-    if (s.count == 0 or s.count > 4096 or s.index >= s.count or !readable(s.table, s.count * 4)) return false;
+    if (s.count == 0 or s.count > 4096 or s.index >= s.count or !cachedReadable(cache, s.table, s.count * 4)) return false;
     s.manager = read(usize, s.table + s.index * 4);
-    return readable(s.manager, 0x28) and read(u32, s.manager) == 0xc4c8ec;
+    return cachedReadable(cache, s.manager, 0x28) and read(u32, s.manager) == 0xc4c8ec;
 }
-fn sameWitness(s: *const Source) bool {
+fn witness(s: *Source) bool {
+    var cache: ReadCache = .{};
+    return witnessCached(s, &cache);
+}
+fn sameWitnessCached(s: *const Source, cache: *ReadCache) bool {
     var now = std.mem.zeroes(Source);
     now.world = s.world;
-    return witness(&now) and now.container == s.container and now.handle == s.handle and now.table == s.table and now.provider == s.provider and now.manager == s.manager and now.index == s.index and now.count == s.count;
+    return witnessCached(&now, cache) and now.container == s.container and now.handle == s.handle and now.table == s.table and now.provider == s.provider and now.manager == s.manager and now.index == s.index and now.count == s.count;
 }
-fn member(s: *const Source, object: usize) bool {
+fn sameWitness(s: *const Source) bool {
+    var cache: ReadCache = .{};
+    return sameWitnessCached(s, &cache);
+}
+fn member(s: *const Source, object: usize, cache: *ReadCache) bool {
     var node = read(usize, s.manager + 0x24);
     var n: u32 = 0;
     while (node != 0 and n < 65536) : (n += 1) {
-        if (!readable(node, 0x28)) return false;
+        if (!cachedReadable(cache, node, 0x28)) return false;
         if (node == object) return true;
         node = read(usize, node + 0x24);
     }
@@ -99,7 +112,8 @@ pub export fn object_progress_world_complete(world: usize, token_value: ?*const 
     if (!source.pending) return 1;
     const s = source;
     source = std.mem.zeroes(Source);
-    if (s.world != world or !equal(&s.token, token) or !sameWitness(&s)) {
+    var cache: ReadCache = .{};
+    if (s.world != world or !equal(&s.token, token) or !sameWitnessCached(&s, &cache)) {
         reject(3, &s);
         return 0;
     }
@@ -107,7 +121,7 @@ pub export fn object_progress_world_complete(world: usize, token_value: ?*const 
     var count: u32 = 0;
     while (node != 0) {
         count += 1;
-        if (count > 65536 or !live(&s.token) or !sameWitness(&s) or !readable(node, 0xf4)) {
+        if (count > 65536 or !live(&s.token) or !sameWitnessCached(&s, &cache) or !cachedReadable(&cache, node, 0xf4)) {
             reject(4, &s);
             return 0;
         }
@@ -115,7 +129,7 @@ pub export fn object_progress_world_complete(world: usize, token_value: ?*const 
         const provider = read(usize, node + 0xf0);
         if (read(u8, node + 0x73) == 0 and read(usize, node + 0x88) != 0 and read(u16, node + 0x62) & 3 == 3 and provider != 0) {
             const recipe = read(usize, node + 0x84);
-            if (!readable(provider, 0x18) or !readable(recipe, 0x6c)) {
+            if (!cachedReadable(&cache, provider, 0x18) or !cachedReadable(&cache, recipe, 0x6c)) {
                 reject(5, &s);
                 return 0;
             }
@@ -126,12 +140,14 @@ pub export fn object_progress_world_complete(world: usize, token_value: ?*const 
             const maximum = read(u8, recipe + 0x6b);
             const regenerate: Regen = @ptrFromInt(0x859240);
             const result = regenerate(provider, current, maximum, @bitCast(s.delta), 1);
-            if (!live(&s.token) or !sameWitness(&s) or !readable(node, 0xf4) or !readable(provider, 0x18) or !readable(recipe, 0x6c) or read(u8, recipe + 0x6b) != maximum or !equal(&binding, &read([4]u32, provider + 8)) or read(usize, node) != kind or read(usize, node + 0x88) != model or read(u8, node + 0x73) != 0 or read(u16, node + 0x62) & 3 != 3 or read(usize, node + 0xf0) != provider or read(usize, node + 0x84) != recipe or read(usize, node + 0x24) != next or read(u8, node + 0xec) != current) {
+            // Native callbacks may release or protect memory; no cached mapping may cross that call.
+            cache = .{};
+            if (!live(&s.token) or !sameWitnessCached(&s, &cache) or !cachedReadable(&cache, node, 0xf4) or !cachedReadable(&cache, provider, 0x18) or !cachedReadable(&cache, recipe, 0x6c) or read(u8, recipe + 0x6b) != maximum or !equal(&binding, &read([4]u32, provider + 8)) or read(usize, node) != kind or read(usize, node + 0x88) != model or read(u8, node + 0x73) != 0 or read(u16, node + 0x62) & 3 != 3 or read(usize, node + 0xf0) != provider or read(usize, node + 0x84) != recipe or read(usize, node + 0x24) != next or read(u8, node + 0xec) != current) {
                 reject(6, &s);
                 return 0;
             }
             if (result != current) {
-                if (!member(&s, node) or !live(&s.token)) {
+                if (!member(&s, node, &cache) or !live(&s.token)) {
                     reject(7, &s);
                     return 0;
                 }

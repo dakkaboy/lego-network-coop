@@ -1,5 +1,10 @@
 const p = @import("protocol.zig");
 const s = @import("tick_sites.zig");
+const fire_sites = blk: {
+    var values: [s.PACK_FIRE_FIELDS]u32 = undefined;
+    for (&values, 0..) |*value, i| value.* = s.PACK_FIRE_TARGET + i;
+    break :blk values;
+};
 
 const coefficients = [_]u32{ 0xfb0fc4, 0xfb0fa8, 0xfb0fb4, 0xfb102c, 0xfb0fb0, 0xfb0fac, 0xfb1028, 0xfb0fa0, 0xfb1014, 0xfb0fc0, 0xfb1070, 0xfb1018, 0xfb101c, 0xfb0fb8, 0xfb0fa4, 0xfb0fbc, 0xfb0fc8 };
 const hit_sites = [_]u32{ s.PACK_HIT_REACTION, s.PACK_HIT_AVOIDANCE, s.PACK_HIT_DEBRIS, s.PACK_HIT_SHOCK, s.PACK_HIT_HEADING, s.PACK_IMPULSE_TIMER, s.PACK_IMPULSE_SPEED, s.PACK_IMPULSE_HEADING, s.PACK_DEATH_CLIP, s.PACK_MODE10_DURATION, s.PACK_MODE10_CLIP_PHASE };
@@ -53,6 +58,18 @@ fn angle(bits: u32) bool {
     return value >= -32768 and value <= 32768;
 }
 pub fn gateValid(gate: p.SyncTickGate) bool {
+    for ([_]u32{ s.PACK_SPAWN_X, s.PACK_SPAWN_Z }) |first| if (gate.site >= first and gate.site < first + 8) return switch (gate.site - first) {
+        0, 2, 3, 4 => gate.value <= 65535,
+        else => true,
+    };
+    if (gate.site >= s.PACK_FIRE_TARGET and gate.site < s.PACK_FIRE_TARGET + s.PACK_FIRE_FIELDS) return switch (gate.site - s.PACK_FIRE_TARGET) {
+        0 => gate.value <= p.SYNC_MAX_ACTORS,
+        1 => true,
+        2 => gate.value <= 32767,
+        7 => gate.value <= 1,
+        8, 9, 10 => true,
+        else => finite(gate.value),
+    };
     const site = gate.site;
     const value = gate.value;
     if (field(runs[0], site)) |i| return switch (i) {
@@ -119,6 +136,18 @@ pub fn streamValid(gates: []const p.SyncTickGate) bool {
     next: while (i < gates.len) {
         const gate = gates[i];
         if (!gateValid(gate)) return false;
+        if (gate.site == s.PACK_SPAWN_X) {
+            if (gates.len - i < 16) return false;
+            for (0..16) |j| {
+                const part = gates[i + j];
+                const first = if (j < 8) s.PACK_SPAWN_X else s.PACK_SPAWN_Z;
+                if (part.site != first + j % 8 or part.clock != gate.clock or !gateValid(part)) return false;
+                if (j >= 8 and j % 8 < 7 and part.value != gates[i + j - 8].value) return false;
+            }
+            i += 16;
+            continue;
+        }
+        for ([_]u32{ s.PACK_SPAWN_X, s.PACK_SPAWN_Z }) |first| if (gate.site >= first and gate.site < first + 8) return false;
         if (gate.site == s.GAME_TIME) {
             if (gates.len - i < 1 + coefficients.len or !matches(gates[i + 1 ..], &coefficients)) return false;
             if (gates[i + 1].clock != gate.clock) return false;
@@ -148,10 +177,16 @@ pub fn streamValid(gates: []const p.SyncTickGate) bool {
                 if (!matches(gates[i + count ..], &death_sites) or gates[i + count].clock != gate.clock) return false;
                 count += death_sites.len;
             }
+            if (gate.site == s.PACK_MODE_MEMBER and gates[i + 2].value & 0xff == 18) {
+                if (!matches(gates[i + count ..], &fire_sites) or gates[i + count].clock != gate.clock) return false;
+                const target = gates[i + count ..][0..s.PACK_FIRE_FIELDS];
+                if ((target[0].value == 0 and (target[1].value != 0 or target[2].value != 0 or target[8].value != 0 or target[9].value != 0 or target[10].value != 0)) or (target[0].value != 0 and target[1].value == 0)) return false;
+                count += fire_sites.len;
+            }
             i += count;
             continue :next;
         };
-        if (contains(&coefficients, gate.site) or contains(&death_sites, gate.site) or contains(&hit_sites, gate.site -% 5)) return false;
+        if ((gate.site >= s.PACK_FIRE_TARGET and gate.site < s.PACK_FIRE_TARGET + s.PACK_FIRE_FIELDS) or contains(&coefficients, gate.site) or contains(&death_sites, gate.site) or contains(&hit_sites, gate.site -% 5)) return false;
         for (groups) |group| if (contains(group[1..], gate.site)) return false;
         i += 1;
     }

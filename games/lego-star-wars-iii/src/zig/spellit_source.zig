@@ -304,7 +304,9 @@ pub export fn native_spellit_body_apply(source: ?*const Source, body: ?*const Bo
     const check = live orelse return 0;
     if (check(context) == 0) return 0;
     const b = body orelse return 0;
-    if (b.dynamics == 0 or native_spellit_body_matches(source, b) == 0 or !@import("validation.zig").finite(s.*)) return 0;
+    const finite = @import("validation.zig").finite;
+    if (b.dynamics == 0 or native_spellit_body_matches(source, b) == 0 or
+        !finite(s.basis) or !finite(s.position) or !finite(s.linear[0..3].*) or !finite(s.angular[0..3].*)) return 0;
     var machine: [512]u8 align(16) = undefined;
     asm volatile ("fxsave (%[buffer])"
         :

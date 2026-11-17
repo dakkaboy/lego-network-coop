@@ -186,6 +186,10 @@ pub export fn collision_observer_install() c_int {
         clonewars_collision_observer_installed = -1;
         return 0;
     };
+    if (!@import("collision_owner.zig").install() or !@import("support_lifetime.zig").install()) {
+        clonewars_collision_observer_installed = -1;
+        return 0;
+    }
     for (addresses, prefixes, hooks, 0..) |address, prefix, hook, i| {
         const bridge = obs.install(address, prefix, hook) orelse {
             clonewars_collision_observer_installed = -1;

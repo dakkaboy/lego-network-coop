@@ -10,6 +10,19 @@ var live = true;
 var fault: c_int = 0;
 var wrong_identity = false;
 var release: u32 = 0;
+var native_eligible: u32 = 0;
+var native_matches: u32 = 0;
+var rider_parent: usize = 0;
+var detach_rider_on_resolve = false;
+var rider_model: [0x50]u8 = @splat(0);
+fn eligibleStub(actor: usize) callconv(.c) u32 {
+    check(@src(), actor == @intFromPtr(&actors[0]));
+    return native_eligible;
+}
+fn matchesStub(actor: usize, action: i32) callconv(.c) u32 {
+    check(@src(), actor == @intFromPtr(&actors[0]) and action == 175);
+    return native_matches;
+}
 export fn coherent_frame_valid(_: *const @import("cohort_types.zig").Token, _: u32) c_int {
     return @intFromBool(live);
 }
@@ -17,6 +30,9 @@ export fn game_sync_native_fault(code: c_int) void {
     fault = code;
 }
 export fn entities_update() void {}
+export fn entities_observed_generation(_: usize) u32 {
+    return 19;
+}
 export fn entities_describe(out: *p.SyncActor, actor: usize) void {
     out.* = std.mem.zeroes(p.SyncActor);
     out.generation = 19;
@@ -33,6 +49,10 @@ export fn entities_observed_identity(actor: usize, slot: *u32, generation: *u32)
     return 1;
 }
 export fn entities_resolve_reference(identity: *const p.SyncActor) usize {
+    if (detach_rider_on_resolve) {
+        detach_rider_on_resolve = false;
+        win.store(usize, rider_parent + 0x360, 0);
+    }
     return if (wrong_identity or identity.generation != 19) 0 else @intFromPtr(&actors[if (identity.slot == 7) @as(usize, 0) else 1]);
 }
 export fn entities_bind_native_reference(_: *const p.SyncActor, _: usize) c_int {
@@ -40,6 +60,18 @@ export fn entities_bind_native_reference(_: *const p.SyncActor, _: usize) c_int 
 }
 export fn entities_actor(_: u32, _: u32) usize {
     return 0;
+}
+export fn physics_effect_body_resolve(_: u32, _: u32) usize {
+    unreachable;
+}
+export fn native_scene_support_source(_: usize, _: *[2]u32) c_int {
+    return 0;
+}
+export fn native_scene_support_resolve(_: u32, _: u32) usize {
+    return 0;
+}
+export fn physics_effect_body_source(_: usize, _: *[2]u32) c_int {
+    unreachable;
 }
 fn begin(frame: *p.SyncFrame, host: bool) void {
     live = true;
@@ -78,6 +110,19 @@ pub fn main() void {
     win.store(i16, @intFromPtr(&actors[1]) + 0xdc0, 181);
     win.store(u32, 0xfb4b6c, 51);
     hazardDeath(frame, actor);
+    outerEligibility(frame, actor);
+    riderFire(frame, actor);
+    for (0..16) |host| for (0..16) |local| {
+        begin(frame, true);
+        managerFlow(actor, @intCast(host));
+        const count = frame.fire_task_gate_count;
+        for (frame.fire_task_gates[0..count]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
+        finish();
+        begin(frame, false);
+        managerFlow(actor, @intCast(local));
+        check(@src(), s.fire_task_cursor == count and s.journal.failed == 0 and fault == 0);
+        finish();
+    };
     for ([_]u32{ 0x24, 0x25 }) |kind| for (0..2) |stage| for ([_]u32{ 0, 1 }) |authoritative| for ([_]u32{ 0, 1 }) |local| {
         const remote = if (stage == 0 and authoritative != 0) actor + 0xee4 else authoritative;
         const own = if (stage == 0 and local != 0) actor + 0xeec else local;
@@ -159,6 +204,147 @@ pub fn main() void {
             else => unreachable,
         }
         check(@src(), !@import("fire_validation.zig").valid(&bad));
+    }
+}
+fn managerFlow(actor: usize, bits: u32) void {
+    const force = call(actor, 0, 4, bits & 1);
+    const special = call(actor, 0, 5, (bits >> 1) & 1);
+    if (force == 0 and special == 0) return;
+    const eligible = call(actor, 0, 2, (bits >> 2) & 1);
+    const matches = if (eligible == 0) call(actor, 0, 3, (bits >> 3) & 1) else 0;
+    if (eligible != 0 or matches != 0) {
+        _ = call(actor, 0x24, 0, 0);
+        _ = call(actor, 0x24, 1, 1);
+    }
+}
+fn riderFire(frame: *p.SyncFrame, actor: usize) void {
+    const rider = @import("rider_fire_input.zig");
+    rider_parent = win.VirtualAlloc(0, 0x1000, 0x3000, 4);
+    check(@src(), rider_parent != 0);
+    defer _ = win.VirtualFree(rider_parent, 0, 0x8000);
+    const timer = rider_parent + 0x368;
+    const mount = @intFromPtr(&actors[1]);
+    win.store(usize, rider_parent, win.GetModuleHandleA(null) + 0x6d83dc);
+    win.store(usize, rider_parent + 0x360, mount);
+    win.store(usize, mount + 0x6fc, actor);
+    win.store(usize, actor + 8, @intFromPtr(&rider_model));
+    for ([_]u8{ 0, 1 }) |host_visible| for ([_]u8{ 0, 1 }) |local_visible| for ([_]f32{ 0.01, 2.0 }) |host_timer| {
+        win.store(f32, timer, host_timer);
+        rider_model[0x42] = host_visible;
+        begin(frame, true);
+        check(@src(), rider.cadence_rider_fire_input(actor, mount, timer, 0x46332b) == host_visible);
+        check(@src(), frame.fire_task_gate_count == 1 and @import("fire_validation.zig").valid(&frame.fire_task_gates[0]));
+        for (0..8) |bad| {
+            var malformed = frame.fire_task_gates[0];
+            switch (bad) {
+                0 => malformed.flags = 2,
+                1 => malformed.action = 1,
+                2 => malformed.value = 2,
+                3 => malformed.payload.rider_fire.behavior_class += 4,
+                4 => malformed.payload.rider_fire.mount_generation = 0,
+                5 => malformed.payload.rider_fire.mount_slot = p.SYNC_MAX_ACTORS,
+                6 => malformed.payload.rider_fire.cooldown = std.math.inf(f32),
+                7 => malformed.payload.storage[20] = 1,
+                else => unreachable,
+            }
+            check(@src(), !@import("fire_validation.zig").valid(&malformed));
+        }
+        finish();
+        win.store(f32, timer, -0.125);
+        rider_model[0x42] = local_visible;
+        const actors_before = actors;
+        const model_before = rider_model;
+        begin(frame, false);
+        win.SetLastError(123);
+        check(@src(), rider.cadence_rider_fire_input(actor, mount, timer, 0x46332b) == host_visible and win.GetLastError() == 123);
+        check(@src(), win.load(f32, timer) == host_timer and s.fire_task_cursor == 1 and fault == 0 and s.journal.failed == 0);
+        check(@src(), std.mem.eql(u8, std.mem.asBytes(&actors_before), std.mem.asBytes(&actors)) and std.mem.eql(u8, &model_before, &rider_model));
+        finish();
+    };
+    for (0..8) |bad| {
+        win.store(usize, rider_parent, win.GetModuleHandleA(null) + 0x6d83dc);
+        win.store(usize, rider_parent + 0x360, mount);
+        win.store(usize, mount + 0x6fc, actor);
+        win.store(f32, timer, 2.0);
+        begin(frame, true);
+        _ = rider.cadence_rider_fire_input(actor, mount, timer, 0x46332b);
+        finish();
+        win.store(f32, timer, -0.125);
+        begin(frame, false);
+        var old: u32 = 0;
+        switch (bad) {
+            0 => win.store(usize, rider_parent + 0x360, 0),
+            1 => win.store(usize, rider_parent, win.GetModuleHandleA(null) + 0x6d83e0),
+            2 => win.store(usize, mount + 0x6fc, 0),
+            3 => frame.fire_task_gates[0].payload.rider_fire.mount_generation += 1,
+            4 => detach_rider_on_resolve = true,
+            5 => check(@src(), win.VirtualProtect(rider_parent, 0x1000, 2, &old) != 0),
+            6 => win.store(f32, timer, std.math.nan(f32)),
+            7 => live = false,
+            else => unreachable,
+        }
+        const before = win.load(u32, timer);
+        _ = rider.cadence_rider_fire_input(actor, mount, timer, 0x46332b);
+        check(@src(), win.load(u32, timer) == before);
+        if (bad == 5) check(@src(), win.VirtualProtect(rider_parent, 0x1000, old, &old) != 0);
+        if (bad == 7) check(@src(), fault == 0 and s.fire_task_cursor == 0) else check(@src(), fault == 14 and s.journal.failed != 0);
+        live = true;
+        finish();
+    }
+    win.store(usize, actor + 8, 0);
+    win.store(usize, mount + 0x6fc, 0);
+}
+fn eligibilityFlow(actor: usize) void {
+    const eligibility = @import("spellit_eligibility.zig");
+    win.SetLastError(0x13579);
+    const eligible = eligibility.spellit_actor_eligible(actor);
+    check(@src(), win.GetLastError() == 0x13579);
+    const matches = if (eligible == 0) eligibility.spellit_action_matches(actor, 175) else 0;
+    check(@src(), win.GetLastError() == 0x13579);
+    if (eligible != 0 or matches != 0) {
+        _ = call(actor, 0x24, 0, 0);
+        _ = call(actor, 0x24, 1, 1);
+    }
+}
+fn outerEligibility(frame: *p.SyncFrame, actor: usize) void {
+    const eligibility = @import("spellit_eligibility.zig");
+    const original_eligible = eligibility.spellit_actor_eligible_native;
+    const original_matches = eligibility.spellit_action_matches_native;
+    eligibility.spellit_actor_eligible_native = @intFromPtr(&eligibleStub);
+    eligibility.spellit_action_matches_native = @intFromPtr(&matchesStub);
+    defer {
+        eligibility.spellit_actor_eligible_native = original_eligible;
+        eligibility.spellit_action_matches_native = original_matches;
+    }
+    for ([_]u32{ 0, 1 }) |host_eligible| for ([_]u32{ 0, 1 }) |host_matches| for ([_]u32{ 0, 1 }) |local_eligible| for ([_]u32{ 0, 1 }) |local_matches| {
+        native_eligible = host_eligible;
+        native_matches = host_matches;
+        win.store(i16, actor + 0x2f4, -1);
+        begin(frame, true);
+        eligibilityFlow(actor);
+        const count = frame.fire_task_gate_count;
+        check(@src(), count == 1 + @as(u32, @intFromBool(host_eligible == 0)) + (if (host_eligible != 0 or host_matches != 0) @as(u32, 2) else 0));
+        for (frame.fire_task_gates[0..count]) |*gate| check(@src(), @import("fire_validation.zig").valid(gate));
+        finish();
+        native_eligible = local_eligible;
+        native_matches = local_matches;
+        win.store(i16, actor + 0x2f4, 20);
+        begin(frame, false);
+        eligibilityFlow(actor);
+        check(@src(), s.fire_task_cursor == count and s.journal.failed == 0 and fault == 0);
+        finish();
+    };
+    const count = frame.fire_task_gate_count;
+    native_eligible = 1;
+    check(@src(), eligibility.spellit_actor_eligible(actor) == 1 and frame.fire_task_gate_count == count);
+    check(@src(), admission.clonewars_spellit_eligibility_debug[2] != 0 and admission.clonewars_spellit_eligibility_debug[3] != 0);
+    for ([_]u16{ 2, 3 }) |stage| {
+        var gate = frame.fire_task_gates[0];
+        gate.flags = stage;
+        gate.action = 0;
+        check(@src(), @import("fire_validation.zig").valid(&gate));
+        gate.action = 0x24;
+        check(@src(), !@import("fire_validation.zig").valid(&gate));
     }
 }
 fn hazardDeath(frame: *p.SyncFrame, actor: usize) void {

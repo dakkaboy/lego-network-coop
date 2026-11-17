@@ -5,7 +5,12 @@ pub export fn native_tick_begin(next: ?*s.p.SyncFrame, authority: c_int, origina
     const token = original orelse return 0;
     if (token.frame != @intFromPtr(frame) or s.world_vars_cohort_valid(token, 2) == 0) return 0;
     if (s.token.epoch != token.epoch) {
+        @import("tick_pack_spawn.zig").reset();
+        @import("pack_hit_query_observer.zig").reset();
         s.clonewars_native_tick_failure = @splat(0);
+        s.clonewars_native_tick_failure_stack = @splat(0);
+        s.clonewars_native_pack_seed_context = @splat(0);
+        s.clonewars_native_pack_hit_caller = @splat(0);
         s.clonewars_native_tick_correction = @splat(0);
         s.clonewars_native_pack_pose_correction = @splat(0);
         s.clonewars_native_pack_cell_correction = @splat(0);
@@ -38,6 +43,8 @@ pub export fn native_tick_cancel(original: ?*const s.Token) void {
     };
 }
 comptime {
+    _ = @import("tick_pack_spawn.zig");
+    _ = @import("pack_spawn_bridge.zig");
     _ = @import("tick_clock.zig");
     _ = @import("tick_actor.zig");
     _ = @import("tick_pack_pose.zig");

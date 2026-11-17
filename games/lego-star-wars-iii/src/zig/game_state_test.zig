@@ -363,4 +363,35 @@ pub fn main() void {
         game.game_poll();
         check(@src(), cycle_calls == cycles_before + @intFromBool(phase != 10));
     }
+    mock.status = 0;
+    mock.host = 1;
+    game.game_cancel_level_request();
+    game.game_poll();
+    mock.epoch = 0;
+    mock.published_epoch = 0;
+    mock.published_level = -1;
+    mock.sync_level = -1;
+    mock.sync_status = 0;
+    mock.sequence = 0;
+    mock.scene_ready = 0;
+    mock.scene_initialized = 0;
+    mock.status = 3;
+    put(root + 0x1b78, 13);
+    put(0xfb4b6c, 3542);
+    const profiles_before_opening = mock.profile_calls;
+    game.game_poll();
+    check(@src(), mock.epoch == 0 and mock.published_level == -1 and mock.profile_calls == profiles_before_opening);
+    check(@src(), game.game_network_target_level() == -1 and game.game_target_level() == mock.current and mock.enter_calls == entries);
+    game.game_native_tick();
+    check(@src(), mock.enter_calls == entries + 1);
+    put(root + 0x1b78, 1);
+    game.game_poll();
+    win.store(i32, 0xe6e61c, -1);
+    put(root + 0x1b78, 14);
+    game.game_poll();
+    check(@src(), mock.epoch == 1 and mock.published_level == mock.current and mock.profile_calls == profiles_before_opening + 1);
+    check(@src(), game.game_network_profile_ready() != 0 and mock.enter_calls == entries + 1);
+    put(root + 0x1b78, 13);
+    game.game_poll();
+    check(@src(), mock.epoch == 1 and mock.published_level == mock.current);
 }

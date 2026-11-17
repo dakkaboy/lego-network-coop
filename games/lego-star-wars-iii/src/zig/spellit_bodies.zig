@@ -138,12 +138,23 @@ pub fn apply(s: *Scope) bool {
             values.body_class = input.binding.body_class;
             values.piece_ordinal = input.binding.piece_ordinal;
             @memcpy(std.mem.asBytes(&values.values), std.mem.asBytes(&input.local)[part * 48 ..][0..48]);
+            if (part != 0) {
+                // Velocity fourth lanes are native scratch, including 0xffffffff.
+                values.values[7] = 0;
+                values.values[11] = 0;
+            }
             if (!physics.valid(&choice)) return fail(s);
             var expected = choice;
             if (!state.live(s) or physics_world_input(&choice, &s.token) != 1 or !state.live(s)) return fail(s);
             expected.payload.spellit_body.values = values.values;
             if (!equal(&choice, &expected) or !physics.valid(&choice)) return fail(s);
-            @memcpy(std.mem.asBytes(&input.canonical)[part * 48 ..][0..48], std.mem.asBytes(&values.values));
+            if (part == 0) {
+                input.canonical.basis = values.values;
+            } else {
+                input.canonical.position = values.values[0..4].*;
+                input.canonical.linear[0..3].* = values.values[4..7].*;
+                input.canonical.angular[0..3].* = values.values[8..11].*;
+            }
         }
     }
     if (!state.live(s) or native_spellit_source_revalidate(&s.source) == 0) return fail(s);

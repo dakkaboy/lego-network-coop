@@ -127,6 +127,15 @@ fn nativeRange(a: usize, b: usize, reach: f32) callconv(.c) c_int {
 fn nativeHit(a: usize, b: usize, one: u32, flags: u32, zero: u32, last: u32) callconv(.c) u32 {
     check(@src(), a == target and b == actor and one == 1 and flags == 0x400000 and zero == 0 and last == 1);
     hit_calls += 1;
+    if (mode >= 50 and mode <= 52) {
+        check(@src(), win.load(i16, actor + 0x2f4) == 65);
+        win.store(i16, actor + 0x2f4, -1);
+        selected_clip = if (client) 74 else 73;
+        choice.reaction_apply_choice(actor, &selected_clip);
+        win.store(i16, actor + 0x2f4, 20);
+        win.store(i8, actor + 0xdde, if (client and mode == 51) 1 else 2);
+        win.store(f32, actor + 0xd3c, 0.4);
+    }
     if (mode == 27) win.RaiseException(0xe1459876, 0, 0, null);
     if (mode == 25) {
         selected_clip = if (client) 9 else 7;
@@ -335,10 +344,10 @@ fn protect(address: usize, protection: u32) void {
     check(@src(), win.VirtualProtect(address, 0x10000, protection, &old) != 0);
 }
 fn installedHooks() void {
-    const sites = [_]usize{ 0x96a1bd, 0x96b2e1, 0x410cf3, 0x87ffb7 };
-    const sizes = [_]usize{ 7, 8, 5, 5 };
-    const prefixes = [_][8]u8{ .{ 0x8b, 0x7c, 0x24, 0x50, 0x83, 0xff, 0xff, 0 }, .{ 0x89, 0x44, 0x24, 0x44, 0xdb, 0x44, 0x24, 0x44 }, .{ 0xe8, 0xc8, 0x97, 0x55, 0, 0, 0, 0 }, .{ 0xe8, 0xf4, 0x2d, 0xf1, 0xff, 0, 0, 0 } };
-    for ([_]usize{ 0x410000, 0x870000, 0x960000 }) |a| protect(a, 0x40);
+    const sites = [_]usize{ 0x96a1bd, 0x96b2e1, 0x410cf3, 0x87ffb7, 0x89e430 };
+    const sizes = [_]usize{ 7, 8, 5, 5, 7 };
+    const prefixes = [_][8]u8{ .{ 0x8b, 0x7c, 0x24, 0x50, 0x83, 0xff, 0xff, 0 }, .{ 0x89, 0x44, 0x24, 0x44, 0xdb, 0x44, 0x24, 0x44 }, .{ 0xe8, 0xc8, 0x97, 0x55, 0, 0, 0, 0 }, .{ 0xe8, 0xf4, 0x2d, 0xf1, 0xff, 0, 0, 0 }, .{ 0x56, 0x8b, 0x74, 0x24, 0x08, 0x85, 0xf6, 0 } };
+    for ([_]usize{ 0x410000, 0x870000, 0x890000, 0x960000 }) |a| protect(a, 0x40);
     for (sites, sizes, prefixes) |site, size, prefix| @memcpy(bytes(site, size), prefix[0..size]);
     win.store(u8, 0x96a1c4, 0xc3);
     win.store(u8, 0x96b2e9, 0xc3);
@@ -348,7 +357,7 @@ fn installedHooks() void {
         win.store(u8, site, prefix[0]);
         for (sites, sizes, prefixes) |a, size, expected| check(@src(), std.mem.eql(u8, bytes(a, size), expected[0..size]));
     }
-    for ([_]usize{ 0x410000, 0x870000, 0x960000 }) |a| protect(a, 0x20);
+    for ([_]usize{ 0x410000, 0x870000, 0x890000, 0x960000 }) |a| protect(a, 0x20);
     check(@src(), r.reaction_install() != 0 and r.reaction_install() != 0 and r.reaction_ready() != 0);
     for (sites) |a| {
         var info: win.MemoryInfo = undefined;
@@ -456,7 +465,11 @@ pub fn main() void {
     const expected = [_]u32{ 3760438584, 3148583974, 1282296125, 1295963535, 2311636707, 640359377, 2363978295, 1368051231, 893719385, 1794677709, 1730478152, 3273947925, 1365588634, 978031227, 978031227, 2625607644, 2509404437, 2210369185, 45445887, 2724897212, 146159781, 2223610887, 1894754850, 771549818, 2920201034, 145074882, 1389708499 };
     for (expected, 0..) |hash, i| {
         mode = @intCast(i);
-        const out = run();
+        var out = run();
+        if (mode >= 24 and mode <= 26) {
+            check(@src(), @import("reaction_validation.zig").hitValid(&out.entries[0].payload.clip.hit));
+            out.entries[0].payload.clip.hit = std.mem.zeroes(p.SyncReactionHitOutcome);
+        }
         var checksum: u32 = 2166136261;
         for (std.mem.asBytes(&out)) |byte| checksum = (checksum ^ byte) *% 16777619;
         if (checksum != hash) std.debug.print("reaction mode={d} hash={d} expected={d}\n", .{ mode, checksum, hash });
@@ -468,4 +481,96 @@ pub fn main() void {
     }
     installedHooks();
     unchangedNativeChoice();
+    arenaBeforeHit();
+    actionTraceChecks();
+}
+fn actionTraceChecks() void {
+    const trace = @import("native_action_trace.zig");
+    const fixture = @import("native_action_trace_fixture.zig");
+    const saved_resume = trace.native_action_trace_resume;
+    trace.native_action_trace_resume = @intFromPtr(&fixture.native_action_probe_resume);
+    defer trace.native_action_trace_resume = saved_resume;
+    for (0..8) |variant| {
+        mode = 0;
+        client = false;
+        valid = true;
+        frame.epoch = 9000 + @as(u32, @intCast(variant));
+        frame.level = if (variant == 4) 1 else 12;
+        var token = tokenFor();
+        var lease: s.Lease = undefined;
+        begin(&token, &lease, 1);
+        win.store(u16, actor + 0xdc0, if (variant == 5) 183 else if (variant == 6) 189 else 119);
+        const state = if (variant == 3) 0 else actor + 0x260;
+        const next: u32 = if (variant == 2) 8 else if (variant == 1) 116 else 65535;
+        if (variant == 7) check(@src(), r.reaction_abort_frame(&lease) != 0);
+        const before = win.load([0x1440]u8, actor);
+        const count = trace.clonewars_native_action_trace_debug[0];
+        fixture.native_action_probe(@intFromPtr(&fixture.native_action_probe_original), state, next);
+        const regs = fixture.native_action_probe_regs;
+        const fx = fixture.native_action_probe_fx;
+        win.SetLastError(0x98765432);
+        fixture.native_action_probe(@intFromPtr(&native_action_trace_thunk), state, next);
+        check(@src(), win.GetLastError() == 0x98765432 and std.mem.eql(u32, &regs, &fixture.native_action_probe_regs) and std.mem.eql(u8, &fx, &fixture.native_action_probe_fx));
+        check(@src(), std.mem.eql(u8, &before, bytes(actor, 0x1440)));
+        const recorded = variant == 0 or variant == 1 or variant == 6;
+        check(@src(), trace.clonewars_native_action_trace_debug[0] == count + @intFromBool(recorded));
+        if (recorded) {
+            const e = trace.clonewars_native_action_trace_entries[count % 2048];
+            check(@src(), e[0] == count and e[1] == token.epoch and e[2] == token.sequence and e[5] == actor and e[6] == win.load(u16, actor + 0xdc0) and e[7] == win.load(u16, actor + 0x2f4) and e[8] == next);
+        }
+        if (variant != 7) check(@src(), r.reaction_abort_frame(&lease) != 0);
+    }
+}
+extern fn native_action_trace_thunk() void;
+
+fn arenaBeforeHit() void {
+    for (0..12) |mutation| {
+        mode = if (mutation == 10) 51 else 50;
+        setup();
+        clearDebug();
+        source = 0;
+        frame.epoch = 3000 + @as(u32, @intCast(mutation));
+        var token = tokenFor();
+        var lease: s.Lease = undefined;
+        win.store(i16, actor + 0x2f4, 65);
+        win.store(i8, actor + 0xdde, 3);
+        win.store(f32, actor + 0xd3c, 0);
+        begin(&token, &lease, 1);
+        check(@src(), arena.reaction_arena_contact_hit(target, actor) != 0 and frame.reaction_count == 1 and r.reaction_finish() != 0);
+        const e = &frame.reactions[0];
+        check(@src(), e.old_action == -1 and e.payload.clip.hit.action_before == 65 and e.payload.clip.hit.action_after == 20 and e.payload.clip.hit.health_before == 3 and e.payload.clip.hit.health_after == 2);
+        check(@src(), r.reaction_abort_frame(&lease) != 0);
+        client = true;
+        frame.sequence += 1;
+        token.sequence = frame.sequence;
+        token.release += 1;
+        win.store(i16, actor + 0x2f4, 65);
+        win.store(i8, actor + 0xdde, 3);
+        win.store(f32, actor + 0xd3c, 0);
+        switch (mutation) {
+            1 => win.store(i16, actor + 0x2f4, -1),
+            2 => win.store(i8, actor + 0xdde, 4),
+            3 => win.store(f32, actor + 0xd3c, 1),
+            4 => e.payload.clip.hit.timer_before = std.math.nan(f32),
+            5 => e.payload.clip.hit.completed = 2,
+            6 => e.payload.clip.hit.life_before = 4,
+            7 => e.payload.clip.hit.action_before = 32768,
+            8 => e.payload.clip.hit.health_before = 128,
+            9 => e.payload.clip.hit.action_after = -1,
+            11 => retained = false,
+            else => {},
+        }
+        const before = win.load([0x1440]u8, actor);
+        const calls = hit_calls;
+        begin(&token, &lease, 0);
+        const result = arena.reaction_drain_arena();
+        if (mutation == 0) {
+            check(@src(), result != 0 and hit_calls == calls + 1 and selected_clip == 73 and win.load(i8, actor + 0xdde) == 2 and win.load(i16, actor + 0x2f4) == 20 and win.load(f32, actor + 0xd3c) == 2.5 and r.reaction_finish() != 0);
+        } else {
+            check(@src(), result == 0 and r.reaction_finish() == 0);
+            if (mutation != 9 and mutation != 10) check(@src(), hit_calls == calls and std.mem.eql(u8, &before, bytes(actor, 0x1440)));
+            if (mutation == 9 or mutation == 10) check(@src(), win.load(f32, actor + 0xd3c) == 0.4);
+        }
+        check(@src(), r.reaction_abort_frame(&lease) != 0);
+    }
 }

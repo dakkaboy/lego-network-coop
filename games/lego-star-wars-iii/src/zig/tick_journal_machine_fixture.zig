@@ -176,3 +176,74 @@ comptime {
 pub export var actor_turn_bridge_observed: [4]u32 = @splat(0);
 pub export var rts_turn_bridge_observed: [4]u32 = @splat(0);
 pub export var goal_bridge_observed: [4]u32 = @splat(0);
+extern fn native_pack_remove_observer() void;
+extern fn native_pack_construct_observer() void;
+extern fn native_pack_destroy_observer() void;
+pub extern fn pack_remove_fixture_resume() void;
+pub extern fn pack_construct_fixture_resume() void;
+pub extern fn pack_destroy_fixture_resume() void;
+pub extern fn invoke_pack_observer(u32) void;
+export var pack_observer_fixture_targets: [3]@TypeOf(&native_pack_remove_observer) = .{ &native_pack_remove_observer, &native_pack_construct_observer, &native_pack_destroy_observer };
+export var pack_observer_fixture_target: usize = 0;
+pub export var pack_observer_fixture_observed: [12]u32 = @splat(0);
+pub export var pack_observer_fpu_before: [512]u8 align(16) = @splat(0);
+pub export var pack_observer_fpu_after: [512]u8 align(16) = @splat(0);
+export var pack_observer_fpu_caller: [512]u8 align(16) = @splat(0);
+comptime {
+    asm (
+        \\.text
+        \\_invoke_pack_observer:
+        \\pushal
+        \\movl 36(%esp),%eax
+        \\movl _pack_observer_fixture_targets(,%eax,4),%eax
+        \\movl %eax,_pack_observer_fixture_target
+        \\fxsave _pack_observer_fpu_caller
+        \\fninit
+        \\fld1
+        \\fldpi
+        \\fxsave _pack_observer_fpu_before
+        \\movl $0x12345678,%eax
+        \\movl $0x87654321,%ecx
+        \\movl $0x13579bdf,%edx
+        \\movl $0x2468ace0,%ebx
+        \\movl $0x11223344,%esi
+        \\movl $0x55667788,%edi
+        \\movl $0x19283746,%ebp
+        \\stc
+        \\pushl $0x1badb002
+        \\call *_pack_observer_fixture_target
+        \\fxsave _pack_observer_fpu_after
+        \\fxrstor _pack_observer_fpu_caller
+        \\popal
+        \\ret
+        \\_pack_remove_fixture_resume:
+        \\call _pack_observer_fixture_capture
+        \\popl %ebx
+        \\ret $4
+        \\_pack_construct_fixture_resume:
+        \\call _pack_observer_fixture_capture
+        \\jmp _pack_observer_fixture_seh
+        \\_pack_destroy_fixture_resume:
+        \\call _pack_observer_fixture_capture
+        \\_pack_observer_fixture_seh:
+        \\pushl %eax
+        \\movl 4(%esp),%eax
+        \\movl %eax,_pack_observer_fixture_observed+40
+        \\movl 8(%esp),%eax
+        \\movl %eax,_pack_observer_fixture_observed+44
+        \\popl %eax
+        \\leal 8(%esp),%esp
+        \\ret $4
+        \\_pack_observer_fixture_capture:
+        \\movl %eax,_pack_observer_fixture_observed
+        \\movl %ecx,_pack_observer_fixture_observed+4
+        \\movl %edx,_pack_observer_fixture_observed+8
+        \\movl %ebx,_pack_observer_fixture_observed+12
+        \\movl %esi,_pack_observer_fixture_observed+16
+        \\movl %edi,_pack_observer_fixture_observed+20
+        \\movl %ebp,_pack_observer_fixture_observed+24
+        \\pushfl
+        \\popl _pack_observer_fixture_observed+32
+        \\ret
+    );
+}

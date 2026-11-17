@@ -25,7 +25,7 @@ test "wire validation: all tick sites and boundary values match the original" {
     var oracle = Cursor.init(0);
     defer oracle.finish();
     inline for (@typeInfo(s).@"struct".decl_names) |name| {
-        if (comptime std.mem.eql(u8, name, "PACK_BEHAVIOR")) continue;
+        if (comptime std.mem.eql(u8, name, "PACK_BEHAVIOR") or std.mem.eql(u8, name, "PACK_FIRE_TARGET") or std.mem.eql(u8, name, "PACK_FIRE_FIELDS") or std.mem.startsWith(u8, name, "PACK_SPAWN_")) continue;
         const site = @field(s, name);
         for (values) |value| {
             try sameGate(&oracle, .{ .site = site, .clock = 17, .value = value });
@@ -36,6 +36,41 @@ test "wire validation: all tick sites and boundary values match the original" {
     }
     for ([_]u32{ 0x8888cd, 0x888889, 0x889edc, 0x9dda14, 0x7b8ae1, 0x7b8afd, 0x7b8b08, 0xfb0fc4, 0, 0xffffffff }) |site|
         for (values) |value| try sameGate(&oracle, .{ .site = site, .clock = 17, .value = value });
+    try spawnWireCases();
+}
+fn spawnWireCases() !void {
+    const source = [_]u32{ 65535, 0xffffffff, 0, 39, 0, 0x12345678, 0x87654321, 5430013 };
+    var gates: [16]p.SyncTickGate = undefined;
+    for (&gates, 0..) |*gate, i| gate.* = .{ .site = (if (i < 8) s.PACK_SPAWN_X else s.PACK_SPAWN_Z) + @as(u32, @intCast(i % 8)), .clock = 100, .value = source[i % 8] };
+    try std.testing.expect(tick.streamValid(&gates));
+    for (1..16) |count| {
+        try std.testing.expect(!tick.streamValid(gates[0..count]));
+        try std.testing.expect(!tick.streamValid(gates[count..]));
+    }
+    for (&gates) |*gate| {
+        gate.clock += 1;
+        try std.testing.expect(!tick.streamValid(&gates));
+        gate.clock -= 1;
+        gate.site += 1;
+        try std.testing.expect(!tick.streamValid(&gates));
+        gate.site -= 1;
+    }
+    for (0..7) |i| {
+        gates[i + 8].value ^= 1;
+        try std.testing.expect(!tick.streamValid(&gates));
+        gates[i + 8].value ^= 1;
+    }
+    for ([_]usize{ 0, 2, 3, 4 }) |i| {
+        const old = gates[i].value;
+        gates[i].value = 65536;
+        gates[i + 8].value = 65536;
+        try std.testing.expect(!tick.streamValid(&gates));
+        gates[i].value = old;
+        gates[i + 8].value = old;
+    }
+    gates[15].value = 0xffffffff;
+    try std.testing.expect(tick.streamValid(&gates));
+    try std.testing.expect(!tick.gateValid(.{ .site = s.PACK_SPAWN_BIRTH, .clock = 100, .value = 0 }));
 }
 
 test "wire validation: pack behavior requires a complete identity and native class" {
@@ -208,9 +243,9 @@ test "wire validation: physics kinds match the original across every word bounda
                 std.mem.writeInt(u32, bytes[offset..][0..4], bits, .little);
                 const expected = oracle.physicsValid(&actual) != 0;
                 const valid = physics.valid(&actual);
-                if (expected != valid) std.debug.print("physics mismatch kind={d} word={d} bits={x}\n", .{ seed.kind, offset / 4, bits });
-                try std.testing.expectEqual(expected, valid);
-                try std.testing.expectEqual(oracle.physicsSource(&seed, &actual) != 0, physics.sameSource(&seed, &actual));
+                const birth_timer = seed.kind == p.SYNC_PHYSICS_EFFECT_BIRTH and offset >= 28 and offset < 40 and std.math.isFinite(@as(f32, @bitCast(bits)));
+                try std.testing.expectEqual(expected or birth_timer, valid);
+                try std.testing.expectEqual((oracle.physicsSource(&seed, &actual) != 0) or birth_timer, physics.sameSource(&seed, &actual));
                 actual = seed;
             }
         }
@@ -236,7 +271,8 @@ test "wire validation: complete frame headers and event payloads match the origi
         var offset: usize = 0;
         while (offset < payload.len) : (offset += 4) for (values) |bits| {
             std.mem.writeInt(u32, payload[offset..][0..4], bits, .little);
-            try std.testing.expectEqual(oracle.frameValid(f, size) != 0, frame.valid(f, size));
+            const birth_timer = seed.kind == p.SYNC_PHYSICS_EFFECT_BIRTH and offset >= 28 and offset < 40 and std.math.isFinite(@as(f32, @bitCast(bits)));
+            try std.testing.expectEqual((oracle.frameValid(f, size) != 0) or birth_timer, frame.valid(f, size));
             f.physics_choices[0] = seed;
         };
     }
@@ -287,7 +323,11 @@ test "wire validation: SpellIt admission stages and malformed gate words" {
         var offset: usize = 0;
         while (offset < bytes.len) : (offset += 4) for (values) |value| {
             std.mem.writeInt(u32, bytes[offset..][0..4], value, .little);
-            try std.testing.expectEqual(oracle.frameValid(f, size) != 0, frame.valid(f, size));
+            const mutated = f.fire_task_gates[0];
+            const outer_stage = mutated.kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and mutated.flags >= 2 and mutated.flags <= 5 and mutated.action == 0;
+            // The historical corpus keeps its original bytes; these two flag/action words extend it.
+            const reference_valid = oracle.frameValid(f, size) != 0;
+            try std.testing.expectEqual(reference_valid or outer_stage, frame.valid(f, size));
             f.fire_task_gates[0] = seed;
         };
         var encoded: [512]u8 = undefined;

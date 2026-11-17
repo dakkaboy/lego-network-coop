@@ -11,12 +11,20 @@ const NativeSpin = *const fn (usize) callconv(.c) u32;
 var originals: [2]NativeSpin = undefined;
 const Binding = @import("effect_binding.zig").Binding;
 var bindings = std.mem.zeroes([p.SYNC_MAX_ACTORS]Binding);
+const NativeUpdate = *const fn (f32) callconv(.c) void;
+var original_update: NativeUpdate = undefined;
+pub export var clonewars_effect_update_debug: [12]u32 = @splat(0);
+pub export var effect_rest_resume: usize = 0x743cb1;
+pub export var effect_moving_resume: usize = 0x7445ad;
+extern fn physics_effect_rest_thunk() void;
 pub export var clonewars_breakup_launch_debug: [4]u32 = @splat(0);
+pub export var clonewars_breakup_source_failure: [8]u32 = @splat(0);
 pub export var clonewars_breakup_launch_motion_debug: [14]u32 = @splat(0);
 pub export var clonewars_breakup_geometry_debug: [8]u32 = @splat(0);
 pub export var clonewars_breakup_geometry_local: [19]u32 = @splat(0);
 pub export var clonewars_breakup_geometry_host: [19]u32 = @splat(0);
 pub export var clonewars_effect_birth_debug: [8]u32 = @splat(0);
+pub export var clonewars_effect_lifetime_debug: [10]u32 = @splat(0);
 export var breakup_launch_native: usize = 0x966af0;
 export var effect_birth_resume: usize = 0x7427df;
 extern fn constructor_lexical_seh(usize, *const fn (usize) callconv(.c) usize, *const fn (usize) callconv(.c) void) usize;
@@ -31,23 +39,8 @@ fn read(comptime T: type, address: usize) T {
 fn readable(address: usize, length: usize) bool {
     return win.accessible(address, length, false);
 }
-fn describeName(source: usize, choice: *Choice) bool {
-    if (!readable(source, 0xb8)) return false;
-    const name = read(usize, source + 0xb4);
-    var hash: u32 = 2166136261;
-    var second: u32 = 0x9e3779b9;
-    for (0..128) |i| {
-        if (!readable(name +% i, 1)) return false;
-        const value = read(u8, name +% i);
-        if (value == 0 or value == 255) {
-            if (i == 0) return false;
-            choice.payload.basic.name_hash = .{ hash, second };
-            return true;
-        }
-        hash = (hash ^ value) *% 16777619;
-        second = (second ^ value) *% 0x85ebca6b;
-    }
-    return false;
+fn describeHandle(handle: usize, choice: *Choice) bool {
+    return @import("breakup_source.zig").resolve(handle, state.frame.?.epoch, &choice.payload.basic.name_hash);
 }
 fn describe(effect: usize, kind: u32, site: u32, choice: *Choice) bool {
     if (!readable(effect, 0x168)) return false;
@@ -56,7 +49,7 @@ fn describe(effect: usize, kind: u32, site: u32, choice: *Choice) bool {
     choice.site = site;
     const basic = &choice.payload.basic;
     basic.flags = read(u32, effect + 0x11c);
-    if (!describeName(read(usize, effect + 0x164), choice)) return false;
+    if (!describeHandle(effect + 0x160, choice)) return false;
     basic.model = read(u16, effect + 0x156);
     basic.clock = read(u32, 0xfb4b6c);
     basic.recipe = read([6]u32, effect + 0x124);
@@ -74,7 +67,7 @@ fn applyLaunch(descriptor: usize, handle: usize) void {
     basic.clock = read(u32, 0xfb4b6c);
     basic.recipe = read([6]u32, descriptor + 8);
     basic.rng = read(u32, 0xe637b4);
-    if (!readable(handle, 8) or !describeName(read(usize, handle + 4), &local) or !validation.valid(&local)) {
+    if (!describeHandle(handle, &local) or !validation.valid(&local)) {
         _ = state.fail(1, &local, null);
         clonewars_breakup_launch_debug[3] +%= 1;
         return;
@@ -132,7 +125,7 @@ fn applyGeometry(descriptor: usize, handle: usize, matrix: usize, scale: usize) 
     b.model = read(u16, descriptor + 4);
     s.model = b.model;
     s.flags = 0x40000000 | @as(u32, if (read(u8, descriptor + 0x2d) != 0) 0x10 else 0);
-    if (!readable(handle, 8) or !describeName(read(usize, handle + 4), &name) or !readable(matrix, 64) or !readable(scale, 12)) {
+    if (!describeHandle(handle, &name) or !readable(matrix, 64) or !readable(scale, 12)) {
         geometryFailure(1, &basis, null);
         return;
     }
@@ -186,11 +179,27 @@ fn applyGeometry(descriptor: usize, handle: usize, matrix: usize, scale: usize) 
     state.consume(2);
     clonewars_breakup_geometry_debug[1] +%= 1;
 }
-pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, matrix: usize, scale: usize) void {
+pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, matrix: usize, scale: usize, model: usize) void {
     const saved = win.GetLastError();
     defer win.SetLastError(saved);
+    if (state.active and !state.failed and state.live() and readable(descriptor, 0x30) and read(u8, descriptor + 0x2c) != 0) {
+        _ = @import("breakup_source.zig").register(handle, model, state.frame.?.epoch);
+    }
+    const failed = state.failed;
     applyLaunch(descriptor, handle);
     applyGeometry(descriptor, handle, matrix, scale);
+    if (!failed and state.failed and clonewars_breakup_source_failure[0] == 0) {
+        clonewars_breakup_source_failure[0..4].* = .{ @truncate(descriptor), @truncate(handle), @truncate(matrix), @truncate(scale) };
+        if (readable(handle, 8)) {
+            clonewars_breakup_source_failure[4..6].* = read([2]u32, handle);
+            const source = read(usize, handle + 4);
+            if (readable(source, 0xb8)) {
+                const name = read(usize, source + 0xb4);
+                clonewars_breakup_source_failure[6] = @truncate(name);
+                if (readable(name, 1)) clonewars_breakup_source_failure[7] = read(u8, name);
+            }
+        }
+    }
 }
 pub export fn physics_effect_birth(node: usize) void {
     const saved = win.GetLastError();
@@ -217,7 +226,8 @@ pub export fn physics_effect_birth(node: usize) void {
     b.clock = read(u32, 0xfb4b6c);
     b.flags = read(u32, node + 0x11c);
     b.model = read(u16, node + 0x156);
-    if (!describeName(resource, &choice) or !validation.valid(&choice)) {
+    b.recipe[0..3].* = .{ read(u32, node + 0xf8), read(u32, node + 0x100), read(u32, node + 0x104) };
+    if (!describeHandle(node + 0x160, &choice) or !validation.valid(&choice)) {
         _ = state.fail(1, &choice, null);
         return;
     }
@@ -233,6 +243,23 @@ pub export fn physics_effect_birth(node: usize) void {
             _ = state.fail(3, &choice, expected);
             return;
         }
+        if (!state.live() or state.failed) return;
+        if (!win.accessible(node, 0x228, true) or read(usize, node + 0x1f8) != receiver or read(usize, node + 0x164) != resource or !readable(receiver, 0x1a4) or read(usize, receiver + 0x1a0) != body) {
+            _ = state.fail(1, &choice, expected);
+            return;
+        }
+        const lifetime = expected.?.payload.basic.recipe[0..3];
+        if (!std.mem.eql(u32, b.recipe[0..3], lifetime)) {
+            if (clonewars_effect_lifetime_debug[0] == 0) {
+                clonewars_effect_lifetime_debug[1..4].* = .{ state.frame.?.sequence, b.clock, event + 1 };
+                clonewars_effect_lifetime_debug[4..7].* = b.recipe[0..3].*;
+                clonewars_effect_lifetime_debug[7..10].* = lifetime[0..3].*;
+            }
+            clonewars_effect_lifetime_debug[0] +%= 1;
+        }
+        win.store(u32, node + 0xf8, lifetime[0]);
+        win.store(u32, node + 0x100, lifetime[1]);
+        win.store(u32, node + 0x104, lifetime[2]);
         state.consume(1);
     }
     binding.* = .{ .node = node, .receiver = receiver, .body = body, .resource = resource, .epoch = state.frame.?.epoch, .sequence = state.frame.?.sequence, .event = event + 1, .release = state.lease.cohort.release };
@@ -254,10 +281,120 @@ pub export fn physics_effect_body_source(body: usize, source: ?*[2]u32) c_int {
     }
     return result;
 }
+pub export fn physics_effect_body_resolve(sequence: u32, event: u32) usize {
+    if (!state.live() or state.failed) return 0;
+    const count = read(u32, 0xe5f480);
+    const pool = read(usize, 0xfa3d38);
+    if (count > p.SYNC_MAX_ACTORS or pool == 0) return 0;
+    var body: usize = 0;
+    var revoked: u32 = 0;
+    const result = @import("effect_binding.zig").bodyForSource(bindings[0..count], .{ sequence, event }, state.frame.?.epoch, state.lease.cohort.release, pool, effectSourceLive, &body, &revoked);
+    clonewars_effect_birth_debug[6] +%= revoked;
+    if (result < 0) {
+        clonewars_effect_birth_debug[7] +%= 1;
+        _ = state.fail(7, null, null);
+        return 0;
+    }
+    return if (result == 1) body else 0;
+}
+fn effectSourceLive(binding: *const Binding, index: usize, pool: usize) bool {
+    return effectLive(binding, index, .{ .pool = pool, .body = binding.body });
+}
 const EffectContext = struct { pool: usize, body: usize };
 fn effectLive(binding: *const Binding, index: usize, context: EffectContext) bool {
     const node = context.pool + index * 0x228;
     return node == binding.node and readable(node, 0x228) and read(u32, node + 0x15c) & 1 != 0 and read(u32, node + 0x11c) & 0x40000000 != 0 and read(usize, node + 0x1f8) == binding.receiver and read(usize, node + 0x164) == binding.resource and readable(binding.receiver, 0x1a4) and read(usize, binding.receiver + 0x1a0) == context.body;
+}
+
+fn effectInput(local: *const Choice) ?u32 {
+    if (!validation.valid(local)) {
+        _ = state.fail(1, local, null);
+        return null;
+    }
+    if (state.host) {
+        if (!state.record(local.*)) {
+            _ = state.fail(2, local, null);
+            return null;
+        }
+        return local.payload.basic.recipe[0];
+    }
+    if (local.kind == p.SYNC_PHYSICS_EFFECT_REST) {
+        return state.rest(local) orelse { _ = state.fail(3, local, state.expectedEntry()); return null; };
+    }
+    const expected = state.expectedEntry();
+    if (expected == null or !validation.sameSource(local, expected.?)) {
+        _ = state.fail(3, local, expected);
+        return null;
+    }
+    const result = expected.?.payload.basic.recipe[0];
+    if (!state.live() or state.failed) return null;
+    state.consume(1);
+    return result;
+}
+
+pub fn effectStep(delta: f32) f32 {
+    if (!state.live() or state.failed) {
+        clonewars_effect_update_debug[1] +%= 1;
+        return delta;
+    }
+    clonewars_effect_update_debug[0] +%= 1;
+    var local = std.mem.zeroes(Choice);
+    local.kind = p.SYNC_PHYSICS_EFFECT_STEP;
+    local.site = 0x743bb0;
+    local.payload.basic.clock = read(u32, 0xfb4b6c);
+    local.payload.basic.recipe[0] = @bitCast(delta);
+    const bits = effectInput(&local) orelse return delta;
+    clonewars_effect_update_debug[4] +%= @intFromBool(bits != local.payload.basic.recipe[0]);
+    return @bitCast(bits);
+}
+
+fn updateHook(delta: f32) callconv(.c) void {
+    var machine: Machine = undefined;
+    const mxcsr: u32 = 0x1f80;
+    machine.save(&mxcsr);
+    const canonical = effectStep(delta);
+    machine.restore();
+    original_update(canonical);
+}
+
+pub export fn physics_effect_rest(node: usize, native_mask: u32) u32 {
+    const saved = win.GetLastError();
+    defer win.SetLastError(saved);
+    const mask = native_mask & 0x41;
+    if (!state.live() or state.failed) {
+        clonewars_effect_update_debug[3] +%= 1;
+        return mask;
+    }
+    const pool = read(usize, 0xfa3d38);
+    const count = read(u32, 0xe5f480);
+    const offset = node -% pool;
+    if (pool == 0 or count > p.SYNC_MAX_ACTORS or offset % 0x228 != 0 or offset / 0x228 >= count) return mask;
+    const index = offset / 0x228;
+    const binding = &bindings[index];
+    // Unjournaled visual effects and effects born before this lease stay native.
+    if (binding.epoch != state.frame.?.epoch or binding.release != state.lease.cohort.release or binding.sequence == 0 or binding.event == 0) return mask;
+    if (!effectSourceLive(binding, index, pool) or read(u32, node + 0x15c) & 2 != 0) {
+        _ = state.fail(1, null, null);
+        return mask;
+    }
+    clonewars_effect_update_debug[2] +%= 1;
+    var local = std.mem.zeroes(Choice);
+    local.kind = p.SYNC_PHYSICS_EFFECT_REST;
+    local.site = 0x743ca8;
+    const b = &local.payload.basic;
+    b.flags = read(u32, node + 0x11c);
+    b.model = read(u16, node + 0x156);
+    b.clock = read(u32, 0xfb4b6c);
+    b.name_hash = .{ binding.sequence, binding.event };
+    b.recipe[0] = mask;
+    b.recipe[1] = read(u32, node + 0x198);
+    const result = effectInput(&local) orelse return mask;
+    if (!state.live() or state.failed or !effectSourceLive(binding, index, pool)) return mask;
+    if (result != mask) {
+        if (clonewars_effect_update_debug[5] == 0) clonewars_effect_update_debug[6..12].* = .{ state.frame.?.sequence, b.clock, binding.sequence, binding.event, mask, result };
+        clonewars_effect_update_debug[5] +%= 1;
+    }
+    return result;
 }
 
 const SpinScope = struct { machine: Machine, effect: usize, kind: u32, site: u32, result: u32, saved_rng: u32, seeded: bool, seeded_lease: Lease };
@@ -341,9 +478,15 @@ pub export fn physics_input_install() c_int {
     const launch = [_]u8{ 0xe8, 0xb8, 0x0b, 6, 0 };
     const addresses = [_]usize{ 0x71ab90, 0x71ac10 };
     const prefixes = [2][6]u8{ .{ 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c }, .{ 0x56, 0x68, 0x98, 0xf4, 0xe5, 0 } };
+    const update_prefix = [_]u8{ 0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf0 };
+    const rest_prefix = [_]u8{ 0xf6, 0xc4, 0x41, 0x0f, 0x85, 0xfc, 8, 0, 0 };
+    if (!readable(0x743bb0, 6) or !equal(&read([6]u8, 0x743bb0), &update_prefix) or !readable(0x743ca8, 9) or !equal(&read([9]u8, 0x743ca8), &rest_prefix)) return 0;
     if (!readable(0x7427d8, birth.len) or !equal(&read([7]u8, 0x7427d8), &birth) or !readable(0x905f33, launch.len) or !equal(&read([5]u8, 0x905f33), &launch)) return 0;
     for (addresses, prefixes) |address, prefix| if (!readable(address, 6) or !equal(&read([6]u8, address), &prefix)) return 0;
     if (spellit_input_install() == 0 or module_rng_input_install() == 0 or vehicle_rng_input_install() == 0) return 0;
+    const update_bridge = @import("observation.zig").install(0x743bb0, &update_prefix, @intFromPtr(&updateHook)) orelse return 0;
+    original_update = @ptrFromInt(update_bridge);
+    if (!patch(0x743ca8, 9, @intFromPtr(&physics_effect_rest_thunk), false)) return 0;
     if (!patch(0x7427d8, 7, @intFromPtr(&physics_effect_birth_thunk), false)) return 0;
     const hooks = [_]NativeSpin{ axisHook, rotationHook };
     for (addresses, prefixes, hooks, 0..) |address, prefix, hook, i| {
@@ -364,4 +507,5 @@ pub export fn physics_input_install() c_int {
 }
 comptime {
     _ = @import("physics_bridges.zig");
+    asm (@import("effect_update_bridge.zig").code);
 }

@@ -20,6 +20,33 @@ const receiver: usize = 0x20040000;
 const body: usize = 0x20050000;
 const matrix: *[16]f32 = @ptrFromInt(0x20060000);
 const scale: *[3]f32 = @ptrFromInt(0x20070000);
+const probe = @import("native_probe_fixture.zig");
+pub const probe_registers =
+    \\movl $0x20030000,%ebx
+    \\movl _argument,%eax
+;
+extern fn physics_effect_rest_thunk() void;
+extern fn effect_rest_native_exit() void;
+extern fn effect_rest_exit() void;
+extern fn effect_moving_exit() void;
+export var expected_rest_mask: u32 = 0;
+comptime {
+    asm (
+        \\.text
+        \\_effect_rest_native_exit:
+        \\pushl %eax
+        \\movl _expected_rest_mask,%eax
+        \\testb $0x41,%al
+        \\popl %eax
+        \\jnz _effect_moving_exit
+        \\_effect_rest_exit:
+        \\movl $1,_branch
+        \\ret
+        \\_effect_moving_exit:
+        \\movl $2,_branch
+        \\ret
+    );
+}
 const name: usize = 0x20080000;
 const Spin = *const fn (usize) callconv(.c) u32;
 var spins: [2]usize = undefined;
@@ -29,6 +56,13 @@ var fault: c_int = 0;
 var valid = true;
 var cancelled = false;
 var native_calls: u32 = 0;
+var update_delta: f32 = 0;
+fn nativeUpdate(delta: f32) callconv(.c) void {
+    check(@src(), win.GetLastError() == 1234);
+    update_delta = delta;
+    native_calls += 1;
+    win.SetLastError(321);
+}
 export fn geometry_frame_lease_get(out: *types.Lease) c_int {
     out.* = current;
     return 1;
@@ -300,7 +334,7 @@ fn run() Snapshot {
             out.result = s.physics_world_input(&input, &current.cohort);
         }
     } else if (mode < 18) {
-        e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale));
+        e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0);
         if (mode != 10) {
             client();
             put(0xe637b4, 999);
@@ -313,7 +347,7 @@ fn run() Snapshot {
             if (mode == 15) frame.physics_choices[1].payload.breakup_basis.matrix[0] = std.math.nan(f32);
             if (mode == 16) win.store(u8, descriptor + 0x2c, 0);
             if (mode == 17) cancelled = true;
-            e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale));
+            e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0);
         }
     } else if (mode < 23) {
         input = std.mem.zeroes(p.SyncPhysicsChoice);
@@ -420,6 +454,11 @@ fn protect(address: usize, length: usize) void {
     check(@src(), win.VirtualProtect(address, length, 0x40, &old) != 0);
 }
 fn install() void {
+    for ([_]usize{ 0x743bb0, 0x743ca8 }) |a| protect(a, 16);
+    @memcpy(bytes(0x743bb0, 6), &[_]u8{ 0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf0 });
+    @memcpy(bytes(0x743bb6, 13), &[_]u8{ 0xff, 0x75, 8, 0xe8, 0, 0, 0, 0, 0x83, 0xc4, 4, 0xc9, 0xc3 });
+    put(0x743bba, @intFromPtr(&nativeUpdate) -% 0x743bbe);
+    @memcpy(bytes(0x743ca8, 9), &[_]u8{ 0xf6, 0xc4, 0x41, 0x0f, 0x85, 0xfc, 8, 0, 0 });
     for ([_]usize{ 0x700000, 0x71ab90, 0x71ac10, 0x7427d8, 0x905f33 }) |a| protect(a, 64);
     @memcpy(bytes(0x71ab90, 6), &[_]u8{ 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c });
     @memcpy(bytes(0x71ac10, 6), &[_]u8{ 0x56, 0x68, 0x98, 0xf4, 0xe5, 0 });
@@ -443,6 +482,25 @@ pub fn main() void {
     }
     @memcpy(bytes(name, 8), "fixture\x00");
     install();
+    setup();
+    check(@src(), s.physics_input_begin(frame, 1) != 0);
+    var a = std.mem.zeroes(p.SyncPhysicsChoice);
+    a.kind = 25;
+    a.site = 0x743ca8;
+    a.payload.basic.model = 65535;
+    a.payload.basic.flags = 0x40000091;
+    a.payload.basic.clock = 31;
+    a.payload.basic.name_hash = .{ 30, 11 };
+    a.payload.basic.recipe[1] = 0x904e80;
+    check(@src(), s.record(a));
+    var b = a;
+    b.payload.basic.name_hash[1] = 21;
+    check(@src(), s.record(b));
+    check(@src(), s.physics_input_finish() != 0);
+    check(@src(), s.physics_input_begin(frame, 0) != 0);
+    check(@src(), s.rest(&b) != null);
+    check(@src(), s.rest(&a) != null);
+    check(@src(), s.rest(&a) == null);
     const expected = [_]u32{ 3255168280, 820360545, 93849299, 939128762, 1684352293, 1684352293, 1684352293, 211029469, 511556764, 1019008844, 1200700400, 3941375046, 2072622169, 128131964, 2533642944, 1425027163, 955023322, 615411145, 891692157, 891692157, 2618817770, 405665744, 1321967428, 1157476766, 1568028513, 1727321701, 932744458, 1826515475, 1901364189, 2913567590, 1901364189, 2385731960, 3217548714, 3450301753, 2699055425, 1014186201, 196587201, 758378509, 3998285289, 4126610937, 4022640397, 1892785117, 2264509913, 2586875573, 2638644973, 4011894809, 1104482629, 886382853 };
     for (expected, 0..) |hash, i| {
         mode = @intCast(i);
@@ -452,5 +510,137 @@ pub fn main() void {
         for (std.mem.asBytes(&out)) |byte| checksum = (checksum ^ byte) *% 16777619;
         if (checksum != hash) std.debug.print("physics mode={d} hash={d} expected={d}\n", .{ mode, checksum, hash });
         check(@src(), checksum == hash);
+    }
+    for (0..7) |i| {
+        mode = @intCast(100 + i);
+        setup();
+        check(@src(), s.physics_input_begin(frame, 1) != 0);
+        e.physics_effect_birth(pool);
+        const sequence = frame.sequence;
+        const event = frame.physics_choice_count;
+        check(@src(), e.physics_effect_body_resolve(sequence, event) == body);
+        switch (i) {
+            0 => check(@src(), e.physics_effect_body_resolve(sequence, event + 1) == 0),
+            1 => current.cohort.release += 1,
+            2 => put(pool + 0x15c, 0),
+            3 => put(pool + 0x164, resource + 4),
+            4 => put(receiver + 0x1a0, body + 4),
+            5 => put(pool + 0x1f8, receiver + 4),
+            6 => frame.epoch += 1,
+            else => unreachable,
+        }
+        if (i != 0) check(@src(), e.physics_effect_body_resolve(sequence, event) == 0);
+    }
+    for (0..5) |mutation| {
+        mode = 200 + @as(u32, @intCast(mutation));
+        setup();
+        e.clonewars_effect_lifetime_debug = @splat(0);
+        check(@src(), s.physics_input_begin(frame, 1) != 0);
+        win.store(f32, pool + 0xf8, 0.4);
+        win.store(f32, pool + 0x100, 2.5);
+        win.store(f32, pool + 0x104, 2.5);
+        e.physics_effect_birth(pool);
+        client();
+        win.store(f32, pool + 0xf8, 0.2);
+        win.store(f32, pool + 0x100, 1.9);
+        win.store(f32, pool + 0x104, 1.9);
+        switch (mutation) {
+            1 => frame.physics_choices[0].payload.basic.recipe[0] = @bitCast(std.math.nan(f32)),
+            2 => cancelled = true,
+            3 => win.store(f32, pool + 0x100, std.math.nan(f32)),
+            4 => frame.physics_choices[0].payload.basic.name_hash[0] +%= 1,
+            else => {},
+        }
+        win.SetLastError(1234);
+        e.physics_effect_birth(pool);
+        check(@src(), win.GetLastError() == 1234);
+        if (mutation == 0) {
+            check(@src(), win.load(f32, pool + 0xf8) == 0.4 and win.load(f32, pool + 0x100) == 2.5 and win.load(f32, pool + 0x104) == 2.5);
+            check(@src(), e.clonewars_effect_lifetime_debug[0] == 1 and s.physics_input_finish() != 0);
+        } else {
+            check(@src(), win.load(f32, pool + 0xf8) == 0.2 and win.load(f32, pool + 0x104) == 1.9 and e.clonewars_effect_lifetime_debug[0] == 0);
+            check(@src(), s.physics_input_finish() == 0);
+        }
+        s.physics_input_cancel();
+    }
+    effectRestTests();
+}
+
+fn effectRestTests() void {
+    const update: *const fn (f32) callconv(.c) void = @ptrFromInt(0x743bb0);
+    mode = 299;
+    setup();
+    check(@src(), s.physics_input_begin(frame, 1) != 0);
+    win.SetLastError(1234);
+    update(0.075);
+    check(@src(), native_calls == 1 and update_delta == 0.075 and win.GetLastError() == 321);
+    client();
+    win.SetLastError(1234);
+    update(0.05);
+    check(@src(), native_calls == 2 and update_delta == 0.075 and win.GetLastError() == 321 and s.physics_input_finish() != 0);
+    s.physics_input_cancel();
+    win.SetLastError(1234);
+    update(0.02);
+    check(@src(), native_calls == 3 and update_delta == 0.02 and win.GetLastError() == 321);
+    for (0..12) |mutation| {
+        mode = 300 + @as(u32, @intCast(mutation));
+        setup();
+        check(@src(), s.physics_input_begin(frame, 1) != 0);
+        e.physics_effect_birth(pool);
+        const host_delta = e.effectStep(0.075);
+        const host_mask = e.physics_effect_rest(pool, 0x40);
+        check(@src(), host_delta == 0.075 and host_mask == 0x40 and frame.physics_choice_count == 3);
+        client();
+        e.physics_effect_birth(pool);
+        switch (mutation) {
+            1 => frame.physics_choices[1].payload.basic.recipe[0] = @bitCast(std.math.nan(f32)),
+            2 => frame.physics_choices[2].payload.basic.name_hash[1] += 1,
+            3 => frame.physics_choices[2].payload.basic.recipe[0] = 2,
+            4 => frame.physics_choices[2].payload.basic.recipe[1] = 0x904e80,
+            5 => put(pool + 0x164, resource + 4),
+            6 => put(receiver + 0x1a0, body + 4),
+            7 => put(pool + 0x1f8, receiver + 4),
+            8 => put(pool + 0x15c, 3),
+            9 => cancelled = true,
+            10 => frame.physics_choices[1].payload.basic.recipe[0] = @bitCast(@as(f32, -0.01)),
+            11 => frame.physics_choices[2].payload.basic.recipe[2] = 1,
+            else => {},
+        }
+        const before = win.load([0x228]u8, pool);
+        win.SetLastError(1234);
+        const delta = e.effectStep(0.05);
+        const mask = e.physics_effect_rest(pool, 0);
+        check(@src(), win.GetLastError() == 1234 and std.mem.eql(u8, &before, bytes(pool, 0x228)));
+        if (mutation == 0) {
+            check(@src(), delta == 0.075 and mask == 0x40 and s.physics_input_finish() != 0);
+        } else {
+            check(@src(), mask == 0 and s.physics_input_finish() == 0);
+        }
+        s.physics_input_cancel();
+    }
+    e.effect_rest_resume = @intFromPtr(&effect_rest_exit);
+    e.effect_moving_resume = @intFromPtr(&effect_moving_exit);
+    for (0..2000) |i| {
+        mode = 400;
+        setup();
+        check(@src(), s.physics_input_begin(frame, 1) != 0);
+        e.physics_effect_birth(pool);
+        const host_mask: u32 = if (i % 2 == 0) 0 else 0x40;
+        check(@src(), e.physics_effect_rest(pool, host_mask) == host_mask);
+        client();
+        e.physics_effect_birth(pool);
+        probe.argument = 0x12340078 | (if (i % 3 == 0) @as(u32, 0x4100) else 0);
+        expected_rest_mask = host_mask;
+        probe.entry = @intFromPtr(&effect_rest_native_exit);
+        probe.invoke_thunk();
+        const fx = probe.observed_fx;
+        const regs = probe.observed_regs;
+        const branch = probe.branch;
+        probe.entry = @intFromPtr(&physics_effect_rest_thunk);
+        win.SetLastError(1234);
+        probe.invoke_thunk();
+        check(@src(), win.GetLastError() == 1234 and probe.branch == branch and s.physics_input_finish() != 0);
+        probe.expectSame(@src(), &fx, &regs);
+        s.physics_input_cancel();
     }
 }

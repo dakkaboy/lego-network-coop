@@ -12,6 +12,10 @@ pub var host = false;
 pub var failed = false;
 pub export var clonewars_native_tick_debug: [4]u32 = @splat(0);
 pub export var clonewars_native_tick_failure: [16]u32 = @splat(0);
+pub export var clonewars_native_tick_failure_stack: [33]usize = @splat(0);
+pub export var clonewars_native_pack_seed_context: [16]u32 = @splat(0);
+pub export var clonewars_native_pack_hit_caller: [8]u32 = @splat(0);
+extern "kernel32" fn RtlCaptureStackBackTrace(u32, u32, [*]usize, ?*u32) callconv(.winapi) u16;
 pub export var clonewars_native_tick_correction: [6]u32 = @splat(0);
 pub export var clonewars_native_pack_pose_correction: [16]u32 = @splat(0);
 pub export var clonewars_native_pack_goal_debug: [4]u32 = @splat(0);
@@ -63,7 +67,10 @@ pub fn expected(count: usize) ?[]const p.SyncTickGate {
 pub fn fail(reason: u32, at: u32, time: u32, source: ?*const p.SyncTickGate) void {
     if (!live(0x3e)) return;
     failed = true;
-    if (clonewars_native_tick_failure[0] == 0) clonewars_native_tick_failure[0..8].* = .{ frame.?.epoch, frame.?.sequence, cursor, reason, at, if (source) |v| v.site else 0, time, if (source) |v| v.clock else 0 };
+    if (clonewars_native_tick_failure[0] == 0) {
+        clonewars_native_tick_failure[0..8].* = .{ frame.?.epoch, frame.?.sequence, cursor, reason, at, if (source) |v| v.site else 0, time, if (source) |v| v.clock else 0 };
+        clonewars_native_tick_failure_stack[0] = RtlCaptureStackBackTrace(0, 32, @ptrCast(&clonewars_native_tick_failure_stack[1]), null);
+    }
     clonewars_native_tick_debug[3] +%= 1;
     game_sync_native_fault(22);
 }

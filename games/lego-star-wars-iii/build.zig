@@ -102,6 +102,7 @@ pub fn build(b: *std.Build) void {
     _ = nativeTest(b, &native_suite, native_target, "entity_runtime", "native-entity-runtime");
     _ = nativeTest(b, &native_suite, native_target, "cadence_runtime", "native-cadence-runtime");
     _ = nativeTest(b, &native_suite, native_target, "physics_runtime", "native-physics-runtime");
+    _ = nativeTest(b, &native_suite, native_target, "breakup_source", "native-breakup-source");
     _ = nativeTest(b, &native_suite, native_target, "projectile_pool", "native-projectile-pool");
     _ = nativeTest(b, &native_suite, native_target, "combat", "native-combat");
     _ = nativeTest(b, &native_suite, native_target, "model_runtime", "native-model-runtime");
@@ -110,6 +111,7 @@ pub fn build(b: *std.Build) void {
     _ = nativeTest(b, &native_suite, native_target, "projectile_runtime", "native-projectile-runtime");
     _ = nativeTest(b, &native_suite, native_target, "native_tick_journal", "native-tick-journal");
     _ = nativeTest(b, &native_suite, native_target, "collision", "native-collision");
+    _ = nativeTest(b, &native_suite, native_target, "collision_owner", "native-collision-owner");
     _ = nativeTest(b, &native_suite, native_target, "rigid_body_binding", "native-rigid-body-binding");
     for ([_]struct { name: []const u8, mode: std.builtin.OptimizeMode }{ .{ .name = "Debug", .mode = .Debug }, .{ .name = "ReleaseSafe", .mode = .ReleaseSafe } }) |configuration| {
         for ([_]struct { name: []const u8, source: []const u8 }{

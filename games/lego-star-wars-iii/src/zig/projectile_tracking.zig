@@ -5,6 +5,7 @@ const t = s.t;
 const control = @import("projectile_control.zig");
 const read = s.read;
 extern fn shooter_observer_actor_snapshot(*@import("shooter_types.zig").Actor, usize) void;
+extern "kernel32" fn RtlCaptureStackBackTrace(u32, u32, [*]usize, ?*u32) callconv(.winapi) u16;
 pub fn actorAt(slot: i32, generation: u32) usize {
     const actor = if (slot >= 0) s.entities_actor(@intCast(slot), generation) else 0;
     return if (s.valid(actor, 0x1440) and read(u32, actor + 0x50) & 3 == 3) actor else 0;
@@ -18,6 +19,12 @@ pub fn index(entry: *const t.Tracked) usize {
 }
 pub fn failure(op: *const t.Operation, reason: u32, owner: usize, weapon: usize, flags: u32, target: usize, caller: u32, expected: u32) void {
     if (op.kind != t.keyed or !control.live(op) or @cmpxchgStrong(i32, &s.clonewars_projectile_failure_committed, 0, -1, .seq_cst, .seq_cst) != null) return;
+    const saved_error = s.win.GetLastError();
+    defer s.win.SetLastError(saved_error);
+    const stack = @frameAddress();
+    s.clonewars_projectile_stack_debug[0] = @truncate(stack);
+    s.clonewars_projectile_stack_debug[1] = RtlCaptureStackBackTrace(0, 32, @ptrCast(&s.clonewars_projectile_stack_debug[2]), null);
+    if (s.valid(stack, 2048 * 4)) s.clonewars_projectile_stack_debug[34..].* = read([2048]u32, stack);
     var value = std.mem.zeroes(t.Failure);
     value.reason = reason;
     value.sequence = if (s.current) |frame| frame.sequence else 0;

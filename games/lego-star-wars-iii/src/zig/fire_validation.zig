@@ -15,8 +15,9 @@ fn zeros(bytes: []const u8) bool {
     return true;
 }
 pub fn supportValid(s: *const p.SyncCharacterMotionState) bool {
-    if ((s.support_frame == 0) != (s.support_event == 0) or s.support_material_flags & ~@as(u32, 0x1ffff) != 0 or !v.finite(s.support_anchor) or !v.finite(s.support_normal)) return false;
-    return s.support_frame != 0 or zeros(std.mem.asBytes(s)[@offsetOf(p.SyncCharacterMotionState, "support_frame")..]);
+    if ((s.support_frame == 0) != (s.support_event == 0) or s.support_material_flags & ~@as(u32, 0x7ffff) != 0 or !v.finite(s.support_anchor) or !v.finite(s.support_normal)) return false;
+    if (s.support_frame != 0) return s.support_material_flags & p.SYNC_SUPPORT_ABSENT == 0;
+    return zeros(std.mem.asBytes(&s.support_anchor)) and zeros(std.mem.asBytes(&s.support_normal)) and (s.support_material_flags == 0 or s.support_material_flags == p.SYNC_SUPPORT_ABSENT);
 }
 pub fn valid(g: *const p.SyncFireTaskGate) bool {
     if (!sourceValid(g.spawn_source) or g.slot >= p.SYNC_MAX_ACTORS or g.generation == 0 or !abi.validLevel(g.character) or !v.finite(g.origin)) return false;
@@ -28,6 +29,8 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
             p.SYNC_ACTOR_SPELLIT_NODE => @sizeOf(p.SyncSpellItNodeState),
             p.SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY => @sizeOf(p.SyncScriptShootState),
             p.SYNC_ACTOR_PRIMARY_PERCEPTION => @sizeOf(p.SyncPrimaryPerceptionState),
+            p.SYNC_ACTOR_RIDER_FIRE => @sizeOf(p.SyncRiderFireState),
+            p.SYNC_ACTOR_ARENA_RUN_RANDOM => @sizeOf(p.SyncArenaRunRandomState),
             else => @sizeOf(p.SyncFireTaskState),
         };
         if (!zeros(data.storage[used..])) return false;
@@ -35,8 +38,10 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
     const clean = g.flags == 0 and g.action == 0;
     const boolean = g.value >= 0 and g.value <= 1;
     switch (g.kind) {
+        p.SYNC_ACTOR_ARENA_RUN_RANDOM => return g.flags <= 1 and g.action == 0 and g.value >= 0 and g.value <= 65535 and g.character == 119 and data.arena_run_random.behavior_class == 0x6dee68 and data.arena_run_random.run_state == 10,
+        p.SYNC_ACTOR_RIDER_FIRE => return g.flags <= 1 and g.action == 0 and boolean and data.rider_fire.behavior_class == 0x6d83dc and data.rider_fire.mount_slot < p.SYNC_MAX_ACTORS and data.rider_fire.mount_generation != 0 and v.finite(data.rider_fire.cooldown),
         p.SYNC_ACTOR_HAZARD_DEATH => return clean and boolean and zeros(data.storage[4..]),
-        p.SYNC_ACTOR_SPELLIT_ADMISSION => return g.flags <= 1 and (g.action == 0x24 or g.action == 0x25) and boolean and zeros(data.storage[4..]),
+        p.SYNC_ACTOR_SPELLIT_ADMISSION => return ((g.flags <= 1 and (g.action == 0x24 or g.action == 0x25)) or (g.flags >= 2 and g.flags <= 5 and g.action == 0)) and boolean and zeros(data.storage[4..]),
         p.SYNC_FIRE_TASK_VISIBILITY => return g.flags & p.SYNC_FIRE_TASK_QUEUES_SHOT != 0 and boolean and data.state.repeat <= 255 and v.finite(data.state) and data.state.delta >= 0,
         p.SYNC_FIRE_ATTACK_SUPPORT => return clean and g.value >= -128 and g.value <= 127 and v.zero(&data.state),
         p.SYNC_ACTOR_BREAKUP_VISIBILITY, p.SYNC_ACTOR_DEATH_BREAKUP, p.SYNC_ACTOR_FALL_VISIBILITY => return clean and boolean and v.zero(&data.state),

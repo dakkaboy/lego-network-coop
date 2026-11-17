@@ -8,6 +8,7 @@ const equal = @import("validation.zig").equal;
 pub var frame: ?*p.SyncFrame = null;
 pub var lease = std.mem.zeroes(Lease);
 pub var cursor: u32 = 0;
+var consumed: [1024]bool = @splat(false);
 var last_epoch: u32 = 0;
 pub var active = false;
 pub var host = false;
@@ -32,14 +33,14 @@ fn sourceWord(value: ?*const p.SyncPhysicsChoice) u32 {
     const choice = value orelse return 0;
     return switch (choice.kind) {
         p.SYNC_PHYSICS_BREAKUP_BASIS => choice.payload.breakup_basis.name_hash[0],
-        p.SYNC_PHYSICS_BREAKUP_SCALE, p.SYNC_PHYSICS_EFFECT_BIRTH => choice.payload.basic.name_hash[0],
+        p.SYNC_PHYSICS_BREAKUP_SCALE, p.SYNC_PHYSICS_EFFECT_BIRTH, p.SYNC_PHYSICS_EFFECT_STEP, p.SYNC_PHYSICS_EFFECT_REST => choice.payload.basic.name_hash[0],
         p.SYNC_PHYSICS_SPELLIT_BODY_BASIS, p.SYNC_PHYSICS_SPELLIT_BODY_MOTION => choice.payload.spellit_body.key[0],
         else => if (choice.kind >= p.SYNC_PHYSICS_SPELLIT_SEED) choice.payload.world.source_name[0] else choice.payload.basic.name_hash[0],
     };
 }
 fn clock(value: ?*const p.SyncPhysicsChoice) u32 {
     const choice = value orelse return 0;
-    return if (choice.kind < p.SYNC_PHYSICS_SPELLIT_SEED or choice.kind == p.SYNC_PHYSICS_BREAKUP_SCALE or choice.kind == p.SYNC_PHYSICS_EFFECT_BIRTH) choice.payload.basic.clock else choice.payload.world.clock;
+    return if (choice.kind < p.SYNC_PHYSICS_SPELLIT_SEED or choice.kind == p.SYNC_PHYSICS_BREAKUP_SCALE or choice.kind == p.SYNC_PHYSICS_EFFECT_BIRTH or choice.kind == p.SYNC_PHYSICS_EFFECT_STEP or choice.kind == p.SYNC_PHYSICS_EFFECT_REST) choice.payload.basic.clock else choice.payload.world.clock;
 }
 pub fn fail(reason: u32, local: ?*const p.SyncPhysicsChoice, expected: ?*const p.SyncPhysicsChoice) c_int {
     if (!live()) return 0;
@@ -68,7 +69,27 @@ pub fn record(choice: p.SyncPhysicsChoice) bool {
 }
 pub fn consume(count: u32) void {
     cursor += count;
+    while (cursor < frame.?.physics_choice_count and consumed[cursor]) cursor += 1;
     clonewars_physics_input_debug[1] +%= count;
+}
+pub fn rest(local: *const p.SyncPhysicsChoice) ?u32 {
+    if (!live() or failed or host or local.kind != p.SYNC_PHYSICS_EFFECT_REST or !validation.valid(local)) return null;
+    var selected: ?u32 = null;
+    var i = cursor;
+    while (i < frame.?.physics_choice_count) : (i += 1) {
+        const e = &frame.?.physics_choices[i];
+        if (e.kind != p.SYNC_PHYSICS_EFFECT_REST or e.site != local.site or e.payload.basic.clock != local.payload.basic.clock) break;
+        if (consumed[i] or !validation.sameSource(e, local)) continue;
+        if (selected != null) return null;
+        selected = i;
+    }
+    if (selected) |index| {
+        consumed[index] = true;
+        clonewars_physics_input_debug[1] +%= 1;
+        while (cursor < frame.?.physics_choice_count and consumed[cursor]) cursor += 1;
+        return frame.?.physics_choices[index].payload.basic.recipe[0];
+    }
+    return null;
 }
 pub export fn physics_input_begin(next: ?*p.SyncFrame, authority: c_int) c_int {
     const f = next orelse return 0;
@@ -77,6 +98,7 @@ pub export fn physics_input_begin(next: ?*p.SyncFrame, authority: c_int) c_int {
     frame = f;
     lease = current;
     cursor = 0;
+    consumed = @splat(false);
     host = authority != 0;
     failed = false;
     active = true;

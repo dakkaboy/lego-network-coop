@@ -16,6 +16,7 @@ pub export var clonewars_rts_body_input_failure: [12]u32 = @splat(0);
 pub export var clonewars_rts_visibility_input_debug: [4]u32 = @splat(0);
 pub export var clonewars_rts_visibility_input_failure: [12]u32 = @splat(0);
 pub export var clonewars_rts_attack_visibility_debug: [4]u32 = @splat(0);
+pub export var clonewars_rts_turret_visibility_debug: [4]u32 = @splat(0);
 export var attack_visibility_resume: usize = 0x54667b;
 extern fn coherent_frame_get(*Token, u32) c_int;
 extern fn coherent_frame_valid(*const Token, u32) c_int;
@@ -167,6 +168,11 @@ fn visibilityInvoke(address: usize) callconv(.c) usize {
                 clonewars_rts_attack_visibility_debug[1] +%= 1;
             }
         }
+        if (s.site == 0x561ba9) {
+            clonewars_rts_turret_visibility_debug[0] +%= 1;
+            clonewars_rts_turret_visibility_debug[1] +%= @intFromBool(v.value != before.payload.world.value);
+            clonewars_rts_turret_visibility_debug[2..4].* = .{ before.payload.world.value, v.value };
+        }
         win.store(u8, s.source.pad + 0x27d, @truncate(v.value));
         clonewars_rts_visibility_input_debug[0] +%= 1;
         if (s.site == 0x546674) clonewars_rts_visibility_input_debug[2] +%= 1;
@@ -196,18 +202,15 @@ pub export fn rts_visibility_input_update(object: usize, delta: u32, original: ?
 pub export fn rts_attack_visibility_input(object: usize) void {
     rts_visibility_input_update(object, 0, null, 0x546674);
 }
+pub export fn rts_turret_visibility_input(object: usize, delta: u32) callconv(.{ .x86_thiscall = .{} }) void {
+    rts_visibility_input_update(object, delta, @ptrFromInt(0x546b10), 0x561ba9);
+}
 pub export fn rts_visibility_attack_install() c_int {
-    const expected = "\x8b\x43\x24\x80\xb8\x7d\x02\x00\x00\x00";
-    const site: usize = 0x546671;
-    if (!win.accessible(site, expected.len, false) or !std.mem.eql(u8, @as([*]const u8, @ptrFromInt(site))[0..expected.len], expected)) return 0;
-    var old: u32 = 0;
-    if (win.VirtualProtect(site, expected.len, 0x40, &old) == 0) return 0;
-    win.store(u8, site, 0xe9);
-    win.store(u32, site + 1, @truncate(@intFromPtr(&rts_attack_visibility_input_bridge) -% site -% 5));
-    for (5..expected.len) |i| win.store(u8, site + i, 0x90);
-    const flushed = win.FlushInstructionCache(win.GetCurrentProcess(), site, expected.len) != 0;
-    var ignored: u32 = 0;
-    return @intFromBool(win.VirtualProtect(site, expected.len, old, &ignored) != 0 and flushed);
+    const patches = [_]@import("hook_transaction.zig").Patch{
+        .{ .address = 0x546671, .expected = "\x8b\x43\x24\x80\xb8\x7d\x02\x00\x00\x00", .target = @intFromPtr(&rts_attack_visibility_input_bridge) },
+        .{ .address = 0x561ba9, .expected = "\xe8\x62\x4f\xfe\xff", .target = @intFromPtr(&rts_turret_visibility_input), .opcode = 0xe8 },
+    };
+    return @intFromBool(@import("hook_transaction.zig").apply(&patches));
 }
 comptime {
     _ = @import("rts_attack_bridge.zig");

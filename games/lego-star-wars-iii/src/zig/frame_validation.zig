@@ -109,7 +109,7 @@ pub fn valid(f: *const p.SyncFrame, bytes: u32) bool {
         if (tag.id == 0 or !abi.validLevel(tag.from) or !abi.validLevel(tag.to) or tag.from == tag.to or tag.from_generation == 0 or tag.to_generation == 0 or tag.phase > 1 or
             tag.source > p.SYNC_TAG_ACTOR_UPDATE or (tag.source != 0 and (tag.phase != 0 or tag.parent != 0)) or
             !abi.validLevel(tag.from_identity.character) or !abi.validLevel(tag.to_identity.character) or
-            !fire.sourceValid(tag.from_identity.spawn_source) or !fire.sourceValid(tag.to_identity.spawn_source) or !delta(tag.delta)) return false;
+            !fire.sourceValid(tag.from_identity.spawn_source) or !fire.sourceValid(tag.to_identity.spawn_source) or !@import("frame_tag_time.zig").valid(f, &tag, tags[0..i])) return false;
         if (tag.parent != 0) {
             var found = false;
             for (tags[0..i]) |parent| if (parent.id == tag.parent and parent.phase == tag.phase) {

@@ -174,4 +174,19 @@ pub fn main() void {
     pointer(&body, 0x1c, @intFromPtr(other_name));
     check(@src(), source.native_spellit_body_matches(&body_source, &body_binding) == 0);
     check(@src(), apply() == 0 and matrix_calls == 0 and linear_calls == 0 and angular_calls == 0);
+    pointer(&body, 0x1c, @intFromPtr(name));
+    body_canonical.linear[3] = @bitCast(@as(u32, 0xffffffff));
+    body_canonical.angular[3] = @bitCast(@as(u32, 0x7fc12345));
+    win.SetLastError(321);
+    invoke_body();
+    check(@src(), body_result == 1 and matrix_calls == 1 and linear_calls == 1 and angular_calls == 1);
+    check(@src(), win.load(u32, @intFromPtr(&dynamics) + 0x2c) == 0xffffffff and win.load(u32, @intFromPtr(&dynamics) + 0x3c) == 0x7fc12345);
+    check(@src(), body_retained == 1 and body_before == body_after and body_mx_before == body_mx_after and win.GetLastError() == 321);
+    const good = body_canonical;
+    for (0..24) |lane| {
+        if (lane == 19 or lane == 23) continue;
+        body_canonical = good;
+        @as(*[24]f32, @ptrCast(&body_canonical))[lane] = std.math.nan(f32);
+        check(@src(), apply() == 0 and matrix_calls == 1 and linear_calls == 1 and angular_calls == 1);
+    }
 }

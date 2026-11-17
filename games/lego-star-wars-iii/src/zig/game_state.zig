@@ -535,7 +535,10 @@ pub export fn game_poll() void {
         const published_epoch = api.lan_epoch();
         if (published_epoch != 0 and published_epoch == api.game_sync_epoch() and api.game_sync_status() == 2) last_gameplay_session = session;
         if (api.lan_is_host() != 0) {
-            if (session != 0 and last_gameplay_session != 0 and last_gameplay_session != session and published_epoch == 0 and (playing or starting) and pending < 0 and game_network_level_valid(current) != 0 and desiredLevel() < 0) game_request_reload(current);
+            const reconnecting = last_gameplay_session != 0 and last_gameplay_session != session;
+            // The peer's fresh loader cannot replay an opening track the host has already consumed.
+            const opening_in_progress = starting and read(u32, 0xfb4b6c) != 0;
+            if (session != 0 and published_epoch == 0 and (reconnecting or opening_in_progress) and (playing or starting) and pending < 0 and game_network_level_valid(current) != 0 and desiredLevel() < 0) game_request_reload(current);
             hostPublication(current, playing or starting, pending);
         } else {
             pollClientTransition(current, playing or starting);

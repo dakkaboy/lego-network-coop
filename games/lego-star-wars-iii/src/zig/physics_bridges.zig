@@ -19,13 +19,15 @@ comptime {
         \\    movl $0x1f80,516(%esp)
         \\    ldmxcsr 516(%esp)
         \\    movl 512(%esp),%eax
+        \\    subl $12,%esp
+        \\    pushl 0(%eax)
         \\    pushl 0x5c(%eax)
         \\    pushl 0x54(%eax)
         \\    pushl %edx
         \\    pushl %esi
         \\    cld
         \\    call _physics_apply_breakup_launch
-        \\    addl $16,%esp
+        \\    addl $32,%esp
         \\    fxrstor (%esp)
         \\    movl 512(%esp),%esp
         \\    popal

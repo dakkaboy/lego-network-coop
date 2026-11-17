@@ -25,6 +25,25 @@ export fn entities_generation(_: usize) u32 {
 export fn entities_bind_native_actor(_: *const s.p.SyncFrame, _: usize) c_int {
     return 0;
 }
+export fn entities_update() void {}
+export fn entities_spawn_source(_: usize, _: *u32) s.p.SyncSpawnSource {
+    return .{ .producer = 0, .serial = 0 };
+}
+export fn entities_bind_native_reference(_: *const s.p.SyncActor, _: usize) c_int {
+    return 0;
+}
+export fn entities_observed_generation(_: usize) u32 {
+    return 0;
+}
+export fn entities_allocation_retained(_: usize, _: u32) c_int {
+    return 0;
+}
+export fn entities_actor(_: u32, _: u32) usize {
+    return 0;
+}
+export fn entities_resolve_identity(_: *const s.p.SyncFrame, _: u32, _: u32) usize {
+    return 0;
+}
 export fn lan_status() c_long {
     return 0;
 }
@@ -58,9 +77,15 @@ fn expectProtection(address: usize) void {
     check(@src(), win.VirtualQuery(address, &info, @sizeOf(win.MemoryInfo)) != 0 and info.protection == 0x20);
 }
 pub fn main() void {
+    writable(0x475acb, 10);
+    s.store([10]u8, 0x475acb, .{ 0x5f, 0x5e, 0x5d, 0x5b, 0x83, 0xc4, 8, 0xc2, 8, 0 });
+    executable(0x475acb, 10);
     writable(0x47699b, 3);
     s.store([3]u8, 0x47699b, .{ 0x83, 0xfe, 4 });
     executable(0x47699b, 3);
+    writable(0x8766a5, 8);
+    s.store([8]u8, 0x8766a5, .{ 0x83, 0xc4, 8, 0xe8, 0x83, 0xb2, 0xf1, 0xff });
+    executable(0x8766a5, 8);
     const patches = install.patches();
     var prefixes: [patches.len + install.hit_rng.len][]const u8 = undefined;
     var addresses: [prefixes.len]usize = undefined;
@@ -79,6 +104,15 @@ pub fn main() void {
         writable(address, bytes.len);
         @memcpy(@as([*]u8, @ptrFromInt(address))[0..bytes.len], bytes);
         executable(address, bytes.len);
+    }
+    for (0..10) |i| {
+        writable(0x475acb, 10);
+        s.store(u8, 0x475acb + i, s.load(u8, 0x475acb + i) ^ 1);
+        executable(0x475acb, 10);
+        check(@src(), install.native_tick_install() == 0);
+        writable(0x475acb, 10);
+        s.store(u8, 0x475acb + i, s.load(u8, 0x475acb + i) ^ 1);
+        executable(0x475acb, 10);
     }
     for (prefixes, addresses, 0..) |prefix, address, changed| for (0..prefix.len) |byte| {
         writable(address, prefix.len);

@@ -56,11 +56,28 @@ extern fn spellit_node_thunk() void;
 extern fn force_geometry_input_thunk() void;
 extern fn spellit_position_thunk() void;
 extern fn character_motion_thunk() void;
+extern fn spellit_actor_eligible(usize) u32;
+extern fn spellit_action_matches(usize, i32) u32;
+pub export var spellit_manager_force_resume: usize = 0x857e16;
+pub export var spellit_manager_special_resume: usize = 0x857e29;
+extern fn spellit_manager_force_thunk() void;
+extern fn spellit_manager_special_thunk() void;
 pub export var hazard_death_continue: usize = 0x437e4a;
 pub export var hazard_death_skip: usize = 0x437e73;
 extern fn hazard_death_thunk() void;
-pub fn patches() [24]hooks.Patch {
+pub export var rider_fire_visible_resume: usize = 0x4395fb;
+pub export var rider_fire_hidden_resume: usize = 0x4397ef;
+extern fn rider_fire_visibility_thunk() void;
+extern fn arena_run_random_thunk() void;
+pub fn patches() [31]hooks.Patch {
     return .{
+        .{ .address = 0x464b3f, .expected = "\xe8\x0c\x99\x32\x00", .target = @intFromPtr(&arena_run_random_thunk), .opcode = 0xe8 },
+        .{ .address = 0x464b6c, .expected = "\xe8\xdf\x98\x32\x00", .target = @intFromPtr(&arena_run_random_thunk), .opcode = 0xe8 },
+        .{ .address = 0x4395f1, .expected = "\x80\x78\x42\x00\x0f\x84\xf4\x01\x00\x00", .target = @intFromPtr(&rider_fire_visibility_thunk) },
+        .{ .address = 0x857e10, .expected = "\x8b\x42\x64\x57\xff\xd0", .target = @intFromPtr(&spellit_manager_force_thunk) },
+        .{ .address = 0x857e23, .expected = "\x57\x0f\x95\xc3\xff\xd0", .target = @intFromPtr(&spellit_manager_special_thunk) },
+        .{ .address = 0x857e5a, .expected = "\xe8\xb1\xa7\x06\x00", .target = @intFromPtr(&spellit_actor_eligible), .opcode = 0xe8 },
+        .{ .address = 0x857e6e, .expected = "\xe8\xdd\xf7\x19\x00", .target = @intFromPtr(&spellit_action_matches), .opcode = 0xe8 },
         .{ .address = 0x437e45, .expected = "\xf6\xc4\x41\x75\x29", .target = @intFromPtr(&hazard_death_thunk) },
         .{ .address = 0x96d94a, .expected = "\x8b\x4c\x24\x14\x88\x8f\x8e\x13\x00\x00", .target = @intFromPtr(&cadence_period_thunk) },
         .{ .address = 0x42fe2b, .expected = "\x8b\x43\x08\x85\xc0\x74\x06\x80\x78\x42\x00\x75\x0a\xf6\x46\x04\x08\x0f\x84\xb4\x01\x00\x00", .target = @intFromPtr(&fire_task_gate_thunk) },
@@ -97,8 +114,14 @@ pub fn install() c_int {
     return 1;
 }
 comptime {
+    _ = @import("arena_run_random.zig");
+    _ = @import("spellit_eligibility.zig");
+    _ = @import("rider_fire_input.zig");
+    asm (@import("rider_fire_bridge.zig").code);
     asm (@import("hazard_death_bridge.zig").code);
     _ = @import("cadence_bridges.zig");
     asm (@import("spellit_admission_bridge.zig").code(0));
     asm (@import("spellit_admission_bridge.zig").code(1));
+    asm (@import("spellit_admission_bridge.zig").managerCode(false));
+    asm (@import("spellit_admission_bridge.zig").managerCode(true));
 }

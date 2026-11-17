@@ -102,6 +102,7 @@ pub fn main() void {
 
     for ([_]a.Mode{ .bind_failure, .tag_cancel, .geometry_failure, .collect_cancel, .projectile_reset, .drain_nested, .drain_stalled, .throw_prep, .send_failure }) |mode| {
         a.setup(mode, true);
+        finish.clonewars_dispatch_drain_failure = @splat(0);
         fx = original;
         const result = enter(&fx);
         if (mode == .bind_failure or mode == .tag_cancel) {
@@ -125,7 +126,10 @@ pub fn main() void {
             check(@src(), a.sent == 0 and s.core.published == 0);
             if (mode == .geometry_failure) check(@src(), s.fault == 15);
             if (mode == .send_failure) check(@src(), s.fault == 3);
-            if (mode == .drain_stalled) check(@src(), s.clonewars_sync_first_reject[0] == 29 and s.reject_bits != 0);
+            if (mode == .drain_stalled) {
+                check(@src(), s.clonewars_sync_first_reject[0] == 29 and s.reject_bits != 0);
+                check(@src(), finish.clonewars_dispatch_drain_failure[0] == 9 and finish.clonewars_dispatch_drain_failure[3] == 0 and finish.clonewars_dispatch_drain_failure[4] == 1 and finish.clonewars_dispatch_drain_failure[5] == 0);
+            }
         }
         close(255, false);
     }

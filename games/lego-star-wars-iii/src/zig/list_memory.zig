@@ -1,19 +1,22 @@
 const std = @import("std");
 const win = @import("win32.zig");
 pub fn Cache(comptime query: anytype) type {
-    return makeCache(query, false);
+    return makeCache(query, null);
 }
 pub fn ResidentCache(comptime query: anytype) type {
-    return makeCache(query, true);
+    return ResidentCacheWithPages(query, @import("page_access.zig").ResidentPages);
 }
-fn makeCache(comptime query: anytype, comptime resident: bool) type {
+pub fn ResidentCacheWithPages(comptime query: anytype, comptime Pages: type) type {
+    return makeCache(query, Pages);
+}
+fn makeCache(comptime query: anytype, comptime Pages: ?type) type {
     return struct {
         const Self = @This();
         const Region = struct { first: usize, last: usize };
         regions: [32]Region = undefined,
         count: usize = 0,
         next: usize = 0,
-        resident_pages: if (resident) @import("page_access.zig").ResidentPages else void = if (resident) .{} else {},
+        resident_pages: if (Pages) |T| T else void = if (Pages != null) .{} else {},
         fn remember(self: *Self, region: Region) void {
             self.regions[self.next] = region;
             self.next = (self.next + 1) % self.regions.len;
@@ -22,7 +25,7 @@ fn makeCache(comptime query: anytype, comptime resident: bool) type {
         pub fn contains(self: *Self, address: usize, size: usize) bool {
             if (address == 0) return false;
             for (self.regions[0..self.count]) |region| if (address >= region.first and address < region.last and size <= region.last - address) return true;
-            if (comptime resident) {
+            if (comptime Pages != null) {
                 if (self.resident_pages.readable(address, size)) |result| return result;
             }
             var info: win.MemoryInfo = undefined;

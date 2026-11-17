@@ -25,6 +25,7 @@ pub fn reset(normalize: bool) void {
     if (s.lifecycle_serial == 0) s.lifecycle_serial +%= 1;
     s.detachFire();
     @atomicStore(i32, &s.clonewars_projectile_failure_committed, 0, .seq_cst);
+    s.clonewars_projectile_stack_debug = @splat(0);
     s.frame_bound = false;
     s.frame_started = false;
     s.frame_complete = false;

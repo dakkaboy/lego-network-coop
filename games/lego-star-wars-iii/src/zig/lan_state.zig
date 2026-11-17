@@ -377,10 +377,14 @@ pub fn takeProfile(ticket: u32, value: *p.SyncProfile) bool {
 pub fn acceptProfile(ticket: u32, value: *const p.SyncProfile) void {
     lock();
     defer unlock();
-    if (active(ticket)) {
-        peer_profile = value.*;
-        peer_profile_pending = true;
+    if (!active(ticket) or value.epoch < local_state.epoch or value.epoch < peer_profile.epoch) return;
+    if (value.epoch == peer_profile.epoch) {
+        // Replacing a future snapshot on every host tick can keep it ahead of a slower peer forever.
+        if (peer_profile_pending and value.sequence >= peer_profile.sequence) return;
+        if (!peer_profile_pending and value.sequence < peer_profile.sequence) return;
     }
+    peer_profile = value.*;
+    peer_profile_pending = true;
 }
 pub fn takeFrame(ticket: u32, value: *p.SyncFrame) bool {
     lock();
@@ -394,6 +398,7 @@ pub fn reset(host: bool) void {
     peer_state = .{};
     own_profile_pending = false;
     peer_profile_pending = false;
+    peer_profile = std.mem.zeroes(p.SyncProfile);
     @atomicStore(i32, &host_role, @intFromBool(host), .seq_cst);
     @atomicStore(i32, &local_level, -1, .seq_cst);
     @atomicStore(i32, &remote_level, -1, .seq_cst);
@@ -409,6 +414,7 @@ pub export fn lan_stop() void {
     clearFrames();
     own_profile_pending = false;
     peer_profile_pending = false;
+    peer_profile = std.mem.zeroes(p.SyncProfile);
     if (ticket != 0) publishSession(ticket);
 }
 pub export fn lan_status() i32 {

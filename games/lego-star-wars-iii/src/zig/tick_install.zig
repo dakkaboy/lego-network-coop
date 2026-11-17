@@ -1,5 +1,10 @@
 const s = @import("tick_state.zig");
 const hook = @import("hook_transaction.zig");
+const membership = @import("tick_pack_mutation.zig");
+extern fn native_pack_remove_observer() void;
+extern fn native_pack_construct_observer() void;
+extern fn native_pack_destroy_observer() void;
+extern fn target_retirement_thunk() void;
 extern fn native_global_pack_registry_count() c_uint;
 extern fn native_pack_behavior_bridge() void;
 extern fn native_gizmo_turret_bridge() void;
@@ -39,8 +44,16 @@ extern fn native_pack_goal_active_bridge() void;
 extern fn native_pack_hit_int_input() void;
 extern fn native_pack_hit_float_input() void;
 extern fn native_rts_wait_seed_input() void;
-pub fn patches() [35]hook.Patch {
+extern fn native_pack_spawn_rng_input() void;
+extern fn native_pack_spawn_birth_input() void;
+pub fn patches() [41]hook.Patch {
     return .{
+        .{ .address = s.site.PACK_SPAWN_X, .expected = "\xe8\x5d\xe8\xfe\xff", .target = @intFromPtr(&native_pack_spawn_rng_input), .opcode = 0xe8 },
+        .{ .address = s.site.PACK_SPAWN_Z, .expected = "\xe8\x41\xe8\xfe\xff", .target = @intFromPtr(&native_pack_spawn_rng_input), .opcode = 0xe8 },
+        .{ .address = s.site.PACK_SPAWN_BIRTH, .expected = "\xe8\x2e\xfd\xfe\xff", .target = @intFromPtr(&native_pack_spawn_birth_input), .opcode = 0xe8 },
+        .{ .address = 0x40ab90, .expected = "\x53\x8b\x5c\x24\x08", .target = @intFromPtr(&native_pack_remove_observer), .opcode = 0xe9 },
+        .{ .address = 0x461e50, .expected = "\x6a\xff\x68\x96\xce\xa9\x00", .target = @intFromPtr(&native_pack_construct_observer), .opcode = 0xe9 },
+        .{ .address = 0x4620e0, .expected = "\x6a\xff\x68\xd6\xce\xa9\x00", .target = @intFromPtr(&native_pack_destroy_observer), .opcode = 0xe9 },
         .{ .address = 0x562ba7, .expected = "\x83\x7f\x0c\x00\x74\x16", .target = @intFromPtr(&native_rts_dispatch_observer), .opcode = 0xe9 },
         .{ .address = s.site.GIZMO_TURRET_SOURCE, .expected = "\x0f\xb7\x83\xba\x01\x00\x00", .target = @intFromPtr(&native_gizmo_turret_bridge), .opcode = 0xe9 },
         .{ .address = s.site.WEAPON_COMMAND_ACTOR, .expected = "\x80\xbb\xfb\x08\x00\x00\xff", .target = @intFromPtr(&native_weapon_commands_input), .opcode = 0xe9 },
@@ -80,18 +93,25 @@ pub fn patches() [35]hook.Patch {
 }
 pub const hit_rng = [_][2]u32{ .{ s.site.PACK_HIT_REACTION, 0x6d6140 }, .{ s.site.PACK_HIT_AVOIDANCE, 0x6d6140 }, .{ s.site.PACK_HIT_DEBRIS, 0x6d6140 }, .{ s.site.PACK_HIT_SHOCK, 0x6d6140 }, .{ s.site.PACK_HIT_HEADING, 0x6d6140 }, .{ s.site.PACK_IMPULSE_TIMER, 0x6d60d0 }, .{ s.site.PACK_IMPULSE_SPEED, 0x6d60d0 }, .{ s.site.PACK_IMPULSE_HEADING, 0x6d6140 }, .{ s.site.PACK_DEATH_CLIP, 0x6d60d0 }, .{ s.site.PACK_MODE10_DURATION, 0x6d60d0 }, .{ s.site.PACK_MODE10_CLIP_PHASE, 0x6d60d0 }, .{ s.site.RTS_WAIT_RNG, 0x573100 } };
 pub export fn native_tick_install() c_int {
+    const exit = [_]u8{ 0x5f, 0x5e, 0x5d, 0x5b, 0x83, 0xc4, 8, 0xc2, 8, 0 };
+    if (!s.readable(0x475acb, exit.len) or !@import("std").mem.eql(u8, &s.load([10]u8, 0x475acb), &exit)) return 0;
     if (native_global_pack_registry_count() == 0) return 0;
     var expected: [hit_rng.len][5]u8 = undefined;
-    var all: [35 + hit_rng.len]hook.Patch = undefined;
-    all[0..35].* = patches();
-    for (hit_rng, &expected, all[35..]) |source, *bytes, *patch| {
+    var all: [42 + hit_rng.len]hook.Patch = undefined;
+    all[0..41].* = patches();
+    for (hit_rng, &expected, all[41..][0..hit_rng.len]) |source, *bytes, *patch| {
         bytes[0] = 0xe8;
         @import("std").mem.writeInt(u32, bytes[1..5], source[1] -% source[0] -% 5, .little);
         patch.* = .{ .address = source[0], .expected = bytes, .target = if (source[1] == 0x573100) @intFromPtr(&native_rts_wait_seed_input) else if (source[1] == 0x6d6140) @intFromPtr(&native_pack_hit_int_input) else @intFromPtr(&native_pack_hit_float_input), .opcode = 0xe8 };
     }
-    return @intFromBool(hook.apply(&all));
+    all[all.len - 1] = .{ .address = 0x8766a5, .expected = "\x83\xc4\x08\xe8\x83\xb2\xf1\xff", .target = @intFromPtr(&target_retirement_thunk), .opcode = 0xe9 };
+    if (!hook.apply(&all)) return 0;
+    @atomicStore(u32, &membership.clonewars_pack_membership_observer_active, 1, .release);
+    return 1;
 }
 comptime {
+    _ = @import("pack_spawn_bridge.zig");
+    _ = @import("tick_pack_spawn.zig");
     _ = @import("tick_pack_behavior.zig");
     _ = @import("tick_resume.zig");
     _ = @import("tick_bridges.zig");

@@ -61,6 +61,11 @@ fn seed(member: usize, at: u32, seed_site: u32, with_target: bool, require_ident
     const local = load(u32, 0xea178c);
     const values = [_]u32{ id.key(), local };
     const sites = [_]u32{ at, seed_site };
+    if (at == v.PACK_HIT_DEBRIS) {
+        const expected = s.firstExpected();
+        const pack = load(usize, member + 0x68);
+        s.clonewars_native_pack_seed_context = .{ s.frame.?.epoch, s.frame.?.sequence, s.clock(), at, @truncate(member), id.index, id.witness, values[0], local, if (expected) |e| e.value else 0, if (expected) |e| e.site else 0, if (expected) |e| e.clock else 0, load(u32, member + 0x6c), load(u32, member + 0x70), load(u32, pack + 0xac), @import("tick_pack_mutation.zig").clonewars_pack_membership_revision };
+    }
     if (s.host) {
         if (!s.capacity(2, at)) return;
     } else if (!s.match(&values, &sites, 1, false)) return;
@@ -90,6 +95,15 @@ pub export fn native_pack_hit_seed(member: usize, at: u32) void {
         seed(member, at, at + 5, false, false, &s.clonewars_native_pack_hit_correction);
         return;
     };
+}
+pub export fn native_pack_hit_seed_bridge(member: usize, at: u32, native_stack: usize) void {
+    const saved = s.win.GetLastError();
+    defer s.win.SetLastError(saved);
+    if (s.ready() and at == v.PACK_HIT_DEBRIS and s.readable(native_stack, 36) and load(u32, native_stack) == at + 5) {
+        s.clonewars_native_pack_hit_caller = .{ s.frame.?.epoch, s.frame.?.sequence, s.clock(), @truncate(member), load(u32, native_stack), load(u32, native_stack + 28), load(u32, native_stack + 32), @truncate(native_stack) };
+        @import("pack_hit_query_observer.zig").observe(member, native_stack);
+    }
+    native_pack_hit_seed(member, at);
 }
 pub export fn native_pack_rearm_seed(member: usize) void {
     seed(member, v.PACK_REARM_MEMBER, v.PACK_REARM_SEED, true, true, null);
@@ -163,7 +177,7 @@ pub export fn native_pack_mode(member: usize, entry: usize) void {
         }
     }
     if (s.host) {
-        if (!s.capacity(if (dying) 6 else 3, at)) return;
+        if (!s.capacity(if (dying) 6 else if (mode & 255 == 18) 3 + s.site.PACK_FIRE_FIELDS else 3, at)) return;
     } else if (three == null or three.?[0].site != at or three.?[0].clock != s.clock() or three.?[0].value != id.index or three.?[1].site != v.PACK_MODE_WITNESS or three.?[1].clock != s.clock() or three.?[1].value != id.witness or three.?[2].site != v.PACK_MODE_VALUE or three.?[2].clock != s.clock() or !s.valid.gateValid(three.?[2])) {
         if (s.clonewars_native_tick_failure[0] == 0) s.clonewars_native_tick_failure[8..16].* = .{ id.index, id.witness, if (expected) |e| e.value else 0xffffffff, if (s.expected(2)) |e| e[1].value else 0, load(u32, member + 0x6c), load(u32, member + 0x70), load(u32, pack + 0xf8), load(u32, pack + 0xfc) };
         s.fail(2, at, s.clock(), expected);
@@ -172,6 +186,7 @@ pub export fn native_pack_mode(member: usize, entry: usize) void {
     _ = s.decision(at, id.index);
     _ = s.decision(v.PACK_MODE_WITNESS, id.witness);
     const source = s.decision(v.PACK_MODE_VALUE, local);
+    if (mode & 255 == 18 and !@import("tick_pack_fire_target.zig").apply(member)) return;
     if (!s.host and !s.failed and source != local) {
         store(u8, member + 0x60, @truncate(source));
         store(u8, entry, @truncate(source >> 8 & 1));
@@ -190,4 +205,8 @@ pub export fn native_pack_mode(member: usize, entry: usize) void {
             }
         }
     }
+}
+pub export fn native_pack_mode_checked(member: usize, entry: usize) u32 {
+    native_pack_mode(member, entry);
+    return @intFromBool(!s.active or !s.failed);
 }

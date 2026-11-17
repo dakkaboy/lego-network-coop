@@ -20,6 +20,12 @@ var updates_called: u32 = 0;
 var regen_calls: u32 = 0;
 var valid = true;
 var fault: i32 = 0;
+var queries: u32 = 0;
+var revoked_page: usize = 0;
+pub fn object_progress_query(address: usize, info: *win.MemoryInfo, length: usize) usize {
+    queries += 1;
+    return win.VirtualQuery(address, info, length);
+}
 const Update = *const fn (usize, u32) callconv(.{ .x86_thiscall = .{} }) void;
 const Regen = *const fn (usize, u8, u8, u32, c_int) callconv(.{ .x86_thiscall = .{} }) u8;
 var update: Update = undefined;
@@ -68,6 +74,11 @@ fn nativeRegen(value: usize, current: u8, maximum: u8, delta: u32, enabled: c_in
         16 => win.store(u8, node + 0xec, 3),
         17 => valid = false,
         18 => put(manager + 0x24, 0),
+        25, 26 => {
+            revoked_page = if (mode == 25) recipe else node;
+            var old: u32 = 0;
+            check(@src(), win.VirtualProtect(revoked_page, 0x1000, 1, &old) != 0);
+        },
         else => {},
     }
     win.SetLastError(777);
@@ -125,6 +136,13 @@ fn run() Snapshot {
     if (mode == 24) valid = false;
     if (mode == 21) out.render = render(regen_provider, 2, 8, 0x3f800000, 1);
     out.result = progress.object_progress_world_complete(world, &token);
+    if (revoked_page != 0) {
+        const err = win.GetLastError();
+        var old: u32 = 0;
+        check(@src(), win.VirtualProtect(revoked_page, 0x1000, 4, &old) != 0);
+        revoked_page = 0;
+        win.SetLastError(err);
+    }
     out.error_code = win.GetLastError();
     out.fault = fault;
     out.updates = updates_called;
@@ -173,5 +191,30 @@ pub fn main() void {
         for (std.mem.asBytes(&actual)) |byte| result = (result ^ byte) *% 16777619;
         if (result != hash) std.debug.print("object_progress mode={d} hash={d} expected={d}\n", .{ mode, result, hash });
         check(@src(), result == hash);
+    }
+    for (25..27) |i| {
+        mode = @intCast(i);
+        const actual = run();
+        check(@src(), actual.result == 0 and actual.fault == 15 and actual.failure[2] == 6 and actual.current == 2);
+    }
+    const count = 2048;
+    const bulk = win.VirtualAlloc(0, count * 0x100, 0x3000, 4);
+    check(@src(), bulk != 0);
+    defer check(@src(), win.VirtualFree(bulk, 0, 0x8000) != 0);
+    for (0..2) |reverse| {
+        mode = @intCast(100 + reverse);
+        setup();
+        @memset(@as([*]u8, @ptrFromInt(bulk))[0 .. count * 0x100], 0);
+        for (0..count) |i| {
+            const index = if (reverse == 0) i else count - 1 - i;
+            const next = if (i + 1 == count) 0 else bulk + (if (reverse == 0) i + 1 else count - 2 - i) * 0x100;
+            put(bulk + index * 0x100 + 0x24, next);
+        }
+        put(manager + 0x24, bulk + (if (reverse == 0) @as(usize, 0) else count - 1) * 0x100);
+        update(manager, 0x3d23d70a);
+        queries = 0;
+        check(@src(), progress.object_progress_world_complete(world, &token) != 0 and fault == 0 and regen_calls == 0);
+        std.debug.print("object progress inactive nodes={d} reverse={d} queries={d}\n", .{ count, reverse, queries });
+        check(@src(), queries <= 256);
     }
 }

@@ -308,10 +308,12 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\    cld
     \\    movl 36(%eax),%edx
     \\    subl $5,%edx
-    \\    subl $8,%esp
+    \\    leal 36(%eax),%ecx
+    \\    subl $4,%esp
+    \\    pushl %ecx
     \\    pushl %edx
     \\    pushl 4(%eax)
-    \\    call _native_pack_hit_seed
+    \\    call _native_pack_hit_seed_bridge
     \\    addl $16,%esp
     \\    fxrstor (%esp)
     \\    movl 512(%esp),%esp
@@ -909,8 +911,10 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\    subl $8,%esp
     \\    pushl %edx
     \\    pushl 4(%eax)
-    \\    call _native_pack_mode
+    \\    call _native_pack_mode_checked
     \\    addl $16,%esp
+    \\    testl %eax,%eax
+    \\    jz 1f
     \\    fxrstor (%esp)
     \\    movl 512(%esp),%esp
     \\    popal
@@ -918,6 +922,11 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\    movzbl 0x60(%esi),%eax
     \\    cmpl $0x1d,%eax
     \\    jmp *_pack_mode_resume
+    \\1: fxrstor (%esp)
+    \\    movl 512(%esp),%esp
+    \\    popal
+    \\    popfl
+    \\    jmp *_pack_mode_abort
     ;
     if (std.mem.eql(u8, name, "native_rts_pack_gate")) return
     \\.text
