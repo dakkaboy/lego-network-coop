@@ -15,7 +15,16 @@ target_compile_options(d3d9 PRIVATE /W4 /WX)
 target_include_directories(d3d9 PRIVATE src)
 target_link_libraries(d3d9 PRIVATE saga_session ws2_32 bcrypt)
 
-add_library(saga_session STATIC src/net/session.cpp)
+find_program(ZIG_EXECUTABLE zig REQUIRED)
+set(saga_wire_source "${CMAKE_CURRENT_SOURCE_DIR}/src/net/wire.zig")
+set(saga_wire_object "${CMAKE_CURRENT_BINARY_DIR}/saga_wire.obj")
+add_custom_command(OUTPUT "${saga_wire_object}"
+    COMMAND "${ZIG_EXECUTABLE}" build-obj "${saga_wire_source}" -target x86-windows-msvc
+        -O ReleaseSafe -fno-stack-check -fno-compiler-rt "-femit-bin=${saga_wire_object}"
+    DEPENDS "${saga_wire_source}"
+    VERBATIM)
+set_source_files_properties("${saga_wire_object}" PROPERTIES GENERATED TRUE EXTERNAL_OBJECT TRUE)
+add_library(saga_session STATIC src/net/session.cpp "${saga_wire_object}")
 target_include_directories(saga_session PUBLIC src)
 target_compile_options(saga_session PRIVATE /W4 /WX)
 
@@ -29,6 +38,8 @@ target_compile_options(saga_catalogue PRIVATE /W4 /WX)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_test(NAME saga_wire_zig COMMAND "${ZIG_EXECUTABLE}" test "${saga_wire_source}")
+
     add_executable(d3d9_smoke tests/d3d9_smoke.cpp)
     target_compile_options(d3d9_smoke PRIVATE /W4 /WX)
     add_test(NAME d3d9_smoke COMMAND d3d9_smoke "$<TARGET_FILE:d3d9>")

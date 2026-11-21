@@ -4,7 +4,7 @@ The current build is a development proxy for the game's Direct3D 9 imports. The 
 
 ## Build
 
-Use CMake and a Windows C++23 toolchain that supports Win32. Run from the repository root in PowerShell.
+Use Zig 0.15.1, CMake and a Windows C++23 toolchain that supports Win32. CMake links the Zig packet codec and room-key calculation into the x86 proxy. Run from the repository root in PowerShell.
 
 ```powershell
 $saga = 'games/lego-star-wars-the-complete-saga'
