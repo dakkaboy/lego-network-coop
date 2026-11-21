@@ -22,12 +22,20 @@ fn length(kind: u32) usize {
         p.SYNC_ACTOR_PRIMARY_PERCEPTION => @sizeOf(p.SyncPrimaryPerceptionState),
         p.SYNC_ACTOR_RIDER_FIRE => @sizeOf(p.SyncRiderFireState),
         p.SYNC_ACTOR_ARENA_RUN_RANDOM => @sizeOf(p.SyncArenaRunRandomState),
+        p.SYNC_ACTOR_BARC_SUSPENSION => @sizeOf(p.SyncBarcSuspensionState),
+        p.SYNC_ACTOR_BARC_ALIGNMENT => @sizeOf(p.SyncBarcAlignmentState),
         else => @sizeOf(p.SyncFireTaskState),
     };
 }
 fn contextFailure(gate: *const p.SyncFireTaskGate, state: [*]const u8) u32 {
     const data = &gate.payload;
     switch (gate.kind) {
+        p.SYNC_ACTOR_BARC_SUSPENSION => if (!std.mem.eql(u8, data.storage[0..@sizeOf(p.SyncBarcSuspensionState)], state[0..@sizeOf(p.SyncBarcSuspensionState)])) {
+            return 25;
+        },
+        p.SYNC_ACTOR_BARC_ALIGNMENT => if (!std.mem.eql(u8, data.storage[0..8], state[0..8])) {
+            return 24;
+        },
         p.SYNC_ACTOR_ARENA_RUN_RANDOM => if (!std.mem.eql(u8, data.storage[0..@sizeOf(p.SyncArenaRunRandomState)], state[0..@sizeOf(p.SyncArenaRunRandomState)])) {
             return 22;
         },

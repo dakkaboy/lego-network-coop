@@ -1,5 +1,6 @@
 const p = @import("protocol.zig");
 const win = @import("win32.zig");
+const vehicle = @import("vehicle_body_source.zig");
 extern fn physics_effect_body_source(usize, *[2]u32) c_int;
 extern fn physics_effect_body_resolve(u32, u32) usize;
 extern fn native_scene_support_source(usize, *[2]u32) c_int;
@@ -9,13 +10,19 @@ pub fn capture(body: usize, output: *[2]u32, flags: *u32) bool {
     const kind = win.load(u8, body + 0x19) & 0x60;
     if (kind != 0x40 and kind != 0x20) return false;
     if (kind == 0x40 and physics_effect_body_source(body, output) != 0) return true;
+    if (win.load(u8, body + 0x19) == 0x42 and vehicle.supportKey(body, output)) {
+        flags.* |= p.SYNC_SUPPORT_VEHICLE;
+        return true;
+    }
     if (native_scene_support_source(body, output) == 0) return false;
     flags.* |= p.SYNC_SUPPORT_SCENE;
     return true;
 }
 pub fn source(body: usize, state: *const p.SyncCharacterMotionState, output: *[2]u32) bool {
+    if (state.support_material_flags & p.SYNC_SUPPORT_VEHICLE != 0) return vehicle.supportKey(body, output);
     return if (state.support_material_flags & p.SYNC_SUPPORT_SCENE != 0) native_scene_support_source(body, output) != 0 else physics_effect_body_source(body, output) != 0;
 }
 pub fn resolve(state: *const p.SyncCharacterMotionState) usize {
+    if (state.support_material_flags & p.SYNC_SUPPORT_VEHICLE != 0) return 0;
     return if (state.support_material_flags & p.SYNC_SUPPORT_SCENE != 0) native_scene_support_resolve(state.support_frame, state.support_event) else physics_effect_body_resolve(state.support_frame, state.support_event);
 }

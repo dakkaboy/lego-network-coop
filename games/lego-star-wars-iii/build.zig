@@ -264,7 +264,7 @@ fn nativeRegressions(b: *std.Build, suite: *NativeSuite, all: *std.Build.Step, t
         const exe = entry.value_ptr.*;
         if (std.mem.eql(u8, name, "fixture_loader")) continue;
         if (!chosen(selected, name)) continue;
-        const scenarios: usize = if (std.mem.eql(u8, name, "span_engine")) 10 else if (std.mem.eql(u8, name, "mapping_session")) 8 else if (std.mem.eql(u8, name, "native_tick_journal")) 6 else if (std.mem.eql(u8, name, "sync_wire")) 5 else 1;
+        const scenarios: usize = if (std.mem.eql(u8, name, "span_engine")) 10 else if (std.mem.eql(u8, name, "mapping_session")) 8 else if (std.mem.eql(u8, name, "native_tick_journal")) 7 else if (std.mem.eql(u8, name, "sync_wire")) 5 else 1;
         if (selected_scenario) |scenario| if (scenario >= scenarios) @panic("Scenario is outside the selected regression");
         for (0..scenarios) |scenario| {
             if (selected_scenario != null and selected_scenario.? != scenario) continue;

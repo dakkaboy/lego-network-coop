@@ -567,7 +567,14 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\    cld
     \\    subl $12,%esp
     \\    pushl 4(%eax)
+    \\    movl 12(%eax),%edx
+    \\    cmpl $0x433971,4(%edx)
+    \\    jne 1f
+    \\    call _native_pack_pose_commit
+    \\    jmp 2f
+    \\1:
     \\    call _native_pack_pose_query
+    \\2:
     \\    addl $16,%esp
     \\    fxrstor (%esp)
     \\    movl 512(%esp),%esp
@@ -580,6 +587,8 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\.globl _native_pack_pose_commit_input
     \\_native_pack_pose_commit_input:
     \\pushfl
+    \\    cmpl $0x433987,4(%esp)
+    \\    je 1f
     \\    pushal
     \\    movl %esp,%eax
     \\    subl $544,%esp
@@ -597,6 +606,7 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\    fxrstor (%esp)
     \\    movl 512(%esp),%esp
     \\    popal
+    \\1:
     \\    popfl
     \\    movl 0x38(%ecx),%eax
     \\    movl 4(%esp),%edx

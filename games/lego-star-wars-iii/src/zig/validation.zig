@@ -1,4 +1,5 @@
 const std = @import("std");
+const p = @import("protocol.zig");
 
 pub fn finite(value: anytype) bool {
     switch (@typeInfo(@TypeOf(value))) {
@@ -13,6 +14,18 @@ pub fn finite(value: anytype) bool {
         else => {},
     }
     return true;
+}
+
+pub fn worldVariable(level: i32, variable: p.SyncVariable) bool {
+    if (variable.name[0] == 0 or variable.scope > p.SYNC_VARIABLE_AREA_DECLARATION) return false;
+    if (finite(variable.value)) return true;
+
+    // Storm over Ryloth A can store +inf in either native wave counter.
+    const wave_a = "WaveADestroyed".* ++ @as([32 - "WaveADestroyed".len]u8, @splat(0));
+    const wave_b = "WaveBDestroyed".* ++ @as([32 - "WaveBDestroyed".len]u8, @splat(0));
+    return level == 83 and variable.scope == p.SYNC_VARIABLE_GLOBAL and
+        @as(u32, @bitCast(variable.value)) == 0x7f800000 and
+        (std.mem.eql(u8, &variable.name, &wave_a) or std.mem.eql(u8, &variable.name, &wave_b));
 }
 
 pub fn zero(value: anytype) bool {

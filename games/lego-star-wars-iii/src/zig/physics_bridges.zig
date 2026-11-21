@@ -19,7 +19,8 @@ comptime {
         \\    movl $0x1f80,516(%esp)
         \\    ldmxcsr 516(%esp)
         \\    movl 512(%esp),%eax
-        \\    subl $12,%esp
+        \\    subl $8,%esp
+        \\    pushl 8(%eax)
         \\    pushl 0(%eax)
         \\    pushl 0x5c(%eax)
         \\    pushl 0x54(%eax)

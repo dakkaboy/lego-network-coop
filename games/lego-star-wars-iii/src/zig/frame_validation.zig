@@ -83,7 +83,7 @@ pub fn valid(f: *const p.SyncFrame, bytes: u32) bool {
         if (actor.animation.current < -1 or actor.animation.current >= 4096) return false;
         for (actor.animation.clips) |clip| if (clip < -1 or clip >= 4096) return false;
     }
-    for (f.variables[0..f.variable_count]) |variable| if (variable.name[0] == 0 or variable.scope > p.SYNC_VARIABLE_AREA_DECLARATION or !v.finite(variable.value)) return false;
+    for (f.variables[0..f.variable_count]) |variable| if (!v.worldVariable(f.level, variable)) return false;
     const shots = f.shots[0..f.shot_count];
     if (!ordered(shots, "id")) return false;
     for (shots) |*shot| {

@@ -15,7 +15,9 @@ fn zeros(bytes: []const u8) bool {
     return true;
 }
 pub fn supportValid(s: *const p.SyncCharacterMotionState) bool {
-    if ((s.support_frame == 0) != (s.support_event == 0) or s.support_material_flags & ~@as(u32, 0x7ffff) != 0 or !v.finite(s.support_anchor) or !v.finite(s.support_normal)) return false;
+    const source = s.support_material_flags & (p.SYNC_SUPPORT_SCENE | p.SYNC_SUPPORT_VEHICLE);
+    if ((s.support_frame == 0) != (s.support_event == 0) or s.support_material_flags & ~@as(u32, 0xfffff) != 0 or
+        source == (p.SYNC_SUPPORT_SCENE | p.SYNC_SUPPORT_VEHICLE) or !v.finite(s.support_anchor) or !v.finite(s.support_normal)) return false;
     if (s.support_frame != 0) return s.support_material_flags & p.SYNC_SUPPORT_ABSENT == 0;
     return zeros(std.mem.asBytes(&s.support_anchor)) and zeros(std.mem.asBytes(&s.support_normal)) and (s.support_material_flags == 0 or s.support_material_flags == p.SYNC_SUPPORT_ABSENT);
 }
@@ -31,6 +33,8 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
             p.SYNC_ACTOR_PRIMARY_PERCEPTION => @sizeOf(p.SyncPrimaryPerceptionState),
             p.SYNC_ACTOR_RIDER_FIRE => @sizeOf(p.SyncRiderFireState),
             p.SYNC_ACTOR_ARENA_RUN_RANDOM => @sizeOf(p.SyncArenaRunRandomState),
+            p.SYNC_ACTOR_BARC_SUSPENSION => @sizeOf(p.SyncBarcSuspensionState),
+            p.SYNC_ACTOR_BARC_ALIGNMENT => @sizeOf(p.SyncBarcAlignmentState),
             else => @sizeOf(p.SyncFireTaskState),
         };
         if (!zeros(data.storage[used..])) return false;
@@ -38,6 +42,10 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
     const clean = g.flags == 0 and g.action == 0;
     const boolean = g.value >= 0 and g.value <= 1;
     switch (g.kind) {
+        p.SYNC_ACTOR_BARC_SUSPENSION => return clean and boolean and (g.character == 417 or g.character == 429) and
+            (data.barc_suspension.body_flags == 0x42 or data.barc_suspension.body_flags == 0x43) and data.barc_suspension.cache_index <= 1,
+        p.SYNC_ACTOR_BARC_ALIGNMENT => return clean and g.value == 0 and g.character == 417 and
+            (data.barc_alignment.body_flags == 0x42 or data.barc_alignment.body_flags == 0x43) and barcBasis(&data.barc_alignment.basis),
         p.SYNC_ACTOR_ARENA_RUN_RANDOM => return g.flags <= 1 and g.action == 0 and g.value >= 0 and g.value <= 65535 and g.character == 119 and data.arena_run_random.behavior_class == 0x6dee68 and data.arena_run_random.run_state == 10,
         p.SYNC_ACTOR_RIDER_FIRE => return g.flags <= 1 and g.action == 0 and boolean and data.rider_fire.behavior_class == 0x6d83dc and data.rider_fire.mount_slot < p.SYNC_MAX_ACTORS and data.rider_fire.mount_generation != 0 and v.finite(data.rider_fire.cooldown),
         p.SYNC_ACTOR_HAZARD_DEATH => return clean and boolean and zeros(data.storage[4..]),
@@ -97,4 +105,14 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
         },
         else => return false,
     }
+}
+
+pub fn barcBasis(basis: *const [9]f32) bool {
+    if (!v.finite(basis.*)) return false;
+    for (0..3) |axis| {
+        const x, const y, const z = basis[axis * 3 ..][0..3].*;
+        const length = x * x + y * y + z * z;
+        if (length < 0.5 or length > 2.0) return false;
+    }
+    return true;
 }

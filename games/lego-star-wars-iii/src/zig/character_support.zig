@@ -7,10 +7,13 @@ pub fn accepts(body: usize, state: *const p.SyncCharacterMotionState) bool {
     return kind == 0x40 or (kind == 0x20 and state.support_material_flags & p.SYNC_SUPPORT_SCENE != 0);
 }
 pub fn same(a: *const p.SyncCharacterMotionState, b: *const p.SyncCharacterMotionState) bool {
-    return valid(a) and valid(b) and a.support_frame == b.support_frame and a.support_event == b.support_event and (a.support_material_flags & (p.SYNC_SUPPORT_ABSENT | p.SYNC_SUPPORT_SCENE)) == (b.support_material_flags & (p.SYNC_SUPPORT_ABSENT | p.SYNC_SUPPORT_SCENE));
+    const kind = p.SYNC_SUPPORT_ABSENT | p.SYNC_SUPPORT_SCENE | p.SYNC_SUPPORT_VEHICLE;
+    return valid(a) and valid(b) and a.support_frame == b.support_frame and a.support_event == b.support_event and
+        a.support_material_flags & kind == b.support_material_flags & kind;
 }
 pub fn canRelease(local: *const p.SyncCharacterMotionState, expected: *const p.SyncCharacterMotionState) bool {
-    return valid(local) and valid(expected) and local.support_material_flags & p.SYNC_SUPPORT_ABSENT == 0 and expected.support_material_flags == p.SYNC_SUPPORT_ABSENT;
+    return valid(local) and valid(expected) and local.support_material_flags & (p.SYNC_SUPPORT_ABSENT | p.SYNC_SUPPORT_VEHICLE) == 0 and
+        expected.support_material_flags == p.SYNC_SUPPORT_ABSENT;
 }
 pub fn release(body: usize, previous: usize, local: *const p.SyncCharacterMotionState, expected: *const p.SyncCharacterMotionState) bool {
     if (!canRelease(local, expected) or !win.accessible(body, 0x140, true) or win.load(usize, body + 0xec) != previous or (local.support_frame != 0 and previous == 0)) return false;
@@ -20,6 +23,7 @@ pub fn release(body: usize, previous: usize, local: *const p.SyncCharacterMotion
 }
 pub fn canAcquire(local: *const p.SyncCharacterMotionState, expected: *const p.SyncCharacterMotionState) bool {
     return valid(local) and valid(expected) and expected.support_frame != 0 and
+        (local.support_material_flags | expected.support_material_flags) & p.SYNC_SUPPORT_VEHICLE == 0 and
         !same(local, expected);
 }
 pub fn acquire(body: usize, support: usize, local: *const p.SyncCharacterMotionState, expected: *const p.SyncCharacterMotionState) bool {

@@ -33,6 +33,7 @@ pub fn detach(retired: usize, pool: usize, count: u32) u32 {
 fn destroy(body: usize, _: usize) callconv(.{ .x86_fastcall = .{} }) void {
     var machine: Machine = undefined;
     machine.capture();
+    @import("zillo_support_origin.zig").forget(body);
     var read = Reader.init();
     const pool_address = read.native(0xfb2f60);
     const count_address = read.native(0xfb2e3c);

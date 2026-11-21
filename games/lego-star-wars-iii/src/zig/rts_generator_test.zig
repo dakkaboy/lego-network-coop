@@ -57,6 +57,12 @@ fn original(value: usize, delta: u32) callconv(.{ .x86_thiscall = .{} }) void {
     check(@src(), win.load(f32, @intFromPtr(&engine) + 0xe0c) == 0.023 and win.GetLastError() == 123);
     win.SetLastError(321);
 }
+fn inactiveOriginal(value: usize, delta: u32) callconv(.{ .x86_thiscall = .{} }) void {
+    original_calls += 1;
+    check(@src(), value == @intFromPtr(&object) and delta == 0x3dcccccd and win.GetLastError() == 123);
+    check(@src(), word(&object, 0x250) == 0xffffffff and word(&object, 0x264) == 0);
+    win.SetLastError(321);
+}
 pub fn main() void {
     check(@src(), @intFromPtr(&native_image) < 0xfb0000 and @intFromPtr(&native_image) + native_image.len > 0xfc0000);
     win.store(u32, 0xfb4b6c, 100);
@@ -97,6 +103,25 @@ pub fn main() void {
     put(&descriptor, 0x30, p.SYNC_MAX_RTS_TEAMS);
     check(@src(), sources.native_rts_generator_source(@intFromPtr(&object), &source) == 0);
     put(&descriptor, 0x30, 0);
+    put(&object, 0x250, 0xffffffff);
+    put(&object, 0x264, 0);
+    put(&object, 0x268, 0);
+    check(@src(), sources.inactiveGenerator(@intFromPtr(&object)));
+    const before = original_calls;
+    const gate_calls = calls;
+    win.SetLastError(123);
+    input.rts_generator_input_update(@intFromPtr(&object), 0x3dcccccd, inactiveOriginal);
+    check(@src(), original_calls == before + 1 and calls == gate_calls and win.GetLastError() == 321);
+    check(@src(), input.clonewars_rts_generator_input_debug[7] == 1);
+    for ([_]usize{ 0, 0x250, 0x264, 0x268, 0x224 }, [_]u32{ 0xaed18d, 0xfffffffe, 1, 1, 1 }) |offset, invalid| {
+        const saved = word(&object, offset);
+        put(&object, offset, invalid);
+        check(@src(), !sources.inactiveGenerator(@intFromPtr(&object)));
+        win.SetLastError(123);
+        input.rts_generator_input_update(@intFromPtr(&object), 0x3dcccccd, inactiveOriginal);
+        check(@src(), original_calls == before + 1 and calls == gate_calls and win.GetLastError() == 123);
+        put(&object, offset, saved);
+    }
     var choice = std.mem.zeroes(p.SyncPhysicsChoice);
     choice.kind = p.SYNC_PHYSICS_RTS_GENERATOR;
     choice.site = 0x547d30;

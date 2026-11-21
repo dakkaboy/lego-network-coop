@@ -749,30 +749,80 @@ fn globalPacks(scene: PackScene) void {
     check(@src(), finish() and word(scene.first, 0x88) == 0x3f800000 and word(scene.first, 0x8c) == 0x40000000);
     const before_rng = state.clonewars_native_pack_mode10_rng_debug[0..3].*;
     next(true);
+    scene.first[0x60] = 28;
     put(0xea178c, 0, 0x9f29a3b1);
+    pack.native_pack_hit_seed(addr(scene.first), sites.PACK_MODE28_RECOVERY_DURATION);
+    put(0xea178c, 0, 0x1ab2fa51);
     pack.native_pack_hit_seed(addr(scene.first), sites.PACK_MODE10_DURATION);
     put(0xea178c, 0, 0x7d013ba7);
     pack.native_pack_hit_seed(addr(scene.first), sites.PACK_MODE10_CLIP_PHASE);
-    check(@src(), finish() and frame.tick_gate_count == 4 and stream(0, 4) and frame.tick_gates[0].value == frame.tick_gates[2].value);
+    check(@src(), finish() and frame.tick_gate_count == 6 and stream(0, 6) and
+        frame.tick_gates[0].value == frame.tick_gates[2].value and frame.tick_gates[0].value == frame.tick_gates[4].value);
     begin(false);
     put(0xea178c, 0, 0x19d2d8e7);
     win.SetLastError(913);
-    pack.native_pack_hit_seed(addr(scene.first), sites.PACK_MODE10_DURATION);
+    pack.native_pack_hit_seed(addr(scene.first), sites.PACK_MODE28_RECOVERY_DURATION);
     check(@src(), word(0xea178c, 0) == 0x9f29a3b1 and win.GetLastError() == 913);
+    put(0xea178c, 0, 0x8c9765ba);
+    pack.native_pack_hit_seed(addr(scene.first), sites.PACK_MODE10_DURATION);
+    check(@src(), word(0xea178c, 0) == 0x1ab2fa51);
     put(0xea178c, 0, 0xb4cf38d9);
     pack.native_pack_hit_seed(addr(scene.first), sites.PACK_MODE10_CLIP_PHASE);
     check(@src(), word(0xea178c, 0) == 0x7d013ba7 and finish());
-    for (before_rng, 0..) |count, i| check(@src(), state.clonewars_native_pack_mode10_rng_debug[i] == count + 2);
+    for (before_rng, 0..) |count, i| check(@src(), state.clonewars_native_pack_mode10_rng_debug[i] == count + 3);
     begin(false);
     put(0xea178c, 0, 0x19d2d8e7);
     const swapped = f.faults;
-    pack.native_pack_hit_seed(addr(scene.first), sites.PACK_MODE10_CLIP_PHASE);
+    pack.native_pack_hit_seed(addr(scene.first), sites.PACK_MODE10_DURATION);
     check(@src(), word(0xea178c, 0) == 0x19d2d8e7 and !finish() and f.faults == swapped + 1);
     put(scene.manager_list, 0, scene.pack);
     put(scene.pack, 0x13c, 0);
     put(scene.pack, 0x140, 0);
     put(scene.definition, 0x1c, 0);
 }
+extern fn native_pack_pose_query_input() void;
+extern fn native_pack_pose_commit_input() void;
+
+fn damageCellBranch(site: usize, destination: usize, opcode: u8) void {
+    var bytes: [5]u8 = undefined;
+    bytes[0] = opcode;
+    std.mem.writeInt(u32, bytes[1..], @truncate(destination -% site -% bytes.len), .little);
+    f.patch(site, &bytes);
+}
+
+fn damageCell(scene: PackScene) void {
+    // Drive the two real bridges at the exact native return addresses. Cell 0
+    // and cell 1 represent the two sides of the grid boundary at X = .5.
+    f.patch(0x433950, "\x56\x8b\x74\x24\x08\x8b\x4c\x24\x0c\x6a\x00\x6a\x00\x8d\x46\x20\x50\xeb\x09");
+    damageCellBranch(0x43396c, @intFromPtr(&native_pack_pose_query_input), 0xe8);
+    f.patch(0x433971, "\x50\x89\xf1\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90");
+    damageCellBranch(0x433982, 0x6d7670, 0xe8);
+    f.patch(0x433987, "\x5e\xc3");
+    f.patch(0x42a670, "\x8b\x44\x24\x04\x8b\x00\x3d\x00\x00\x00\x3f\x0f\x93\xc0\x0f\xb6\xc0\xc2\x0c\x00");
+    damageCellBranch(0x6d7670, @intFromPtr(&native_pack_pose_commit_input), 0xe9);
+    f.patch(0x6d7677, "\x89\x51\x38\x89\xd0\xc2\x04\x00");
+
+    const run: *const fn (usize, usize) callconv(.c) u32 = @ptrFromInt(0x433950);
+    const host_x: u32 = @bitCast(@as(f32, 0.499));
+    const peer_x: u32 = @bitCast(@as(f32, 0.501));
+    next(true);
+    put(scene.first, 0x20, host_x);
+    check(@src(), run(addr(scene.first), 0) == 0 and finish());
+    check(@src(), frame.tick_gate_count == 5 and frame.tick_gates[0].site == sites.PACK_POSE_COMMIT);
+
+    begin(false);
+    put(scene.first, 0x20, peer_x);
+    win.SetLastError(314);
+    check(@src(), run(addr(scene.first), 0) == 0 and win.GetLastError() == 314 and finish());
+    check(@src(), word(scene.first, 0x20) == host_x and word(scene.first, 0x38) == 0);
+
+    begin(false);
+    put(scene.second, 0x20, peer_x);
+    const previous_faults = f.faults;
+    check(@src(), run(addr(scene.second), 0) == 1 and !finish() and f.faults == previous_faults + 1);
+    check(@src(), word(scene.second, 0x20) == peer_x and state.cursor == 0);
+}
+
 fn packs() void {
     const scene = PackScene.init();
     const clips = buffer(80);
@@ -920,7 +970,7 @@ fn packs() void {
         draw(addr(scene.second));
         check(@src(), word(0xea178c, 0) == 0xabcd1234 and !finish() and f.faults == before + 1);
     }
-    for ([_]u32{ sites.PACK_HIT_REACTION, sites.PACK_HIT_AVOIDANCE, sites.PACK_HIT_DEBRIS, sites.PACK_HIT_SHOCK, sites.PACK_HIT_HEADING, sites.PACK_IMPULSE_TIMER, sites.PACK_IMPULSE_SPEED, sites.PACK_IMPULSE_HEADING, sites.PACK_DEATH_CLIP, sites.PACK_MODE10_DURATION, sites.PACK_MODE10_CLIP_PHASE }) |site| {
+    for ([_]u32{ sites.PACK_HIT_REACTION, sites.PACK_HIT_AVOIDANCE, sites.PACK_HIT_DEBRIS, sites.PACK_HIT_SHOCK, sites.PACK_HIT_HEADING, sites.PACK_IMPULSE_TIMER, sites.PACK_IMPULSE_SPEED, sites.PACK_IMPULSE_HEADING, sites.PACK_DEATH_CLIP, sites.PACK_MODE10_DURATION, sites.PACK_MODE10_CLIP_PHASE, sites.PACK_MODE28_RECOVERY_DURATION }) |site| {
         next(true);
         put(0xea178c, 0, 0x1234abcd);
         pack.native_pack_hit_seed(addr(scene.first), site);
@@ -982,7 +1032,10 @@ fn packs() void {
     const observation_query = win.load([0x4c]u8, addr(event_query));
     next(true);
     win.SetLastError(765);
+    const identity = @import("tick_pack_identity.zig");
+    const resolves_before = identity.clonewars_pack_memory_debug[0];
     pack.native_pack_hit_seed_bridge(addr(scene.first), sites.PACK_HIT_DEBRIS, addr(event_stack));
+    check(@src(), identity.clonewars_pack_memory_debug[0] == resolves_before + 1);
     check(@src(), win.GetLastError() == 765 and finish() and stream(0, 2));
     check(@src(), observation.clonewars_pack_hit_queries_cursor == 1);
     const observed = observation.clonewars_pack_hit_queries[0];
@@ -994,11 +1047,23 @@ fn packs() void {
     check(@src(), finish() and observation.clonewars_pack_hit_queries_cursor == 2 and observation.clonewars_pack_hit_queries[1][33] == observed[15]);
     check(@src(), std.mem.eql(u8, &observation_stack, event_stack) and std.mem.eql(u8, &observation_owner, event_owner) and std.mem.eql(u8, &observation_query, event_query));
     check(@src(), std.mem.eql(u8, &member_before, scene.first));
+    begin(false);
+    put(event_stack, 36, 1);
+    put(0xea178c, 0, 0xabcd1234);
+    const rejected_at = f.faults;
+    pack.native_pack_hit_seed_bridge(addr(scene.second), sites.PACK_HIT_DEBRIS, addr(event_stack));
+    check(@src(), !finish() and f.faults == rejected_at + 1 and state.cursor == 0);
+    check(@src(), word(0xea178c, 0) == 0xabcd1234 and observation.clonewars_pack_hit_queries_cursor == 3);
+    const rejected = observation.clonewars_pack_hit_queries[2];
+    check(@src(), rejected[3] == addr(scene.second) and rejected[10] == 1);
+    check(@src(), rejected[15] == state.clonewars_native_pack_seed_context[7] and rejected[15] != rejected[33]);
+    put(event_stack, 36, 0);
     next(true);
+    const observed_id = identity.resolve(addr(scene.first), false).?;
     for ([_]usize{ 0, 12, 28, 32, 40, 48, 68, 0x844, 0x848, 0x84c }) |offset| {
         const original = word(event_stack, offset);
         put(event_stack, offset, 0);
-        observation.observe(addr(scene.first), addr(event_stack));
+        observation.observe(addr(scene.first), addr(event_stack), observed_id);
         check(@src(), observation.clonewars_pack_hit_queries_cursor == 0 and frame.tick_gate_count == 0);
         put(event_stack, offset, original);
     }
@@ -1096,6 +1161,7 @@ fn packs() void {
     ordinalMemo();
     packFireTargets();
     packSpawnChecks();
+    damageCell(PackScene.init());
 }
 fn spawnRandom(seed: *u32) f32 {
     seed.* = seed.* *% 0x19660d +% 0x3c6ef35f;
@@ -1178,7 +1244,10 @@ fn packSpawnChecks() void {
             19 => put(source, 0xb4, 1),
             20 => put(source, 0xb0, 40),
             21 => put(source, 0xc8, 1),
-            24 => { at = sites.PACK_SPAWN_Z; put(stack, 0, at + 5); },
+            24 => {
+                at = sites.PACK_SPAWN_Z;
+                put(stack, 0, at + 5);
+            },
             else => {},
         }
         begin(false);
@@ -1213,7 +1282,10 @@ fn packSpawnAbi(scene: PackScene, source: []u8, pool: []u8, stack: []u8, positio
     const original_allocate = spawn.pack_spawn_allocate;
     spawn.pack_spawn_random = @intFromPtr(&abi.pack_spawn_probe_random);
     spawn.pack_spawn_allocate = @intFromPtr(&abi.pack_spawn_probe_allocate);
-    defer { spawn.pack_spawn_random = original_random; spawn.pack_spawn_allocate = original_allocate; }
+    defer {
+        spawn.pack_spawn_random = original_random;
+        spawn.pack_spawn_allocate = original_allocate;
+    }
     abi.original();
     abi.pack_spawn_probe_source = addr(source);
     abi.pack_spawn_probe_pool = addr(pool);
@@ -1573,7 +1645,7 @@ fn gizmos() void {
     const container = buffer(16);
     const registry = buffer(0x2c);
     const manager = buffer(0x28);
-    const gizmo = buffer(0x280);
+    const gizmo = buffer(0x282);
     const table = [_]usize{addr(manager)};
     var handle: usize = addr(&table);
     put(0xfb4a20, 0, value);
@@ -1708,6 +1780,59 @@ fn gizmos() void {
     put(0xea178c, 0, 93);
     world.native_rts_wait_seed(addr(wait_object));
     check(@src(), word(0xea178c, 0) == 93);
+
+    const ground = @import("tick_zillo_ground.zig").native_zillo_ground_render_input;
+    const ground_object = buffer(0x648);
+    const ground_team = buffer(0x1164);
+    const ground_resource = buffer(0x464);
+    put(ground_object, 0, 0xaeea9c);
+    put(ground_object, 0x24, gizmo);
+    put(ground_object, 0x28, ground_team);
+    put(ground_object, 0x644, 0x3e99999a);
+    put(gizmo, 0, 0xaee174);
+    put(ground_team, 0, 0xaef0fc);
+    put(ground_team, 0x1c, wait_descriptor);
+    put(ground_team, 0x10d0, ground_resource);
+    put(ground_team, 0x115c, ground_object);
+    put(ground_team, 0x1160, ground_object);
+    put(ground_resource, 0, 0xada098);
+    put(ground_resource, 0xc, value);
+    put(ground_resource, 0x460, ground_team);
+    for (0..8) |mutation| {
+        next(true);
+        frame.level = 112;
+        gizmo[0x27d] = 1;
+        check(@src(), ground(addr(ground_object), addr(gizmo), 0x562696, 1) == 1 and finish());
+        check(@src(), frame.tick_gate_count == 6 and stream(0, 6) and !stream(0, 5) and !stream(1, 5));
+        switch (mutation) {
+            0 => {},
+            1 => frame.tick_gates[1].value +%= 1,
+            2 => frame.tick_gates[5].clock +%= 1,
+            3 => frame.tick_gates[5].value = 2,
+            4 => frame.tick_gate_count = 5,
+            5 => put(ground_team, 0x1160, 0),
+            6 => put(ground_resource, 0x460, 0),
+            7 => gizmo[0x30] = 'X',
+            else => unreachable,
+        }
+        begin(false);
+        gizmo[0x27d] = 0;
+        win.SetLastError(965);
+        const faults_before = f.faults;
+        const result = ground(addr(ground_object), addr(gizmo), 0x562696, 0);
+        check(@src(), gizmo[0x27d] == 0 and word(ground_object, 0x644) == 0x3e99999a and win.GetLastError() == 965);
+        if (mutation == 0) {
+            check(@src(), result == 1 and finish() and f.faults == faults_before);
+        } else {
+            check(@src(), result == 0 and !finish() and f.faults == faults_before + 1);
+        }
+        put(ground_team, 0x1160, ground_object);
+        put(ground_resource, 0x460, ground_team);
+        gizmo[0x30] = 'A';
+    }
+    next(true);
+    frame.level = 112;
+    check(@src(), ground(addr(ground_object), addr(gizmo), 0x562697, 0) == 0 and frame.tick_gate_count == 0 and finish());
 }
 const coefficients = [_]usize{ 0xfb0fc4, 0xfb0fa8, 0xfb0fb4, 0xfb102c, 0xfb0fb0, 0xfb0fac, 0xfb1028, 0xfb0fa0, 0xfb1014, 0xfb0fc0, 0xfb1070, 0xfb1018, 0xfb101c, 0xfb0fb8, 0xfb0fa4, 0xfb0fbc, 0xfb0fc8 };
 fn setClocks(values: *const [17]u32) void {
@@ -1801,11 +1926,146 @@ fn elapsed() void {
     setClocks(&host_clock);
     check(@src(), clock.native_tick_elapsed_input() == 0 and !finish());
 }
+fn zilloThrowSeed() void {
+    const zillo = @import("tick_zillo_rng.zig");
+    const task = buffer(0x3ac);
+    const owner = buffer(0x1440);
+    const object = buffer(0x14c);
+    const task_class = win.GetModuleHandleA(null) + 0x1000;
+    put(task, 0, task_class);
+    put(task, 0x20, owner);
+    shortPut(owner, 0xdc0, 127);
+    f.turret_pilot = addr(owner);
+    f.turret_pilot_generation = 17;
+    frame.level = 112;
+    begin(true);
+    put(0xea178c, 0, 0x503ef8c8);
+    zillo.apply(addr(task));
+    check(@src(), finish() and frame.tick_gate_count == 4 and stream(0, 4));
+    const original_generation = frame.tick_gates[1].value;
+    frame.tick_gates[1].value = 0;
+    check(@src(), !stream(0, 4));
+    frame.tick_gates[1].value = original_generation;
+    check(@src(), word(0xea178c, 0) == 0x503ef8c8 and frame.tick_gates[3].value == 0x503ef8c8);
+    begin(false);
+    put(0xea178c, 0, 0x460a453a);
+    zillo.apply(addr(task));
+    check(@src(), finish() and word(0xea178c, 0) == 0x503ef8c8 and zillo.clonewars_zillo_throw_seed_debug[2] == 1);
+    begin(false);
+    f.turret_pilot_generation = 18;
+    put(0xea178c, 0, 0x460a453a);
+    zillo.apply(addr(task));
+    check(@src(), !finish() and word(0xea178c, 0) == 0x460a453a and state.clonewars_native_tick_failure[3] == 2);
+    check(@src(), !stream(1, 3) and !stream(0, 3));
+    next(true);
+    frame.level = 12;
+    zillo.apply(addr(task));
+    check(@src(), finish() and frame.tick_gate_count == 0 and word(0xea178c, 0) == 0x460a453a);
+    next(true);
+    frame.level = 112;
+    put(object, 0xc, 31);
+    put(task, 0x3a4, object);
+    put(0xea178c, 0, 0x43faf29b);
+    zillo.applyRelease(addr(task), addr(object));
+    check(@src(), finish() and frame.tick_gate_count == 6 and stream(0, 6));
+    begin(false);
+    put(0xea178c, 0, 0x5dfa073e);
+    zillo.applyRelease(addr(task), addr(object));
+    check(@src(), finish() and word(0xea178c, 0) == 0x43faf29b and zillo.clonewars_zillo_release_seed_debug[2] == 1);
+    begin(false);
+    put(task, 0x3a4, 0);
+    put(task, 0x3a8, object);
+    put(0xea178c, 0, 0x5dfa073e);
+    zillo.applyRelease(addr(task), addr(object));
+    check(@src(), !finish() and word(0xea178c, 0) == 0x5dfa073e and state.clonewars_native_tick_failure[3] == 2);
+    next(true);
+    frame.level = 112;
+    put(task, 0x3a4, object);
+    put(task, 0x3a8, 0);
+    put(object, 0xc, 33);
+    put(0xea178c, 0, 454975457);
+    zillo.native_zillo_spread_seed_apply(addr(task), 1);
+    check(@src(), finish() and frame.tick_gate_count == 6 and stream(0, 6));
+    frame.tick_gates[3].value = 0;
+    check(@src(), !stream(0, 6));
+    frame.tick_gates[3].value = 1;
+    begin(false);
+    put(0xea178c, 0, 3783204982);
+    zillo.native_zillo_spread_seed_apply(addr(task), 1);
+    check(@src(), finish() and word(0xea178c, 0) == 454975457 and zillo.clonewars_zillo_spread_seed_debug[2] == 1);
+    begin(false);
+    put(task, 0x3a8, object);
+    put(0xea178c, 0, 3783204982);
+    zillo.native_zillo_spread_seed_apply(addr(task), 1);
+    check(@src(), !finish() and word(0xea178c, 0) == 3783204982 and state.clonewars_native_tick_failure[3] == 4);
+    next(true);
+    frame.level = 112;
+    put(task, 0x3a8, 0);
+    put(0xe637b4, 0, 62014);
+    zillo.native_zillo_orientation_seed_apply(addr(task), addr(task) + 0x3a4);
+    check(@src(), finish() and frame.tick_gate_count == 6 and stream(0, 6));
+    frame.tick_gates[5].value = 0x10000;
+    check(@src(), !stream(0, 6));
+    frame.tick_gates[5].value = 62014;
+    begin(false);
+    put(0xe637b4, 0, 45991);
+    zillo.native_zillo_orientation_seed_apply(addr(task), addr(task) + 0x3a4);
+    check(@src(), finish() and word(0xe637b4, 0) == 62014 and zillo.clonewars_zillo_orientation_seed_debug[2] == 1);
+    begin(false);
+    put(0xe637b4, 0, 45991);
+    zillo.native_zillo_orientation_seed_apply(addr(task), addr(task) + 0x3a5);
+    check(@src(), !finish() and word(0xe637b4, 0) == 45991);
+
+    next(true);
+    frame.level = 112;
+    put(task, 0x33c, 1);
+    put(0xea178c, 0, 3357953159);
+    zillo.native_zillo_throw_countdown_seed_apply(addr(task));
+    check(@src(), finish() and frame.tick_gate_count == 4 and stream(0, 4));
+    begin(false);
+    put(0xea178c, 0, 3406314767);
+    zillo.native_zillo_throw_countdown_seed_apply(addr(task));
+    check(@src(), finish() and word(0xea178c, 0) == 3357953159 and zillo.clonewars_zillo_throw_countdown_seed_debug[2] == 1);
+    begin(false);
+    put(0xea178c, 0, 3406314767);
+    put(task, 0x33c, 3);
+    zillo.native_zillo_throw_countdown_seed_apply(addr(task));
+    check(@src(), !finish() and word(0xea178c, 0) == 3406314767 and state.clonewars_native_tick_failure[3] == 4);
+    next(true);
+    frame.level = 112;
+    put(task, 0x33c, 1);
+    put(0xea178c, 0, 3357953159);
+    zillo.native_zillo_throw_countdown_seed_apply(addr(task));
+    check(@src(), finish() and frame.tick_gate_count == 4 and stream(0, 4));
+    begin(false);
+    put(0xea178c, 0, 3406314767);
+    f.turret_pilot_generation += 1;
+    zillo.native_zillo_throw_countdown_seed_apply(addr(task));
+    check(@src(), !finish() and word(0xea178c, 0) == 3406314767 and state.clonewars_native_tick_failure[3] == 2);
+
+    next(true);
+    frame.level = 112;
+    put(object, 0xc, 6);
+    put(task, 0x3a0, object);
+    put(task, 0x3a4, object);
+    put(0xe637b4, 0, 63585);
+    zillo.native_zillo_orientation_seed_apply(addr(task), addr(task) + 0x3a0);
+    check(@src(), finish() and frame.tick_gate_count == 6 and stream(0, 6));
+    begin(false);
+    put(0xe637b4, 0, 35246);
+    zillo.native_zillo_orientation_seed_apply(addr(task), addr(task) + 0x3a0);
+    check(@src(), finish() and word(0xe637b4, 0) == 63585);
+    begin(false);
+    put(0xe637b4, 0, 35246);
+    zillo.native_zillo_orientation_seed_apply(addr(task), addr(task) + 0x3a4);
+    check(@src(), !finish() and word(0xe637b4, 0) == 35246 and state.clonewars_native_tick_failure[3] == 4);
+}
+
 pub fn main(init: std.process.Init) !void {
     f.open();
     defer f.close();
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    const groups = [_]*const fn () void{ decisions, tracks, rts, packs, gizmos, elapsed };
+    const groups = [_]*const fn () void{ decisions, tracks, rts, packs, gizmos, elapsed, zilloThrowSeed };
     if (args.len > 1) {
         const selected = try std.fmt.parseInt(u32, args[1], 10);
         check(@src(), selected < groups.len);

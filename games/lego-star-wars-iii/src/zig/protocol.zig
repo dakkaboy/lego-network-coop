@@ -406,6 +406,7 @@ pub const SyncRtsCompetitorState = extern struct {
 
 pub const SYNC_SUPPORT_ABSENT: u32 = 0x20000;
 pub const SYNC_SUPPORT_SCENE: u32 = 0x40000;
+pub const SYNC_SUPPORT_VEHICLE: u32 = 0x80000;
 pub const SyncCharacterMotionState = extern struct {
     clock: u32,
     body_class: u32,
@@ -460,6 +461,8 @@ pub const SyncPrimaryPerceptionState = extern struct {
 };
 
 pub const SyncRiderFireState = extern struct { clock: u32, behavior_class: u32, mount_slot: u32, mount_generation: u32, cooldown: f32 };
+pub const SyncBarcSuspensionState = extern struct { clock: u32, body_flags: u32, cache_index: u32 };
+pub const SyncBarcAlignmentState = extern struct { clock: u32, body_flags: u32, basis: [9]f32 };
 pub const SyncArenaRunRandomState = extern struct { clock: u32, behavior_class: u32, run_state: u32 };
 const FireTaskPayload = extern union {
     storage: [68]u8,
@@ -475,6 +478,8 @@ const FireTaskPayload = extern union {
     script_shoot: SyncScriptShootState,
     perception: SyncPrimaryPerceptionState,
     rider_fire: SyncRiderFireState,
+    barc_alignment: SyncBarcAlignmentState,
+    barc_suspension: SyncBarcSuspensionState,
     arena_run_random: SyncArenaRunRandomState,
 };
 
@@ -815,6 +820,8 @@ pub const SYNC_ACTOR_SPELLIT_ADMISSION: c_int = 15;
 pub const SYNC_ACTOR_HAZARD_DEATH: c_int = 16;
 pub const SYNC_ACTOR_RIDER_FIRE: c_int = 17;
 pub const SYNC_ACTOR_ARENA_RUN_RANDOM: c_int = 18;
+pub const SYNC_ACTOR_BARC_ALIGNMENT: c_int = 19;
+pub const SYNC_ACTOR_BARC_SUSPENSION: c_int = 20;
 pub const SYNC_TRANSITION_NATIVE_CYCLE: u32 = 2;
 
 pub const enum_SyncFireGateKind = c_int;
@@ -904,7 +911,7 @@ pub const SYNC_PROFILE_BYTES = @as(c_int, 0xb5c0);
 
 pub const SYNC_LAYOUT_VERSION = @as(c_int, 55);
 
-pub const SYNC_WIRE_VERSION = @as(c_int, 171);
+pub const SYNC_WIRE_VERSION = @as(c_int, 199);
 
 pub const SYNC_NATIVE_SPAN_PLAN_MASK = @as(c_uint, 7);
 

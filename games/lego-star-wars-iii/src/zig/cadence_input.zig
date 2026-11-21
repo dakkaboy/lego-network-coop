@@ -38,6 +38,7 @@ pub export fn cadence_begin(frame: *p.SyncFrame, host: c_int) c_int {
     if (s.last_epoch != op.cohort.epoch) {
         inline for (.{ &s.clonewars_cadence_failure, &s.clonewars_breakup_visibility_correction, &s.clonewars_death_breakup_correction, &s.clonewars_fall_visibility_correction, &s.clonewars_aim_task_correction, &s.clonewars_rts_competitor_correction, &s.clonewars_force_target_correction, &s.clonewars_force_geometry_correction, &s.clonewars_spellit_query_correction, &s.clonewars_character_motion_correction, &s.clonewars_spellit_node_correction, &s.clonewars_spellit_node_failure, &s.clonewars_aim_base_correction, &s.clonewars_script_shoot_correction, &s.clonewars_script_shoot_failure, &s.clonewars_actor_gate_failure }) |buffer| buffer.* = @splat(0);
         s.last_epoch = op.cohort.epoch;
+        @import("zillo_support_origin.zig").reset();
     }
     cadence_journal_begin(&s.journal, frame, host);
     s.fire_task_cursor = 0;

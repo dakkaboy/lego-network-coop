@@ -2,7 +2,8 @@ const std = @import("std");
 const win = @import("win32.zig");
 const p = @import("protocol.zig");
 const Token = @import("cohort_types.zig").Token;
-const equal = @import("validation.zig").equal;
+const validation = @import("validation.zig");
+const equal = validation.equal;
 const root = @import("root");
 const testing = if (@hasDecl(root, "world_vars_test_api")) root.world_vars_test_api else false;
 var binding = std.mem.zeroes(Token);
@@ -73,17 +74,14 @@ fn collectRegistry(token: *const Token, frame: *p.SyncFrame, registry: usize, ar
         visited += 1;
         if (visited > expected + 1 or !readable(node, 0x4c) or frame.variable_count == p.SYNC_MAX_VARIABLES) return false;
         var scope = win.load(u32, node + 0x34);
-        const value = win.load(f32, node + 0x38);
         if (area != 0 and scope == area) scope = p.SYNC_VARIABLE_AREA_DECLARATION else if (scope > p.SYNC_VARIABLE_AREA) return false;
-        if (!std.math.isFinite(value) or win.load(u8, node + 0x14) == 0) return false;
-        const variable = &frame.variables[frame.variable_count];
-        frame.variable_count += 1;
-        variable.name = @splat(0);
+        var variable: p.SyncVariable = .{ .name = @splat(0), .scope = scope, .value = win.load(f32, node + 0x38) };
         const name = @as([*]const u8, @ptrFromInt(node + 0x14))[0..32];
         const length = std.mem.indexOfScalar(u8, name, 0) orelse name.len;
         @memcpy(variable.name[0..length], name[0..length]);
-        variable.scope = scope;
-        variable.value = value;
+        if (!validation.worldVariable(frame.level, variable)) return false;
+        frame.variables[frame.variable_count] = variable;
+        frame.variable_count += 1;
         node = ptr(node + 8);
     }
     return live(token, frame);
@@ -127,10 +125,10 @@ pub export fn world_vars_apply(frame: *const p.SyncFrame) c_int {
     const area = ptr(address(0xfb4a20));
     if (!readable(manager, 0x4c) or frame.variable_count > p.SYNC_MAX_VARIABLES) return 0;
     for (frame.variables[0..frame.variable_count]) |variable| {
-        if (!live(&token, frame)) return 0;
+        if (!live(&token, frame) or !validation.worldVariable(frame.level, variable)) return 0;
         var name: [33:0]u8 = @splat(0);
         @memcpy(name[0..32], &variable.name);
-        if (variable.scope > p.SYNC_VARIABLE_AREA_DECLARATION or (variable.scope != p.SYNC_VARIABLE_GLOBAL and area == 0)) return 0;
+        if (variable.scope != p.SYNC_VARIABLE_GLOBAL and area == 0) return 0;
         const scope: i32 = if (variable.scope == p.SYNC_VARIABLE_AREA_DECLARATION) @bitCast(@as(u32, @truncate(area))) else @intCast(variable.scope);
         var call: Lookup = .{ .token = token, .manager = manager, .area = area, .name = &name, .scope = scope };
         const node = constructor_lexical_seh(@intFromPtr(&call), lookupInvoke, lookupAbort);

@@ -69,10 +69,15 @@ pub export var rider_fire_visible_resume: usize = 0x4395fb;
 pub export var rider_fire_hidden_resume: usize = 0x4397ef;
 extern fn rider_fire_visibility_thunk() void;
 extern fn arena_run_random_thunk() void;
-pub fn patches() [31]hooks.Patch {
-    return .{
+extern fn zillo_support_throw_thunk() void;
+pub fn patches() [37]hooks.Patch {
+    return [_]hooks.Patch{
+        .{ .address = 0x99a39b, .expected = "\x33\x8a\x68\x02\x00\x00", .target = @intFromPtr(&@import("barc_suspension.zig").barc_suspension_thunk) },
+        .{ .address = 0x9977c9, .expected = "\xe8\xc2\x4a\xff\xff", .target = @intFromPtr(&@import("barc_alignment.zig").barc_alignment_thunk), .opcode = 0xe8 },
         .{ .address = 0x464b3f, .expected = "\xe8\x0c\x99\x32\x00", .target = @intFromPtr(&arena_run_random_thunk), .opcode = 0xe8 },
         .{ .address = 0x464b6c, .expected = "\xe8\xdf\x98\x32\x00", .target = @intFromPtr(&arena_run_random_thunk), .opcode = 0xe8 },
+        .{ .address = 0x449313, .expected = "\xe8\x58\x2d\x10\x00", .target = @intFromPtr(&zillo_support_throw_thunk), .opcode = 0xe8 },
+        .{ .address = 0x670def, .expected = "\xe8\x5c\xf2\xff\xff", .target = @intFromPtr(&@import("zillo_support_hooks.zig").zillo_support_register_thunk), .opcode = 0xe8 },
         .{ .address = 0x4395f1, .expected = "\x80\x78\x42\x00\x0f\x84\xf4\x01\x00\x00", .target = @intFromPtr(&rider_fire_visibility_thunk) },
         .{ .address = 0x857e10, .expected = "\x8b\x42\x64\x57\xff\xd0", .target = @intFromPtr(&spellit_manager_force_thunk) },
         .{ .address = 0x857e23, .expected = "\x57\x0f\x95\xc3\xff\xd0", .target = @intFromPtr(&spellit_manager_special_thunk) },
@@ -102,7 +107,7 @@ pub fn patches() [31]hooks.Patch {
         .{ .address = 0x9c43d1, .expected = "\xe8\xaa\x3f\x04\x00", .target = @intFromPtr(&character_motion_thunk), .opcode = 0xe8 },
         .{ .address = 0x857ec2, .expected = "\x85\xc0\x0f\x85\xba\x00\x00\x00", .target = @intFromPtr(&spellit_admission_state_thunk) },
         .{ .address = 0x857ed4, .expected = "\x85\xc0\x74\x7a\x8b\x86\x00\x04\x00\x00", .target = @intFromPtr(&spellit_admission_hint_thunk) },
-    };
+    } ++ @import("zillo_island_order.zig").patches();
 }
 pub fn install() c_int {
     if (s.clonewars_cadence_installed == 1) return 1;

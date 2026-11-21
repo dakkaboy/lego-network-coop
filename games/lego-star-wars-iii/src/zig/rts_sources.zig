@@ -11,6 +11,12 @@ pub const Object = @import("rts_types.zig").Object;
 fn readable(address: usize, bytes: usize) bool {
     return win.accessible(address, bytes, false);
 }
+pub fn inactiveGenerator(object: usize) bool {
+    // The stock state-zero branch exits on index -1 before looking up a generator slot.
+    return readable(object, 0x2a8) and win.load(u32, object) == 0xaed18c and
+        win.load(i32, object + 0x250) == -1 and win.load(u32, object + 0x264) == 0 and
+        win.load(u32, object + 0x268) == 0 and win.load(usize, object + 0x224) == 0;
+}
 pub export fn native_rts_generator_source(object: usize, output: ?*Generator) c_int {
     if (output == null or !readable(object, 0x2a8)) return 0;
     var s = std.mem.zeroes(Generator);

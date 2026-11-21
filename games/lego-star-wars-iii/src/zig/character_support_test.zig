@@ -20,7 +20,7 @@ export fn physics_effect_birth(node: usize) void {
     asm volatile ("fninit; pcmpeqd %%xmm0,%%xmm0; pxor %%xmm7,%%xmm7" ::: .{ .xmm0 = true, .xmm7 = true });
     win.SetLastError(err);
 }
-export fn physics_apply_breakup_launch(_: usize, _: usize, _: usize, _: usize, _: usize) void {
+export fn physics_apply_breakup_launch(_: usize, _: usize, _: usize, _: usize, _: usize, _: usize) void {
     unreachable;
 }
 fn live(_: *const binding.Binding, index: usize, flags: *const [4]bool) bool {

@@ -334,7 +334,7 @@ fn run() Snapshot {
             out.result = s.physics_world_input(&input, &current.cohort);
         }
     } else if (mode < 18) {
-        e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0);
+        e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, 0);
         if (mode != 10) {
             client();
             put(0xe637b4, 999);
@@ -347,7 +347,7 @@ fn run() Snapshot {
             if (mode == 15) frame.physics_choices[1].payload.breakup_basis.matrix[0] = std.math.nan(f32);
             if (mode == 16) win.store(u8, descriptor + 0x2c, 0);
             if (mode == 17) cancelled = true;
-            e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0);
+            e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, 0);
         }
     } else if (mode < 23) {
         input = std.mem.zeroes(p.SyncPhysicsChoice);
@@ -518,6 +518,9 @@ pub fn main() void {
         e.physics_effect_birth(pool);
         const sequence = frame.sequence;
         const event = frame.physics_choice_count;
+        var ordering_source: [2]u32 = @splat(0);
+        check(@src(), e.physics_effect_ordering_source(body, &ordering_source) == 1 and
+            std.meta.eql(ordering_source, [2]u32{ sequence, event }));
         check(@src(), e.physics_effect_body_resolve(sequence, event) == body);
         switch (i) {
             0 => check(@src(), e.physics_effect_body_resolve(sequence, event + 1) == 0),
@@ -529,8 +532,25 @@ pub fn main() void {
             6 => frame.epoch += 1,
             else => unreachable,
         }
-        if (i != 0) check(@src(), e.physics_effect_body_resolve(sequence, event) == 0);
+        if (i != 0) {
+            check(@src(), e.physics_effect_ordering_source(body, &ordering_source) == 0);
+            check(@src(), e.physics_effect_body_resolve(sequence, event) == 0);
+        }
     }
+    mode = 107;
+    setup();
+    check(@src(), s.physics_input_begin(frame, 1) != 0);
+    e.physics_effect_birth(pool);
+    const original_key = [2]u32{ frame.sequence, frame.physics_choice_count };
+    @memcpy(bytes(pool + 0x228, 0x228), bytes(pool, 0x228));
+    e.physics_effect_birth(pool + 0x228);
+    check(@src(), frame.physics_choice_count == 2);
+    var ambiguous_source: [2]u32 = @splat(0);
+    check(@src(), e.physics_effect_ordering_source(body, &ambiguous_source) == 0 and
+        std.meta.eql(ambiguous_source, [2]u32{ 0, 0 }) and fault == 0);
+    put(pool + 0x228 + 0x15c, 0);
+    check(@src(), e.physics_effect_ordering_source(body, &ambiguous_source) == 1 and
+        std.meta.eql(ambiguous_source, original_key));
     for (0..5) |mutation| {
         mode = 200 + @as(u32, @intCast(mutation));
         setup();

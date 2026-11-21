@@ -2,6 +2,12 @@ const std = @import("std");
 const p = @import("protocol.zig");
 const v = @import("validation.zig");
 const abi = @import("abi.zig");
+const breakup = @import("breakup_source.zig");
+
+fn breakupSite(site: u32, model: u32) bool {
+    return (site == 0x905f38 and model <= 65535) or
+        (site == breakup.team_breakup_site and model == breakup.team_breakup_type);
+}
 
 fn nonzero(words: anytype) bool {
     for (words) |word| if (word != 0) return true;
@@ -81,15 +87,15 @@ pub fn valid(choice: *const p.SyncPhysicsChoice) bool {
         },
         p.SYNC_PHYSICS_EFFECT_BIRTH, p.SYNC_PHYSICS_BREAKUP_SCALE => {
             const s = &u.basic;
-            const site: u32 = if (choice.kind == p.SYNC_PHYSICS_EFFECT_BIRTH) 0x7427d8 else 0x905f38;
-            if (choice.site != site or s.flags & 0x40000000 == 0 or s.model > 65535 or !nonzero(s.name_hash) or s.rng != 0 or !emptyTail(choice, 56)) return false;
+            const site_valid = if (choice.kind == p.SYNC_PHYSICS_EFFECT_BIRTH) choice.site == 0x7427d8 and s.model <= 65535 else breakupSite(choice.site, s.model);
+            if (!site_valid or s.flags & 0x40000000 == 0 or !nonzero(s.name_hash) or s.rng != 0 or !emptyTail(choice, 56)) return false;
             const first: usize = 3;
             for (s.recipe[0..first]) |bits| if (!v.finite(@as(f32, @bitCast(bits)))) return false;
             return !nonzero(s.recipe[first..]);
         },
         p.SYNC_PHYSICS_BREAKUP_BASIS => {
             const s = &u.breakup_basis;
-            return choice.site == 0x905f38 and s.model <= 65535 and nonzero(s.name_hash) and v.finite(s.matrix);
+            return breakupSite(choice.site, s.model) and nonzero(s.name_hash) and v.finite(s.matrix);
         },
         p.SYNC_PHYSICS_VEHICLE_RNG => {
             const s = &u.vehicle_rng;
@@ -153,7 +159,8 @@ pub fn valid(choice: *const p.SyncPhysicsChoice) bool {
             return switch (choice.kind) {
                 p.SYNC_PHYSICS_AXIS_SPIN => s.flags & 0x80 != 0,
                 p.SYNC_PHYSICS_ROTATION_SPIN => s.flags & 0x100000 != 0,
-                p.SYNC_PHYSICS_BREAKUP_LAUNCH => choice.site == 0x905f38,
+                p.SYNC_PHYSICS_BREAKUP_LAUNCH => breakupSite(choice.site, s.model) and
+                    (choice.site != breakup.team_breakup_site or (s.flags == 0x40000010 and s.recipe[0] == 0x3d and s.recipe[1] == 0)),
                 else => false,
             };
         },

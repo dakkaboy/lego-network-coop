@@ -27,7 +27,10 @@ fn reject(s: *const Scope, reason: u32) void {
 }
 fn invoke(address: usize) callconv(.c) usize {
     const s: *Scope = @ptrFromInt(address);
-    if (s.bound) {
+    const inactive = s.bound and @import("rts_sources.zig").inactiveGenerator(s.object) and coherent_frame_valid(&s.token, 4) != 0;
+    if (inactive) {
+        clonewars_rts_generator_input_debug[7] +%= 1;
+    } else if (s.bound) {
         if (native_rts_generator_source(s.object, &s.source) == 0) {
             reject(s, 1);
             return 0;

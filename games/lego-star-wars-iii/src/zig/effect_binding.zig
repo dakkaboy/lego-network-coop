@@ -1,5 +1,22 @@
 const std = @import("std");
 pub const Binding = struct { node: usize = 0, receiver: usize = 0, body: usize = 0, resource: usize = 0, epoch: u32 = 0, sequence: u32 = 0, event: u32 = 0, release: u32 = 0 };
+pub fn orderingSource(bindings: []const Binding, body: usize, epoch: u32, release: u32, context: anytype, comptime validate: anytype) ?[2]u32 {
+    var found: ?*const Binding = null;
+    for (bindings, 0..) |*binding, i| {
+        if (binding.epoch != epoch or binding.release != release or binding.body != body or !validate(binding, i, context)) continue;
+        if (found != null) return null;
+        found = binding;
+    }
+    const match = found orelse return null;
+    if (match.sequence == 0 or match.event == 0) return null;
+    for (bindings, 0..) |*binding, i| {
+        if (binding == match or binding.body == 0 or binding.epoch != epoch or binding.release != release or
+            binding.sequence != match.sequence or binding.event != match.event) continue;
+        if (validate(binding, i, context)) return null;
+    }
+    return .{ match.sequence, match.event };
+}
+
 pub fn resolve(bindings: []Binding, body: usize, epoch: u32, release: u32, context: anytype, comptime validate: anytype, source: *[2]u32, revoked: *u32) i32 {
     revoked.* = 0;
     var found: ?*const Binding = null;

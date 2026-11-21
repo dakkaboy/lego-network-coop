@@ -8,7 +8,7 @@ pub fn reset() void {
     clonewars_pack_hit_queries_cursor = 0;
     for (&clonewars_pack_hit_queries) |*entry| entry[0] = 0;
 }
-pub fn observe(member: usize, stack: usize) void {
+pub fn observe(member: usize, stack: usize, id: identity.Identity) void {
     if (!s.ready() or !s.readable(stack, 0x860) or s.load(u32, stack) != 0x45f5a2 or
         s.load(u32, stack + 28) != 0x7a9379 or s.load(u32, stack + 40) != 0x408729 or
         s.load(u32, stack + 48) != 0x6f097c or s.load(u32, stack + 0x844) != 0x6fc9da) return;
@@ -21,7 +21,6 @@ pub fn observe(member: usize, stack: usize) void {
         s.load(u32, event + 4) != 0 or !s.readable(query, 0x4c) or s.load(u32, query + 0x20) != 1) return;
     const owner = s.load(usize, event + 8);
     if (!s.readable(owner, 0x1440)) return;
-    const id = identity.resolve(member, false) orelse return;
     const pack = s.load(usize, member + 0x68);
     const pool = s.load(usize, pack + 0xb0);
     const grid = if (s.readable(pool, 0x14)) s.load(usize, pool + 0x10) else 0;

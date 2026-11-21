@@ -6,6 +6,7 @@ const physics = @import("physics_validation.zig");
 const frame = @import("frame_validation.zig");
 const Cursor = @import("validation_reference.zig").Cursor;
 extern fn sync_frame_encode(*const p.SyncFrame, [*]u8, u32) u32;
+extern fn sync_frame_decode(*p.SyncFrame, [*]const u8, u32) c_int;
 comptime {
     _ = @import("wire.zig");
 }
@@ -22,10 +23,11 @@ fn sameStream(oracle: *Cursor, gates: []const p.SyncTickGate) !void {
     try std.testing.expectEqual(oracle.tickStream(gates.ptr, @intCast(gates.len)) != 0, tick.streamValid(gates));
 }
 test "wire validation: all tick sites and boundary values match the original" {
+    @setEvalBranchQuota(2000);
     var oracle = Cursor.init(0);
     defer oracle.finish();
     inline for (@typeInfo(s).@"struct".decl_names) |name| {
-        if (comptime std.mem.eql(u8, name, "PACK_BEHAVIOR") or std.mem.eql(u8, name, "PACK_FIRE_TARGET") or std.mem.eql(u8, name, "PACK_FIRE_FIELDS") or std.mem.startsWith(u8, name, "PACK_SPAWN_")) continue;
+        if (comptime std.mem.eql(u8, name, "PACK_BEHAVIOR") or std.mem.eql(u8, name, "PACK_FIRE_TARGET") or std.mem.eql(u8, name, "PACK_FIRE_FIELDS") or std.mem.eql(u8, name, "PACK_MODE28_RECOVERY_DURATION") or std.mem.startsWith(u8, name, "PACK_SPAWN_") or std.mem.startsWith(u8, name, "ZILLO_") or std.mem.startsWith(u8, name, "ARENA_ROPE_")) continue;
         const site = @field(s, name);
         for (values) |value| {
             try sameGate(&oracle, .{ .site = site, .clock = 17, .value = value });
@@ -37,6 +39,19 @@ test "wire validation: all tick sites and boundary values match the original" {
     for ([_]u32{ 0x8888cd, 0x888889, 0x889edc, 0x9dda14, 0x7b8ae1, 0x7b8afd, 0x7b8b08, 0xfb0fc4, 0, 0xffffffff }) |site|
         for (values) |value| try sameGate(&oracle, .{ .site = site, .clock = 17, .value = value });
     try spawnWireCases();
+    const recovery = s.PACK_MODE28_RECOVERY_DURATION;
+    var gates = [_]p.SyncTickGate{
+        .{ .site = recovery, .clock = 17, .value = 0xe7ede210 },
+        .{ .site = recovery + 5, .clock = 17, .value = 0x9f29a3b1 },
+    };
+    try std.testing.expect(tick.streamValid(&gates));
+    try std.testing.expect(!tick.streamValid(gates[0..1]));
+    try std.testing.expect(!tick.streamValid(gates[1..2]));
+    gates[1].clock += 1;
+    try std.testing.expect(!tick.streamValid(&gates));
+    gates[1].clock -= 1;
+    gates[1].site = s.PACK_MODE10_DURATION + 5;
+    try std.testing.expect(!tick.streamValid(&gates));
 }
 fn spawnWireCases() !void {
     const source = [_]u32{ 65535, 0xffffffff, 0, 39, 0, 0x12345678, 0x87654321, 5430013 };
@@ -294,6 +309,45 @@ test "wire validation: complete frame headers and event payloads match the origi
     const expected_length = oracle.frameEncode(f, &reference, reference.len);
     try std.testing.expectEqual(expected_length, length);
     try std.testing.expectEqualSlices(u8, reference[0..length], encoded[0..length]);
+}
+
+test "wire preserves the native Storm over Ryloth wave values only for their exact variables" {
+    const f = try std.testing.allocator.create(p.SyncFrame);
+    defer std.testing.allocator.destroy(f);
+    @memset(std.mem.asBytes(f), 0);
+    f.epoch = 1;
+    f.sequence = 406;
+    f.level = 83;
+    f.variable_count = 1;
+    const variable = &f.variables[0];
+    var bytes: [1024]u8 = undefined;
+    var size: u32 = 0;
+    for ([_][]const u8{ "WaveADestroyed", "WaveBDestroyed" }) |name| {
+        @memcpy(variable.name[0..name.len], name);
+        variable.value = @bitCast(@as(u32, 0x7f800000));
+        size = sync_frame_encode(f, &bytes, bytes.len);
+        try std.testing.expect(size != 0);
+        variable.value = 0;
+        try std.testing.expectEqual(@as(c_int, 1), sync_frame_decode(f, &bytes, size));
+        try std.testing.expectEqual(@as(u32, 0x7f800000), @as(u32, @bitCast(variable.value)));
+    }
+
+    f.level = 84;
+    try std.testing.expect(!frame.valid(f, size));
+    f.level = 83;
+    variable.scope = p.SYNC_VARIABLE_AREA;
+    try std.testing.expect(!frame.valid(f, size));
+    variable.scope = p.SYNC_VARIABLE_GLOBAL;
+    variable.name[4] = 'C';
+    try std.testing.expect(!frame.valid(f, size));
+    variable.name[4] = 'B';
+    variable.name[31] = 1;
+    try std.testing.expect(!frame.valid(f, size));
+    variable.name[31] = 0;
+    for ([_]u32{ 0xff800000, 0x7fc00000 }) |bits| {
+        variable.value = @bitCast(bits);
+        try std.testing.expect(!frame.valid(f, size));
+    }
 }
 
 test "wire validation: SpellIt admission stages and malformed gate words" {

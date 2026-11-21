@@ -119,10 +119,21 @@ export fn entities_resolve_reference(state: *const p.SyncActor) usize {
     if (client and mode == 55) retained = false;
     if (client and mode == 25) put(poi + 0xd4, 0);
     if (client and (mode == 12 or (mode == 33 and state.slot == 8))) return 0;
-    return if (state.slot == 7) actor else other;
+    const resolved = if (state.slot == 7) actor else other;
+    if ((state.character == 417 or state.character == 429) and state.character != win.load(i16, resolved + 0xdc0)) return 0;
+    return resolved;
 }
-export fn native_scene_support_source(_: usize, _: *[2]u32) c_int {
-    return 0;
+var island_plate_body: usize = 0;
+export fn native_scene_support_source(candidate: usize, source: *[2]u32) c_int {
+    if (candidate == 0 or candidate != island_plate_body) return 0;
+    source.* = .{ 112, 84 };
+    return 1;
+}
+var island_effect_body: usize = 0;
+export fn physics_effect_ordering_source(candidate: usize, source: *[2]u32) c_int {
+    if (candidate == 0 or candidate != island_effect_body) return 0;
+    source.* = .{ 824, 3 };
+    return 1;
 }
 export fn native_scene_support_resolve(_: u32, _: u32) usize {
     return 0;
@@ -398,7 +409,7 @@ fn jump(address: usize, target: usize) void {
 }
 fn installedHooks() void {
     const patches = @import("cadence_install.zig").patches();
-    check(@src(), patches.len == 31);
+    check(@src(), patches.len == 37);
     for (patches) |patch| {
         check(@src(), patch.expected.len <= 32);
         protect(patch.address & ~@as(usize, 0xffff), 0x10000, 0x40);
@@ -485,12 +496,641 @@ fn installedHooks() void {
     check(@src(), win.load(usize, actor + 0x164) == other and win.load(f32, actor + 0x168) == 5);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 }
+const island_order = struct {
+    extern fn zillo_island_order_before_solve(usize, usize) void;
+    extern fn zillo_island_order_before_contacts(usize, usize) void;
+};
+
+fn zilloIslandOrder() void {
+    const order = island_order;
+    const origins = @import("zillo_support_origin.zig");
+    setup();
+    frame.epoch = 16000;
+    frame.level = 112;
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+
+    var island_data: [0x18]u8 = @splat(0);
+    var bodies: [3][0xa4]u8 = @splat(@splat(0));
+    var owners: [3][0x1a4]u8 = @splat(@splat(0));
+    var labels: [3][32]u8 = @splat(@splat(0));
+    var edges: [3][0x20]u8 = @splat(@splat(0));
+    const island = @intFromPtr(&island_data);
+    var nodes: [3]usize = undefined;
+    var links: [3]usize = undefined;
+    for (0..3) |index| {
+        const collider = @intFromPtr(&bodies[index]);
+        const collider_owner = @intFromPtr(&owners[index]);
+        labels[index][0] = 'A' + @as(u8, @intCast(index));
+        nodes[index] = collider;
+        links[index] = @intFromPtr(&edges[index]);
+        put(collider, 0xc69eac);
+        win.store(u8, collider + 0x19, 0x4f);
+        put(collider + 0x1c, @intFromPtr(&labels[index]));
+        put(collider + 0x28, collider_owner);
+        put(collider + 0x34, island);
+        put(collider_owner, 0xc20f64);
+        put(collider_owner + 0x1a0, collider);
+        origins.remember(world, collider_owner, collider, .{ .clock = 607, .actor_slot = 4, .generation = 29, .throw_slot = 2, .model = 5 });
+        put(links[index], 0xc696d4);
+    }
+    put(island + 8, nodes[1]);
+    put(nodes[1] + 0x10, nodes[2]);
+    put(nodes[2] + 0x14, nodes[1]);
+    put(nodes[2] + 0x10, nodes[0]);
+    put(nodes[0] + 0x14, nodes[2]);
+    order.zillo_island_order_before_solve(island, 0xa3a835);
+    check(@src(), win.load(usize, island + 8) == nodes[0] and win.load(usize, nodes[0] + 0x14) == 0 and
+        win.load(usize, nodes[0] + 0x10) == nodes[1] and win.load(usize, nodes[1] + 0x14) == nodes[0] and
+        win.load(usize, nodes[1] + 0x10) == nodes[2] and win.load(usize, nodes[2] + 0x14) == nodes[1] and
+        win.load(usize, nodes[2] + 0x10) == 0);
+
+    put(island + 0xc, links[0]);
+    put(links[0] + 4, links[1]);
+    put(links[1] + 8, links[0]);
+    put(links[1] + 4, links[2]);
+    put(links[2] + 8, links[1]);
+    for ([_][2]usize{ .{ nodes[1], nodes[2] }, .{ nodes[0], nodes[2] }, .{ nodes[0], nodes[1] } }, links) |pair, link| {
+        put(link + 0xc, pair[0]);
+        put(link + 0x10, pair[1]);
+        put(link + 0x1c, link + 0x18);
+    }
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), win.load(usize, island + 0xc) == links[2] and win.load(usize, links[2] + 8) == 0 and
+        win.load(usize, links[2] + 4) == links[1] and win.load(usize, links[1] + 8) == links[2] and
+        win.load(usize, links[1] + 4) == links[0] and win.load(usize, links[0] + 8) == links[1] and
+        win.load(usize, links[0] + 4) == 0);
+    check(@src(), win.load(usize, links[0] + 0xc) == nodes[1] and win.load(usize, links[0] + 0x10) == nodes[2] and
+        win.load(usize, links[0] + 0x1c) == links[0] + 0x18);
+    put(links[2] + 0x10, nodes[2]);
+    const previous = edges;
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), std.meta.eql(edges, previous) and win.load(usize, island + 0xc) == links[2]);
+
+    var polygon_body: [0xa4]u8 = @splat(0);
+    var polygon_owner: [0x1a4]u8 = @splat(0);
+    var polygon_class: u32 = 0xc695d4;
+    const polygon = @intFromPtr(&polygon_body);
+    const polygon_source = @intFromPtr(&polygon_owner);
+    put(polygon, 0xc69eac);
+    win.store(u8, polygon + 0x19, 0x40);
+    put(polygon + 0x1c, @intFromPtr("polySurface77"));
+    put(polygon + 0x24, @intFromPtr(&polygon_class));
+    put(polygon + 0x28, polygon_source);
+    put(polygon_source, 0xc20f64);
+    put(polygon_source + 0x1a0, polygon);
+    put(island + 0xc, links[0]);
+    for ([_][2]usize{ .{ polygon, nodes[2] }, .{ nodes[0], nodes[2] }, .{ nodes[0], nodes[1] } }, links, 0..) |pair, link, index| {
+        put(link + 4, if (index + 1 == links.len) 0 else links[index + 1]);
+        put(link + 8, if (index == 0) 0 else links[index - 1]);
+        put(link + 0xc, pair[0]);
+        put(link + 0x10, pair[1]);
+    }
+    const unresolved = edges;
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), std.meta.eql(edges, unresolved) and win.load(usize, island + 0xc) == links[0]);
+    island_effect_body = polygon;
+    put(polygon_source + 0x1a0, nodes[2]);
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), std.meta.eql(edges, unresolved) and win.load(usize, island + 0xc) == links[0]);
+    put(polygon_source + 0x1a0, polygon);
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), win.load(usize, island + 0xc) == links[2] and win.load(usize, links[2] + 4) == links[1] and
+        win.load(usize, links[1] + 4) == links[0] and win.load(usize, links[0] + 0xc) == polygon);
+    island_effect_body = 0;
+    edges = unresolved;
+    put(island + 0xc, links[0]);
+    const native_birth: origins.Polygon = .{ .root_clock = 800, .clock = 825, .mode = 4 };
+    origins.rememberPolygon(world, polygon_source, polygon, native_birth);
+    check(@src(), std.meta.eql(origins.polygon(world, polygon_source, polygon).?, native_birth) and
+        origins.polygon(world, polygon_source + 4, polygon) == null);
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), win.load(usize, island + 0xc) == links[2] and win.load(usize, links[2] + 4) == links[1] and
+        win.load(usize, links[1] + 4) == links[0] and win.load(usize, links[0] + 4) == 0);
+    check(@src(), win.load(usize, links[0] + 0xc) == polygon and win.load(usize, links[0] + 0x10) == nodes[2] and
+        win.load(usize, links[0] + 0x1c) == links[0] + 0x18);
+    origins.rememberPolygon(world, nodes[1], nodes[2], native_birth);
+    check(@src(), origins.polygon(world, polygon_source, polygon) == null and origins.polygon(world, nodes[1], nodes[2]) == null);
+    origins.forget(polygon);
+    var later_birth = native_birth;
+    later_birth.clock += 2;
+    origins.rememberPolygon(world, polygon_source, polygon, later_birth);
+    check(@src(), std.meta.eql(origins.polygon(world, polygon_source, polygon).?, later_birth));
+
+    origins.forget(nodes[0]);
+    const effect = nodes[0];
+    island_effect_body = effect;
+    put(effect + 0x24, @intFromPtr(&polygon_class));
+    put(island + 8, effect);
+    put(effect + 0x10, polygon);
+    put(effect + 0x14, 0);
+    put(polygon + 0x14, effect);
+    put(polygon + 0x34, island);
+    order.zillo_island_order_before_solve(island, 0xa3a835);
+    check(@src(), win.load(usize, island + 8) == polygon and win.load(usize, polygon + 0x14) == 0 and
+        win.load(usize, polygon + 0x10) == effect and win.load(usize, effect + 0x14) == polygon and
+        win.load(usize, effect + 0x10) == 0);
+    put(island + 0xc, links[0]);
+    put(links[0] + 4, links[1]);
+    put(links[0] + 8, 0);
+    put(links[0] + 0xc, effect);
+    put(links[0] + 0x10, polygon);
+    put(links[1] + 4, 0);
+    put(links[1] + 8, links[0]);
+    put(links[1] + 0xc, polygon);
+    put(links[1] + 0x10, effect);
+    put(polygon + 0x34, 0);
+    const bad_island = edges;
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), std.meta.eql(edges, bad_island) and win.load(usize, island + 0xc) == links[0]);
+    put(polygon + 0x34, island);
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), win.load(usize, island + 0xc) == links[1] and win.load(usize, links[1] + 4) == links[0] and
+        win.load(usize, links[0] + 8) == links[1] and win.load(usize, links[0] + 4) == 0);
+
+    var petal_body: [0xa4]u8 = @splat(0);
+    var petal_owner: [0x1a4]u8 = @splat(0);
+    var petal_class: u32 = 0xc69b0c;
+    const petal = @intFromPtr(&petal_body);
+    const petal_source = @intFromPtr(&petal_owner);
+    put(petal, 0xc69eac);
+    win.store(u8, petal + 0x19, 0x40);
+    put(petal + 0x1c, @intFromPtr("Petals_2"));
+    put(petal + 0x24, @intFromPtr(&petal_class));
+    put(petal + 0x28, petal_source);
+    put(petal + 0x34, island);
+    put(petal_source, 0xc20f64);
+    put(petal_source + 0x1a0, petal);
+    put(island + 8, effect);
+    put(effect + 0x14, 0);
+    put(effect + 0x10, petal);
+    put(petal + 0x14, effect);
+    put(petal + 0x10, polygon);
+    put(polygon + 0x14, petal);
+    put(polygon + 0x10, 0);
+    put(island + 0xc, links[0]);
+    put(links[0] + 4, links[1]);
+    put(links[0] + 8, 0);
+    put(links[0] + 0xc, effect);
+    put(links[0] + 0x10, polygon);
+    put(links[1] + 4, 0);
+    put(links[1] + 8, links[0]);
+    put(links[1] + 0xc, petal);
+    put(links[1] + 0x10, effect);
+
+    order.zillo_island_order_before_solve(island, 0xa3a835);
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), win.load(usize, island + 8) == effect and win.load(usize, island + 0xc) == links[0]);
+    island_plate_body = petal;
+    put(petal_source + 0x1a0, polygon);
+    order.zillo_island_order_before_solve(island, 0xa3a835);
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), win.load(usize, island + 8) == effect and win.load(usize, island + 0xc) == links[0]);
+    put(petal_source + 0x1a0, petal);
+    order.zillo_island_order_before_solve(island, 0xa3a835);
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), win.load(usize, island + 8) == petal and win.load(usize, petal + 0x14) == 0 and
+        win.load(usize, petal + 0x10) == polygon and win.load(usize, polygon + 0x14) == petal and
+        win.load(usize, polygon + 0x10) == effect and win.load(usize, effect + 0x14) == polygon and
+        win.load(usize, effect + 0x10) == 0);
+    check(@src(), win.load(usize, island + 0xc) == links[1] and win.load(usize, links[1] + 4) == links[0] and
+        win.load(usize, links[0] + 8) == links[1] and win.load(usize, links[0] + 4) == 0 and
+        win.load(usize, links[1] + 0xc) == petal and win.load(usize, links[1] + 0x10) == effect and
+        win.load(usize, links[0] + 0xc) == effect and win.load(usize, links[0] + 0x10) == polygon);
+    island_plate_body = 0;
+    island_effect_body = 0;
+
+    var large_bodies: [24][0xa4]u8 = @splat(@splat(0));
+    var large_owners: [24][0x1a4]u8 = @splat(@splat(0));
+    var large_labels: [24][32]u8 = @splat(@splat(0));
+    for (&large_bodies, &large_owners, &large_labels, 0..) |*collider_data, *owner_data, *label, index| {
+        const collider = @intFromPtr(collider_data);
+        const collider_owner = @intFromPtr(owner_data);
+        label[0] = 'A' + @as(u8, @intCast(index));
+        put(collider, 0xc69eac);
+        win.store(u8, collider + 0x19, 0x4f);
+        put(collider + 0x1c, @intFromPtr(label));
+        put(collider + 0x28, collider_owner);
+        put(collider_owner, 0xc20f64);
+        put(collider_owner + 0x1a0, collider);
+        origins.remember(world, collider_owner, collider, .{ .clock = 809, .actor_slot = 4, .generation = 29, .throw_slot = 2, .model = 5 });
+    }
+    var large_edges: [276][0x20]u8 = @splat(@splat(0));
+    var index: usize = 0;
+    for (0..large_bodies.len) |first| {
+        for (first + 1..large_bodies.len) |second| {
+            const link = @intFromPtr(&large_edges[index]);
+            put(link, 0xc696d4);
+            put(link + 4, if (index == 0) 0 else @intFromPtr(&large_edges[index - 1]));
+            put(link + 8, if (index + 1 == large_edges.len) 0 else @intFromPtr(&large_edges[index + 1]));
+            put(link + 0xc, @intFromPtr(&large_bodies[first]));
+            put(link + 0x10, @intFromPtr(&large_bodies[second]));
+            index += 1;
+        }
+    }
+    check(@src(), index == large_edges.len);
+    const old_head = @intFromPtr(&large_edges[large_edges.len - 1]);
+    const old_tail = @intFromPtr(&large_edges[0]);
+    put(island + 8, @intFromPtr(&large_bodies[0]));
+    put(island + 0xc, old_head);
+    put(old_tail + 8, 0);
+    const invalid_chain = large_edges;
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), std.meta.eql(large_edges, invalid_chain) and win.load(usize, island + 0xc) == old_head);
+    put(old_tail + 8, @intFromPtr(&large_edges[1]));
+    order.zillo_island_order_before_contacts(island, 0xa3665d);
+    var previous_link: usize = 0;
+    var current_link = win.load(usize, island + 0xc);
+    for (&large_edges) |*link_data| {
+        check(@src(), current_link == @intFromPtr(link_data));
+        check(@src(), win.load(usize, current_link + 8) == previous_link);
+        previous_link = current_link;
+        current_link = win.load(usize, current_link + 4);
+    }
+    check(@src(), current_link == 0);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+}
+
+fn zilloDishIslandOrder() void {
+    const origins = @import("zillo_support_origin.zig");
+    setup();
+    frame.epoch = 16003;
+    frame.level = 112;
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+
+    put(world + 0x22e4, provider);
+    put(provider, 0xada098);
+    put(provider + 0xc, world);
+    put(0xf9dd10, registry);
+    put(registry + 8 + 84 * 4, resource);
+    put(resource + 0x54, provider);
+    put(resource + 0x34, @intFromPtr("ZilloBeast_B_temp.led"));
+    put(resource + 0x40, @intFromPtr("ZilloBeast_B_temp"));
+
+    const labels = [_][:0]const u8{ "plate_grey_solid", "joint1", "joint2", "joint3", "joint4", "joint5", "signal_base", "joint11", "signal_dish", "joint12", "FrontBody" };
+    const classes = [_]u32{ 0xc69b0c, 0xc695d4, 0xc69b0c, 0xc695d4, 0xc69b0c, 0xc69b0c, 0xc69b7c, 0xc69b7c, 0xc695d4, 0xc69b0c, 0xc69b0c };
+    var island_data: [0x18]u8 = @splat(0);
+    var physics_data: [0x14]u8 = @splat(0);
+    var bodies: [labels.len][0xa4]u8 = @splat(@splat(0));
+    var owners: [labels.len][0x1a4]u8 = @splat(@splat(0));
+    var counted: [labels.len][24]u8 = @splat(@splat(0));
+    var names: [labels.len][32]u8 = @splat(@splat(0));
+    var shapes = classes;
+    const island = @intFromPtr(&island_data);
+    const physics = @intFromPtr(&physics_data);
+    const last = labels.len - 1;
+    var nodes: [labels.len]usize = undefined;
+    for (labels, 0..) |label, index| {
+        const owner = @intFromPtr(&owners[index]);
+        const collider = @intFromPtr(&bodies[index]);
+        nodes[index] = collider;
+        counted[index][0] = @intCast(label.len + 2);
+        @memcpy(counted[index][1 .. label.len + 1], label);
+        @memcpy(names[index][0..label.len], label);
+        put(owner, 0xc20f64);
+        win.store(u8, owner + 6, 84);
+        put(owner + 0xc, @intFromPtr(&counted[index]));
+        put(owner + 0x1c, if (index == 0 or index == last) 0 else @intFromPtr(&owners[index - 1]));
+        put(owner + 0x20, if (index + 1 < last) @intFromPtr(&owners[index + 1]) else 0);
+        put(owner + 0x1a0, collider);
+        put(collider, 0xc69eac);
+        win.store(u16, collider + 0x18, if (index == 0) 0x2001 else 0x4f01);
+        put(collider + 0x1c, @intFromPtr(&names[index]));
+        put(collider + 0x24, @intFromPtr(&shapes[index]));
+        put(collider + 0x28, owner);
+        put(collider + 0x2c, physics);
+        put(collider + 0x34, island);
+        put(collider + 0x90, 0x41000131);
+        if (index != 0) {
+            put(collider + 0x10, if (index > 1) @intFromPtr(&bodies[index - 1]) else 0);
+            put(collider + 0x14, if (index < last) @intFromPtr(&bodies[index + 1]) else 0);
+        }
+    }
+    origins.remember(world, @intFromPtr(&owners[last]), nodes[last], .{ .clock = 9869, .actor_slot = 4, .generation = 29, .throw_slot = 0, .model = 28 });
+    put(island + 8, nodes[last]);
+    island_plate_body = nodes[0];
+    const original = bodies;
+
+    put(@intFromPtr(&owners[0]) + 0x20, @intFromPtr(&owners[2]));
+    island_order.zillo_island_order_before_solve(island, 0xa3a835);
+    check(@src(), std.meta.eql(bodies, original));
+    put(@intFromPtr(&owners[0]) + 0x20, @intFromPtr(&owners[1]));
+    put(nodes[6] + 0x2c, 0);
+    island_order.zillo_island_order_before_solve(island, 0xa3a835);
+    put(nodes[6] + 0x2c, physics);
+    check(@src(), std.meta.eql(bodies, original));
+    island_plate_body = 0;
+    island_order.zillo_island_order_before_solve(island, 0xa3a835);
+    check(@src(), std.meta.eql(bodies, original));
+    island_plate_body = nodes[0];
+    defer island_plate_body = 0;
+
+    put(nodes[0] + 0x2c, 0);
+    put(nodes[0] + 0x34, 0);
+    put(nodes[0] + 0x90, 0x41000110);
+    put(0xfb0b10, 0);
+    island_order.zillo_island_order_before_solve(island, 0xa3a835);
+    check(@src(), win.load(usize, island + 8) == nodes[last] and win.load(usize, nodes[last] + 0x10) == nodes[last - 1]);
+
+    var scheduler_data: [0x30]u8 = @splat(0);
+    var schedule_node_data: [0xc]u8 = @splat(0);
+    var schedule_entry_data: [0xc]u8 = @splat(0);
+    var listener_data: [0x28]u8 = @splat(0);
+    const scheduler = @intFromPtr(&scheduler_data);
+    const schedule_node = @intFromPtr(&schedule_node_data);
+    const schedule_entry = @intFromPtr(&schedule_entry_data);
+    const listener = @intFromPtr(&listener_data);
+    put(0xfb0b10, scheduler);
+    defer put(0xfb0b10, 0);
+    put(scheduler + 0x2c, schedule_node);
+    put(schedule_node + 8, schedule_entry);
+    put(schedule_entry, listener);
+    put(listener, 0xc213dc);
+    put(listener + 0xc, provider);
+    put(listener + 0x24, island);
+    island_order.zillo_island_order_before_solve(island, 0xa3a835);
+    check(@src(), win.load(usize, nodes[last] + 0x10) == nodes[last - 1]);
+    put(listener + 0x24, physics);
+    put(nodes[0] + 0x90, 0x41000111);
+    island_order.zillo_island_order_before_solve(island, 0xa3a835);
+    check(@src(), win.load(usize, nodes[last] + 0x10) == nodes[last - 1]);
+    put(nodes[0] + 0x90, 0x41000110);
+    put(nodes[0] + 0x2c, island);
+    island_order.zillo_island_order_before_solve(island, 0xa3a835);
+    check(@src(), win.load(usize, nodes[last] + 0x10) == nodes[last - 1]);
+    put(nodes[0] + 0x2c, 0);
+    island_order.zillo_island_order_before_solve(island, 0xa3a835);
+    check(@src(), win.load(usize, island + 8) == nodes[last] and win.load(usize, nodes[last] + 0x10) == nodes[1]);
+    for (1..last) |index| {
+        check(@src(), win.load(usize, nodes[index] + 0x14) == nodes[if (index == 1) last else index - 1]);
+        check(@src(), win.load(usize, nodes[index] + 0x10) == if (index + 1 < last) nodes[index + 1] else 0);
+    }
+
+    var edges: [2][0x20]u8 = @splat(@splat(0));
+    const first = @intFromPtr(&edges[0]);
+    const second = @intFromPtr(&edges[1]);
+    put(island + 0xc, first);
+    put(first + 4, second);
+    put(second + 8, first);
+    for ([_]usize{ first, second }, [_]usize{ nodes[9], nodes[5] }) |link, part| {
+        put(link, 0xc696d4);
+        put(link + 0xc, nodes[last]);
+        put(link + 0x10, part);
+    }
+    island_order.zillo_island_order_before_contacts(island, 0xa3665d);
+    check(@src(), win.load(usize, island + 0xc) == second and win.load(usize, second + 4) == first and
+        win.load(usize, first + 8) == second and win.load(usize, first + 4) == 0 and
+        win.load(usize, first + 0x10) == nodes[9] and win.load(usize, second + 0x10) == nodes[5]);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+    put(0xf9dd10, 0);
+    put(world + 0x22e4, 0);
+}
+
+fn zilloBarcSupport() void {
+    const reference = @import("support_reference.zig");
+    const rules = @import("character_support.zig");
+    const source = @import("vehicle_body_source.zig");
+    mode = 53;
+    setup();
+    frame.epoch = 16001;
+    frame.level = 112;
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+
+    put(0xfbdb3c, manager);
+    put(manager + 0x15c, 1);
+    put(manager + 0x160, component);
+    put(component + 0x294, task);
+    put(component + 0x29c, other);
+    win.store(u16, other + 0xdc0, 417);
+    win.store([6]u8, name, "BARC2\x00".*);
+    put(node, 0xc69b0c);
+    for ([_]usize{ support, support + 0x200 }) |collider| {
+        put(collider, 0xc69eac);
+        win.store(u8, collider + 0x19, 0x42);
+        put(collider + 0x1c, name);
+        put(collider + 0x24, node);
+    }
+    put(task + 0x260, support);
+    var key: [2]u32 = undefined;
+    var flags: u32 = 0;
+    check(@src(), reference.capture(support, &key, &flags) and flags == p.SYNC_SUPPORT_VEHICLE);
+    var state = std.mem.zeroes(p.SyncCharacterMotionState);
+    state.support_frame = key[0];
+    state.support_event = key[1];
+    state.support_material_flags = flags;
+    var verified: [2]u32 = undefined;
+    check(@src(), reference.source(support, &state, &verified) and std.meta.eql(key, verified));
+
+    put(task + 0x260, support + 0x200);
+    check(@src(), !reference.source(support, &state, &verified));
+    check(@src(), reference.source(support + 0x200, &state, &verified) and std.meta.eql(key, verified));
+    put(manager + 0x15c, 2);
+    put(manager + 0x164, component);
+    check(@src(), !reference.source(support + 0x200, &state, &verified));
+    put(manager + 0x164, wrapper);
+    put(wrapper + 0x294, brain);
+    put(wrapper + 0x29c, other);
+    put(brain + 0x260, support);
+    check(@src(), !reference.source(support + 0x200, &state, &verified));
+    put(manager + 0x15c, 1);
+    put(node, 0xc699f4);
+    check(@src(), !reference.source(support + 0x200, &state, &verified));
+    put(node, 0xc69b0c);
+
+    client = true;
+    mode = 17;
+    check(@src(), source.supportKey(support + 0x200, &verified) and !std.meta.eql(key, verified));
+    var stale = state;
+    stale.support_event = verified[1];
+    check(@src(), !rules.same(&state, &stale) and !rules.canAcquire(&state, &stale));
+    var absent = std.mem.zeroes(p.SyncCharacterMotionState);
+    absent.support_material_flags = p.SYNC_SUPPORT_ABSENT;
+    check(@src(), !rules.canAcquire(&absent, &state) and !rules.canRelease(&state, &absent));
+    check(@src(), reference.resolve(&state) == 0);
+    stale.support_material_flags |= p.SYNC_SUPPORT_SCENE;
+    check(@src(), !@import("fire_validation.zig").supportValid(&stale));
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+    put(0xfbdb3c, 0);
+}
+
+fn zilloBarcAlignment() void {
+    const alignment = @import("barc_alignment.zig");
+    mode = 53;
+    setup();
+    frame.epoch = 16002;
+    frame.level = 112;
+    put(0xfbdb3c, manager);
+    put(manager + 0x15c, 1);
+    put(manager + 0x160, component);
+    put(component + 0x294, task);
+    put(component + 0x29c, other);
+    win.store(u8, component + 0x166b, 4);
+    win.store(u16, other + 0xdc0, 417);
+    win.store([6]u8, name, "BARC2\x00".*);
+    put(node, 0xc69b0c);
+    put(task, 0xc5fff4);
+    put(task + 0x260, support);
+    put(support, 0xc69eac);
+    win.store(u8, support + 0x19, 0x43);
+    put(support + 0x1c, name);
+    put(support + 0x24, node);
+    put(support + 0x28, 0);
+    put(0xfb4b6c, 428);
+
+    var stack: [30]u32 = @splat(0);
+    const entry = @intFromPtr(&stack);
+    const matrix = entry + 0x38;
+    stack[0..6].* = .{ 0x9977ce, support, matrix, 0, 1, 0 };
+    const host = [_]f32{ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 20, 30, 1 };
+    const guest = [_]f32{ 0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 11, 22, 33, 1 };
+    win.store([16]f32, matrix, host);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    var support_key: [2]u32 = undefined;
+    check(@src(), !@import("vehicle_body_source.zig").supportKey(support, &support_key));
+    alignment.barc_alignment_input(component, entry);
+    check(@src(), frame.fire_task_gate_count == 1 and @import("fire_validation.zig").valid(&frame.fire_task_gates[0]));
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    for (0..5) |attempt| {
+        token.release += 1;
+        win.store([16]f32, matrix, guest);
+        win.store(u8, support + 0x19, if (attempt == 4) 0x44 else 0x43);
+        frame.fire_task_gates[0].slot = if (attempt == 1) 7 else 8;
+        frame.fire_task_gates[0].payload.barc_alignment.clock = if (attempt == 2) 427 else 428;
+        frame.fire_task_gates[0].payload.barc_alignment.body_flags = if (attempt == 3) 0x42 else 0x43;
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+        alignment.barc_alignment_input(component, entry);
+        var expected = guest;
+        if (attempt == 0) expected[0..12].* = host[0..12].*;
+        check(@src(), std.meta.eql(win.load([16]f32, matrix), expected));
+        check(@src(), (ci.cadence_finish() != 0) == (attempt == 0) and ci.cadence_abort_frame(&lease) != 0);
+    }
+    const suspension = @import("barc_suspension.zig");
+    const validGate = @import("fire_validation.zig").valid;
+    client = false;
+    token.release += 1;
+    win.store(u8, support + 0x19, 0x43);
+    win.store(u8, component + 0x1664, 0);
+    win.store(u8, component + 0x1667, 0);
+    win.store(u16, component + 0x936, 2);
+    put(component + 0x298, wrapper);
+    put(wrapper + 0x268, 0x46);
+    put(support + 0x98, body);
+    put(task + 0x240, body);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    check(@src(), suspension.barc_suspension_input(component, 0x44) == 0x44);
+    check(@src(), frame.fire_task_gate_count == 1 and validGate(&frame.fire_task_gates[0]));
+    const recorded = frame.fire_task_gates[0];
+    check(@src(), recorded.kind == p.SYNC_ACTOR_BARC_SUSPENSION and recorded.value == 0 and recorded.slot == 8);
+    var malformed = recorded;
+    malformed.value = 2;
+    check(@src(), !validGate(&malformed));
+    malformed = recorded;
+    malformed.payload.barc_suspension.cache_index = 2;
+    check(@src(), !validGate(&malformed));
+    malformed = recorded;
+    malformed.payload.storage[12] = 1;
+    check(@src(), !validGate(&malformed));
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    put(wrapper + 0x268, 0x47);
+    for (0..7) |attempt| {
+        token.release += 1;
+        frame.fire_task_gates[0] = recorded;
+        if (attempt == 1) frame.fire_task_gates[0].slot = 7;
+        if (attempt == 2) frame.fire_task_gates[0].payload.barc_suspension.clock = 427;
+        if (attempt == 3) frame.fire_task_gates[0].payload.barc_suspension.body_flags = 0x42;
+        if (attempt == 4) frame.fire_task_gates[0].payload.barc_suspension.cache_index = 1;
+        put(task + 0x240, if (attempt == 5) competitor else body);
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+        const local: u32 = if (attempt == 6) 0x44 else 0x45;
+        check(@src(), suspension.barc_suspension_input(component, local) == if (attempt == 0) 0x44 else local);
+        check(@src(), win.load(u32, wrapper + 0x268) == 0x47 and win.load(u16, component + 0x936) == 2);
+        check(@src(), (ci.cadence_finish() != 0) == (attempt == 0) and ci.cadence_abort_frame(&lease) != 0);
+    }
+
+    client = false;
+    token.release += 1;
+    win.store(u16, other + 0xdc0, 429);
+    put(other + 0x14, name + 0x40);
+    win.store([18]u8, name + 0x40, "stun_tank_chassis\x00".*);
+    win.store([9]u8, name, "StunTank\x00".*);
+    put(component + 0x60, 4);
+    put(wrapper + 0x268, 0x46);
+    put(task + 0x240, body);
+    win.store(u8, support + 0x19, 0x42);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    check(@src(), suspension.barc_suspension_input(component, 0x44) == 0x44);
+    check(@src(), frame.fire_task_gate_count == 1 and validGate(&frame.fire_task_gates[0]));
+    const rx_recorded = frame.fire_task_gates[0];
+    check(@src(), rx_recorded.character == 429 and rx_recorded.slot == 8 and rx_recorded.generation == 19);
+    check(@src(), !@import("vehicle_body_source.zig").supportKey(support, &support_key));
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    put(wrapper + 0x268, 0x47);
+    for (0..6) |attempt| {
+        token.release += 1;
+        frame.fire_task_gates[0] = rx_recorded;
+        win.store(u8, name, if (attempt == 1) 'X' else 'S');
+        win.store(u8, name + 0x40, if (attempt == 2) 'x' else 's');
+        put(component + 0x60, if (attempt == 3) 5 else 4);
+        put(support + 0x28, if (attempt == 4) competitor else 0);
+        if (attempt == 5) frame.fire_task_gates[0].character = 417;
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+        const expected_phase: u32 = if (attempt == 0) 0x44 else 0x45;
+        const phase = suspension.barc_suspension_input(component, 0x45);
+        if (phase != expected_phase) std.debug.print("RX suspension case {d}: phase {d}, expected {d}\n", .{ attempt, phase, expected_phase });
+        check(@src(), phase == expected_phase);
+        check(@src(), win.load(u32, wrapper + 0x268) == 0x47 and win.load(u16, component + 0x936) == 2);
+        check(@src(), (ci.cadence_finish() != 0) == (attempt == 0) and ci.cadence_abort_frame(&lease) != 0);
+    }
+    put(0xfbdb3c, 0);
+}
+
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 3076 and @intFromPtr(&image) < 0x420000 and @intFromPtr(&image) + image.len > 0xfc0000);
-    for ([_]usize{ 0xe60000, 0xe90000, 0xea0000, 0xfb0000 }) |address| protect(address, 0x10000, 4);
+    for ([_]usize{ 0xe60000, 0xe90000, 0xea0000, 0xf90000, 0xfb0000 }) |address| protect(address, 0x10000, 4);
     for (0..24) |i| {
         const address = 0x20000000 + i * 0x10000;
-        check(@src(), win.VirtualAlloc(address, 0x2000, 0x3000, 4) == address);
+        check(@src(), win.VirtualAlloc(address, if (address == world) 0x3000 else 0x2000, 0x3000, 4) == address);
     }
     defer {
         for (0..24) |i| check(@src(), win.VirtualFree(0x20000000 + i * 0x10000, 0, 0x8000) != 0);
@@ -546,6 +1186,10 @@ pub fn main() void {
         }
     }
     installedHooks();
+    zilloIslandOrder();
+    zilloBarcSupport();
+    zilloBarcAlignment();
+    zilloDishIslandOrder();
     arenaRunRandomChecks();
     arenaRunRandomAbi();
 }

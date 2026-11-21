@@ -2,6 +2,7 @@ const std = @import("std");
 const p = @import("protocol.zig");
 const state = @import("physics_state.zig");
 const validation = @import("physics_validation.zig");
+const breakup = @import("breakup_source.zig");
 const win = @import("win32.zig");
 const equal = @import("validation.zig").equal;
 const Lease = @import("cohort_types.zig").Lease;
@@ -56,18 +57,42 @@ fn describe(effect: usize, kind: u32, site: u32, choice: *Choice) bool {
     basic.rng = read(u32, 0xe5f498);
     return validation.valid(choice);
 }
-fn applyLaunch(descriptor: usize, handle: usize) void {
-    if (!state.active or !readable(descriptor, 0x30) or read(u8, descriptor + 0x2c) == 0 or !state.live() or state.failed) return;
+const LaunchSource = struct { site: u32 = 0x905f38, model: u32, name: [2]u32 = @splat(0) };
+fn launchSource(descriptor: usize, handle: usize, native_frame: usize) LaunchSource {
+    var source: LaunchSource = .{ .model = read(u16, descriptor + 4) };
+    const team_breakup = readable(native_frame, 16) and read(usize, native_frame + 4) == breakup.team_breakup_site;
+    if (team_breakup) {
+        source.site = breakup.team_breakup_site;
+        source.model = breakup.team_breakup_type;
+    }
+    var mesh: [2]u32 = undefined;
+    if (!breakup.resolve(handle, state.frame.?.epoch, &mesh)) return source;
+    if (!team_breakup) {
+        source.name = mesh;
+    } else if (read(usize, native_frame + 12) == descriptor) {
+        // This caller stores a native owner pointer in the descriptor's model
+        // field. The effect constructor still needs the original pointer.
+        source.name = breakup.teamBreakupKey(
+            read(usize, 0xfb4a20),
+            read(usize, descriptor + 4),
+            read(usize, native_frame + 8),
+            mesh,
+        ) orelse @splat(0);
+    }
+    return source;
+}
+fn applyLaunch(descriptor: usize, source: LaunchSource) void {
     var local = std.mem.zeroes(Choice);
     local.kind = p.SYNC_PHYSICS_BREAKUP_LAUNCH;
-    local.site = 0x905f38;
+    local.site = source.site;
     const basic = &local.payload.basic;
     basic.flags = 0x40000000 | @as(u32, if (read(u8, descriptor + 0x2d) != 0) 0x10 else 0);
-    basic.model = read(u16, descriptor + 4);
+    basic.model = source.model;
+    basic.name_hash = source.name;
     basic.clock = read(u32, 0xfb4b6c);
     basic.recipe = read([6]u32, descriptor + 8);
     basic.rng = read(u32, 0xe637b4);
-    if (!describeHandle(handle, &local) or !validation.valid(&local)) {
+    if (!validation.valid(&local)) {
         _ = state.fail(1, &local, null);
         clonewars_breakup_launch_debug[3] +%= 1;
         return;
@@ -109,27 +134,25 @@ fn geometryFailure(reason: u32, local: *const Choice, expected: ?*const Choice) 
     clonewars_breakup_geometry_debug[3] +%= 1;
     _ = state.fail(reason, local, expected);
 }
-fn applyGeometry(descriptor: usize, handle: usize, matrix: usize, scale: usize) void {
-    if (!state.active or !readable(descriptor, 0x30) or read(u8, descriptor + 0x2c) == 0 or !state.live() or state.failed) return;
+fn applyGeometry(descriptor: usize, source: LaunchSource, matrix: usize, scale: usize) void {
     var basis = std.mem.zeroes(Choice);
     var size = std.mem.zeroes(Choice);
-    var name = std.mem.zeroes(Choice);
     basis.kind = p.SYNC_PHYSICS_BREAKUP_BASIS;
     size.kind = p.SYNC_PHYSICS_BREAKUP_SCALE;
-    basis.site = 0x905f38;
+    basis.site = source.site;
     size.site = basis.site;
     const b = &basis.payload.breakup_basis;
     const s = &size.payload.basic;
     b.clock = read(u32, 0xfb4b6c);
     s.clock = b.clock;
-    b.model = read(u16, descriptor + 4);
+    b.model = source.model;
     s.model = b.model;
     s.flags = 0x40000000 | @as(u32, if (read(u8, descriptor + 0x2d) != 0) 0x10 else 0);
-    if (!describeHandle(handle, &name) or !readable(matrix, 64) or !readable(scale, 12)) {
+    if (!readable(matrix, 64) or !readable(scale, 12)) {
         geometryFailure(1, &basis, null);
         return;
     }
-    b.name_hash = name.payload.basic.name_hash;
+    b.name_hash = source.name;
     s.name_hash = b.name_hash;
     b.matrix = read([16]f32, matrix);
     s.recipe[0..3].* = read([3]u32, scale);
@@ -179,22 +202,21 @@ fn applyGeometry(descriptor: usize, handle: usize, matrix: usize, scale: usize) 
     state.consume(2);
     clonewars_breakup_geometry_debug[1] +%= 1;
 }
-pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, matrix: usize, scale: usize, model: usize) void {
+pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, matrix: usize, scale: usize, model: usize, native_frame: usize) void {
     const saved = win.GetLastError();
     defer win.SetLastError(saved);
-    if (state.active and !state.failed and state.live() and readable(descriptor, 0x30) and read(u8, descriptor + 0x2c) != 0) {
-        _ = @import("breakup_source.zig").register(handle, model, state.frame.?.epoch);
-    }
-    const failed = state.failed;
-    applyLaunch(descriptor, handle);
-    applyGeometry(descriptor, handle, matrix, scale);
-    if (!failed and state.failed and clonewars_breakup_source_failure[0] == 0) {
+    if (!state.active or state.failed or !state.live() or !readable(descriptor, 0x30) or read(u8, descriptor + 0x2c) == 0) return;
+    _ = breakup.register(handle, model, state.frame.?.epoch);
+    const source = launchSource(descriptor, handle, native_frame);
+    applyLaunch(descriptor, source);
+    if (!state.failed and state.live()) applyGeometry(descriptor, source, matrix, scale);
+    if (state.failed and clonewars_breakup_source_failure[0] == 0) {
         clonewars_breakup_source_failure[0..4].* = .{ @truncate(descriptor), @truncate(handle), @truncate(matrix), @truncate(scale) };
         if (readable(handle, 8)) {
             clonewars_breakup_source_failure[4..6].* = read([2]u32, handle);
-            const source = read(usize, handle + 4);
-            if (readable(source, 0xb8)) {
-                const name = read(usize, source + 0xb4);
+            const mesh = read(usize, handle + 4);
+            if (readable(mesh, 0xb8)) {
+                const name = read(usize, mesh + 0xb4);
                 clonewars_breakup_source_failure[6] = @truncate(name);
                 if (readable(name, 1)) clonewars_breakup_source_failure[7] = read(u8, name);
             }
@@ -296,6 +318,14 @@ pub export fn physics_effect_body_resolve(sequence: u32, event: u32) usize {
         return 0;
     }
     return if (result == 1) body else 0;
+}
+pub export fn physics_effect_ordering_source(body: usize, source: *[2]u32) c_int {
+    if (body == 0 or !state.live() or state.failed) return 0;
+    const count = read(u32, 0xe5f480);
+    const pool = read(usize, 0xfa3d38);
+    if (count > p.SYNC_MAX_ACTORS or pool == 0) return 0;
+    source.* = @import("effect_binding.zig").orderingSource(bindings[0..count], body, state.frame.?.epoch, state.lease.cohort.release, pool, effectSourceLive) orelse return 0;
+    return 1;
 }
 fn effectSourceLive(binding: *const Binding, index: usize, pool: usize) bool {
     return effectLive(binding, index, .{ .pool = pool, .body = binding.body });

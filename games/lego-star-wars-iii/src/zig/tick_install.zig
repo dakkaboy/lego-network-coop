@@ -46,8 +46,14 @@ extern fn native_pack_hit_float_input() void;
 extern fn native_rts_wait_seed_input() void;
 extern fn native_pack_spawn_rng_input() void;
 extern fn native_pack_spawn_birth_input() void;
-pub fn patches() [41]hook.Patch {
-    return .{
+pub fn patches() [51]hook.Patch {
+    return [_]hook.Patch{
+        .{ .address = s.site.ZILLO_THROW, .expected = "\xe8\x3b\xf8\xff\xff", .target = @intFromPtr(&@import("tick_zillo_rng.zig").prepareAndThrow), .opcode = 0xe8 },
+        .{ .address = s.site.ZILLO_RELEASE, .expected = "\xe8\xab\x31\xfd\xff", .target = @intFromPtr(&@import("tick_zillo_rng.zig").prepareAndRelease), .opcode = 0xe8 },
+        .{ .address = s.site.ZILLO_SPREAD, .expected = "\xe8\xbe\xc3\x28\x00", .target = @intFromPtr(&@import("tick_zillo_rng.zig").native_zillo_spread_seed), .opcode = 0xe8 },
+        .{ .address = s.site.ZILLO_ORIENTATION, .expected = "\xe8\x7b\x71\x44\x00", .target = @intFromPtr(&@import("tick_zillo_rng.zig").native_zillo_orientation_seed), .opcode = 0xe8 },
+        .{ .address = s.site.ZILLO_THROW_COUNTDOWN, .expected = "\xe8\x2b\xca\x28\x00", .target = @intFromPtr(&@import("tick_zillo_rng.zig").native_zillo_throw_countdown_seed), .opcode = 0xe8 },
+        .{ .address = s.site.ZILLO_GROUND_RENDER, .expected = "\x80\xbe\x7d\x02\x00\x00\x00", .target = @intFromPtr(&@import("tick_zillo_ground.zig").native_zillo_ground_render_bridge), .opcode = 0xe9 },
         .{ .address = s.site.PACK_SPAWN_X, .expected = "\xe8\x5d\xe8\xfe\xff", .target = @intFromPtr(&native_pack_spawn_rng_input), .opcode = 0xe8 },
         .{ .address = s.site.PACK_SPAWN_Z, .expected = "\xe8\x41\xe8\xfe\xff", .target = @intFromPtr(&native_pack_spawn_rng_input), .opcode = 0xe8 },
         .{ .address = s.site.PACK_SPAWN_BIRTH, .expected = "\xe8\x2e\xfd\xfe\xff", .target = @intFromPtr(&native_pack_spawn_birth_input), .opcode = 0xe8 },
@@ -81,6 +87,9 @@ pub fn patches() [41]hook.Patch {
         .{ .address = s.site.PACK_MOVE_HEADING, .expected = "\xe8\xb1\x63\x27\x00", .target = @intFromPtr(&native_pack_move_heading_seed_input), .opcode = 0xe8 },
         .{ .address = s.site.PACK_MOVE_CHOICE, .expected = "\xe8\x23\x5f\x27\x00", .target = @intFromPtr(&native_pack_move_choice_seed_input), .opcode = 0xe8 },
         .{ .address = s.site.PACK_POSE_QUERY, .expected = "\xe8\x5c\x4f\xfb\xff", .target = @intFromPtr(&native_pack_pose_query_input), .opcode = 0xe8 },
+        // Mode 9 uses the selected cell for both relinking and its floor height.
+        // Commit the pose before that lookup, at the same journal position.
+        .{ .address = 0x43396c, .expected = "\xe8\xff\x6c\xff\xff", .target = @intFromPtr(&native_pack_pose_query_input), .opcode = 0xe8 },
         .{ .address = s.site.PACK_POSE_COMMIT, .expected = "\x8b\x41\x38\x8b\x54\x24\x04", .target = @intFromPtr(&native_pack_pose_commit_input), .opcode = 0xe9 },
         .{ .address = s.site.PACK_CELL_MEMBER, .expected = "\xf6\xc3\x60\x75\x20", .target = @intFromPtr(&native_pack_cell_admission_input), .opcode = 0xe9 },
         .{ .address = s.site.RTS_TURN_INPUT, .expected = "\x8b\xf8\x8b\x03\x8b\x90\x60\x01\x00\x00", .target = @intFromPtr(&native_rts_turn_input_bridge), .opcode = 0xe9 },
@@ -89,17 +98,18 @@ pub fn patches() [41]hook.Patch {
         .{ .address = s.site.PACK_GOAL_MOVE, .expected = "\xd9\x44\x24\x40\xd8\x27", .target = @intFromPtr(&native_pack_goal_move_bridge), .opcode = 0xe9 },
         .{ .address = s.site.PACK_GOAL_ACTIVE, .expected = "\xd9\x44\x24\x60\xd8\x23", .target = @intFromPtr(&native_pack_goal_active_bridge), .opcode = 0xe9 },
         .{ .address = s.site.PACK_BEHAVIOR, .expected = "\x8b\x8e\x50\x01\x00\x00", .target = @intFromPtr(&native_pack_behavior_bridge), .opcode = 0xe9 },
-    };
+    } ++ @import("tick_arena_rope.zig").patches();
 }
-pub const hit_rng = [_][2]u32{ .{ s.site.PACK_HIT_REACTION, 0x6d6140 }, .{ s.site.PACK_HIT_AVOIDANCE, 0x6d6140 }, .{ s.site.PACK_HIT_DEBRIS, 0x6d6140 }, .{ s.site.PACK_HIT_SHOCK, 0x6d6140 }, .{ s.site.PACK_HIT_HEADING, 0x6d6140 }, .{ s.site.PACK_IMPULSE_TIMER, 0x6d60d0 }, .{ s.site.PACK_IMPULSE_SPEED, 0x6d60d0 }, .{ s.site.PACK_IMPULSE_HEADING, 0x6d6140 }, .{ s.site.PACK_DEATH_CLIP, 0x6d60d0 }, .{ s.site.PACK_MODE10_DURATION, 0x6d60d0 }, .{ s.site.PACK_MODE10_CLIP_PHASE, 0x6d60d0 }, .{ s.site.RTS_WAIT_RNG, 0x573100 } };
+pub const hit_rng = [_][2]u32{ .{ s.site.PACK_HIT_REACTION, 0x6d6140 }, .{ s.site.PACK_HIT_AVOIDANCE, 0x6d6140 }, .{ s.site.PACK_HIT_DEBRIS, 0x6d6140 }, .{ s.site.PACK_HIT_SHOCK, 0x6d6140 }, .{ s.site.PACK_HIT_HEADING, 0x6d6140 }, .{ s.site.PACK_IMPULSE_TIMER, 0x6d60d0 }, .{ s.site.PACK_IMPULSE_SPEED, 0x6d60d0 }, .{ s.site.PACK_IMPULSE_HEADING, 0x6d6140 }, .{ s.site.PACK_DEATH_CLIP, 0x6d60d0 }, .{ s.site.PACK_MODE10_DURATION, 0x6d60d0 }, .{ s.site.PACK_MODE10_CLIP_PHASE, 0x6d60d0 }, .{ s.site.PACK_MODE28_RECOVERY_DURATION, 0x6d60d0 }, .{ s.site.RTS_WAIT_RNG, 0x573100 } };
 pub export fn native_tick_install() c_int {
     const exit = [_]u8{ 0x5f, 0x5e, 0x5d, 0x5b, 0x83, 0xc4, 8, 0xc2, 8, 0 };
     if (!s.readable(0x475acb, exit.len) or !@import("std").mem.eql(u8, &s.load([10]u8, 0x475acb), &exit)) return 0;
     if (native_global_pack_registry_count() == 0) return 0;
     var expected: [hit_rng.len][5]u8 = undefined;
-    var all: [42 + hit_rng.len]hook.Patch = undefined;
-    all[0..41].* = patches();
-    for (hit_rng, &expected, all[41..][0..hit_rng.len]) |source, *bytes, *patch| {
+    const fixed = patches();
+    var all: [fixed.len + hit_rng.len + 1]hook.Patch = undefined;
+    all[0..fixed.len].* = fixed;
+    for (hit_rng, &expected, all[fixed.len..][0..hit_rng.len]) |source, *bytes, *patch| {
         bytes[0] = 0xe8;
         @import("std").mem.writeInt(u32, bytes[1..5], source[1] -% source[0] -% 5, .little);
         patch.* = .{ .address = source[0], .expected = bytes, .target = if (source[1] == 0x573100) @intFromPtr(&native_rts_wait_seed_input) else if (source[1] == 0x6d6140) @intFromPtr(&native_pack_hit_int_input) else @intFromPtr(&native_pack_hit_float_input), .opcode = 0xe8 };

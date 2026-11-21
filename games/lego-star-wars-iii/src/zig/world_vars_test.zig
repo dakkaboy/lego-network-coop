@@ -147,6 +147,25 @@ pub fn main() void {
     active.cohort_nonce = 2;
     check(@src(), vars.world_vars_bind_cohort(&active) == 1);
     collect(frame, 1, 4, 4050293772);
+
+    setup();
+    frame.level = 83;
+    const wave_a = "WaveADestroyed";
+    const wave_b = "WaveBDestroyed";
+    @memcpy(nodes[0][0x14..][0..wave_a.len], wave_a);
+    @memcpy(nodes[1][0x14..][0..wave_b.len], wave_b);
+    put(&nodes[0], 0x38, 0x7f800000);
+    put(&nodes[1], 0x38, 0x7f800000);
+    check(@src(), vars.world_vars_collect(frame) == 1 and frame.variable_count == 4);
+    for ([_][]const u8{ wave_a, wave_b }, frame.variables[0..2], nodes[0..2]) |name, variable, *node| {
+        check(@src(), std.mem.eql(u8, variable.name[0..name.len], name));
+        check(@src(), @as(u32, @bitCast(variable.value)) == 0x7f800000);
+        put(node, 0x38, 0);
+    }
+    check(@src(), vars.world_vars_apply(frame) == 1);
+    for (nodes[0..2]) |*node| check(@src(), win.load(u32, @intFromPtr(node) + 0x38) == 0x7f800000);
+    frame.level = 84;
+    check(@src(), vars.world_vars_collect(frame) == 0 and frame.variable_count == 0);
 }
 comptime {
     _ = @import("lexical_seh.zig");

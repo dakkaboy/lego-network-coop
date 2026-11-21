@@ -77,6 +77,12 @@ export fn game_sync_native_fault(code: c_int) void {
     check(@src(), code == 22);
     faults += 1;
 }
+export fn entities_observed_identity(value: usize, slot: *u32, generation: *u32) c_int {
+    if (value != turret_pilot) return 0;
+    slot.* = 12;
+    generation.* = turret_pilot_generation;
+    return 1;
+}
 export fn entities_slot(value: usize) c_int {
     return if (value == turret_pilot) 12 else -1;
 }

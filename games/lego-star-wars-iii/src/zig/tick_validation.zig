@@ -7,8 +7,14 @@ const fire_sites = blk: {
 };
 
 const coefficients = [_]u32{ 0xfb0fc4, 0xfb0fa8, 0xfb0fb4, 0xfb102c, 0xfb0fb0, 0xfb0fac, 0xfb1028, 0xfb0fa0, 0xfb1014, 0xfb0fc0, 0xfb1070, 0xfb1018, 0xfb101c, 0xfb0fb8, 0xfb0fa4, 0xfb0fbc, 0xfb0fc8 };
-const hit_sites = [_]u32{ s.PACK_HIT_REACTION, s.PACK_HIT_AVOIDANCE, s.PACK_HIT_DEBRIS, s.PACK_HIT_SHOCK, s.PACK_HIT_HEADING, s.PACK_IMPULSE_TIMER, s.PACK_IMPULSE_SPEED, s.PACK_IMPULSE_HEADING, s.PACK_DEATH_CLIP, s.PACK_MODE10_DURATION, s.PACK_MODE10_CLIP_PHASE };
+const hit_sites = [_]u32{ s.PACK_HIT_REACTION, s.PACK_HIT_AVOIDANCE, s.PACK_HIT_DEBRIS, s.PACK_HIT_SHOCK, s.PACK_HIT_HEADING, s.PACK_IMPULSE_TIMER, s.PACK_IMPULSE_SPEED, s.PACK_IMPULSE_HEADING, s.PACK_DEATH_CLIP, s.PACK_MODE10_DURATION, s.PACK_MODE10_CLIP_PHASE, s.PACK_MODE28_RECOVERY_DURATION };
 const groups = [_][]const u32{
+    &.{ s.ZILLO_THROW, s.ZILLO_THROW + 1, s.ZILLO_THROW + 2, s.ZILLO_THROW + 3 },
+    &.{ s.ZILLO_RELEASE, s.ZILLO_RELEASE + 1, s.ZILLO_RELEASE + 2, s.ZILLO_RELEASE + 3, s.ZILLO_RELEASE + 4, s.ZILLO_RELEASE + 5 },
+    &.{ s.ZILLO_SPREAD, s.ZILLO_SPREAD + 1, s.ZILLO_SPREAD + 2, s.ZILLO_SPREAD + 3, s.ZILLO_SPREAD + 4, s.ZILLO_SPREAD + 5 },
+    &.{ s.ZILLO_ORIENTATION, s.ZILLO_ORIENTATION + 1, s.ZILLO_ORIENTATION + 2, s.ZILLO_ORIENTATION + 3, s.ZILLO_ORIENTATION + 4, s.ZILLO_ORIENTATION + 5 },
+    &.{ s.ZILLO_THROW_COUNTDOWN, s.ZILLO_THROW_COUNTDOWN + 1, s.ZILLO_THROW_COUNTDOWN + 2, s.ZILLO_THROW_COUNTDOWN + 3 },
+    &.{ s.ZILLO_GROUND_RENDER, s.ZILLO_GROUND_RENDER + 1, s.ZILLO_GROUND_RENDER + 2, s.ZILLO_GROUND_RENDER + 3, s.ZILLO_GROUND_RENDER + 4, s.ZILLO_GROUND_RENDER + 5 },
     &.{ s.PACK_BEHAVIOR, s.PACK_BEHAVIOR + 1, s.PACK_BEHAVIOR + 2 },
     &.{ s.PACK_ANIMATION_MEMBER, s.PACK_ANIMATION_REQUEST, s.PACK_ANIMATION_STATE, s.PACK_ANIMATION_CLOCK, s.PACK_ANIMATION_DELTA },
     &.{ s.WEAPON_COMMAND_ACTOR, s.WEAPON_COMMAND_GENERATION, s.WEAPON_COMMAND_VALUE },
@@ -38,6 +44,11 @@ const runs = [_]Run{
     .{ .first = s.PACK_GOAL_ACTIVE, .count = s.PACK_GOAL_FIELDS },
     .{ .first = s.PACK_POSE_QUERY, .count = 5, .stride = 5 },
     .{ .first = s.PACK_POSE_COMMIT, .count = 5, .stride = 5 },
+};
+const rope_runs = [_]Run{
+    .{ .first = s.ARENA_ROPE_BASIS, .count = 21 },
+    .{ .first = s.ARENA_ROPE_BIRTH, .count = 9 },
+    .{ .first = s.ARENA_ROPE_STEP, .count = 9 },
 };
 const death_sites = [_]u32{ s.PACK_DEATH_VERTICAL, s.PACK_DEATH_SPEED, s.PACK_DEATH_FLAGS };
 
@@ -100,9 +111,26 @@ pub fn gateValid(gate: p.SyncTickGate) bool {
         4 => value <= 65535,
         else => finite(value),
     };
+    for (rope_runs) |run| if (field(run, site)) |index| return switch (index) {
+        0 => value < p.SYNC_MAX_ACTORS,
+        1 => value != 0,
+        2 => value & 0xffff != 0,
+        else => finite(value),
+    };
     if (contains(&coefficients, site)) return value <= 0x3f800000 or value == 0x80000000;
     if (contains(&hit_sites, site) or contains(&hit_sites, site -% 5)) return true;
     return switch (site) {
+        s.ZILLO_THROW, s.ZILLO_RELEASE, s.ZILLO_SPREAD, s.ZILLO_ORIENTATION, s.ZILLO_THROW_COUNTDOWN => value < p.SYNC_MAX_ACTORS,
+        s.ZILLO_THROW + 1, s.ZILLO_RELEASE + 1, s.ZILLO_SPREAD + 1, s.ZILLO_ORIENTATION + 1, s.ZILLO_THROW_COUNTDOWN + 1 => value != 0,
+        s.ZILLO_THROW + 2, s.ZILLO_RELEASE + 2, s.ZILLO_SPREAD + 2, s.ZILLO_ORIENTATION + 2, s.ZILLO_THROW_COUNTDOWN + 2 => value > 0 and value < 0x900000,
+        s.ZILLO_RELEASE + 3, s.ZILLO_ORIENTATION + 3 => value < 3,
+        s.ZILLO_SPREAD + 3 => value == 1 or value == 2,
+        s.ZILLO_RELEASE + 4, s.ZILLO_SPREAD + 4, s.ZILLO_ORIENTATION + 4 => value == 6 or value == 31 or value == 33,
+        s.ZILLO_ORIENTATION + 5 => value <= 0xffff,
+        s.ZILLO_THROW + 3, s.ZILLO_RELEASE + 5, s.ZILLO_SPREAD + 5, s.ZILLO_THROW_COUNTDOWN + 3 => true,
+        s.ZILLO_GROUND_RENDER, s.ZILLO_GROUND_RENDER + 1, s.ZILLO_GROUND_RENDER + 2, s.ZILLO_GROUND_RENDER + 3 => true,
+        s.ZILLO_GROUND_RENDER + 4 => value >= 1 and value <= 3,
+        s.ZILLO_GROUND_RENDER + 5 => value <= 1,
         s.PACK_BEHAVIOR => value < 65535,
         s.PACK_BEHAVIOR + 1 => true,
         s.PACK_BEHAVIOR + 2 => value == 0 or (value >= 0x400000 and value < 0x1200000 and value & 3 == 0),
@@ -154,7 +182,7 @@ pub fn streamValid(gates: []const p.SyncTickGate) bool {
             i += 1 + coefficients.len;
             continue;
         }
-        for (runs) |run| if (field(run, gate.site)) |index| {
+        for (runs ++ rope_runs) |run| if (field(run, gate.site)) |index| {
             if (index != 0 or gates.len - i < run.count) return false;
             for (0..run.count) |j| {
                 const part = gates[i + j];

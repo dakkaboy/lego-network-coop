@@ -1,12 +1,13 @@
 const std = @import("std");
 const win = @import("win32.zig");
 pub const Patch = struct { address: usize, expected: []const u8, target: usize, opcode: u8 = 0xe9 };
+const max_patches = 65;
 pub fn apply(patches: []const Patch) bool {
-    if (patches.len == 0 or patches.len > 64) return false;
+    if (patches.len == 0 or patches.len > max_patches) return false;
     for (patches) |patch| {
         if (patch.expected.len < 5 or !win.accessible(patch.address, patch.expected.len, false) or !std.mem.eql(u8, @as([*]const u8, @ptrFromInt(patch.address))[0..patch.expected.len], patch.expected)) return false;
     }
-    var protections: [64]u32 = undefined;
+    var protections: [max_patches]u32 = undefined;
     var acquired: usize = 0;
     while (acquired < patches.len) : (acquired += 1) {
         const patch = patches[acquired];

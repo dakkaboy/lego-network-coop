@@ -51,6 +51,9 @@ pub export fn native_pack_attack(member: usize, local: u32) u32 {
     return local;
 }
 fn seed(member: usize, at: u32, seed_site: u32, with_target: bool, require_identity: bool, correction: ?*[8]u32) void {
+    seedWithStack(member, at, seed_site, with_target, require_identity, correction, 0);
+}
+fn seedWithStack(member: usize, at: u32, seed_site: u32, with_target: bool, require_identity: bool, correction: ?*[8]u32, native_stack: usize) void {
     if (!s.ready()) return;
     const error_code = s.win.GetLastError();
     defer s.win.SetLastError(error_code);
@@ -65,6 +68,7 @@ fn seed(member: usize, at: u32, seed_site: u32, with_target: bool, require_ident
         const expected = s.firstExpected();
         const pack = load(usize, member + 0x68);
         s.clonewars_native_pack_seed_context = .{ s.frame.?.epoch, s.frame.?.sequence, s.clock(), at, @truncate(member), id.index, id.witness, values[0], local, if (expected) |e| e.value else 0, if (expected) |e| e.site else 0, if (expected) |e| e.clock else 0, load(u32, member + 0x6c), load(u32, member + 0x70), load(u32, pack + 0xac), @import("tick_pack_mutation.zig").clonewars_pack_membership_revision };
+        if (native_stack != 0) @import("pack_hit_query_observer.zig").observe(member, native_stack, id);
     }
     if (s.host) {
         if (!s.capacity(2, at)) return;
@@ -75,7 +79,7 @@ fn seed(member: usize, at: u32, seed_site: u32, with_target: bool, require_ident
         s.clonewars_native_pack_avoidance_debug[@intFromBool(!s.host)] +%= 1;
         if (local != source) s.clonewars_native_pack_avoidance_debug[2] +%= 1;
     }
-    if ((at == v.PACK_MODE10_DURATION or at == v.PACK_MODE10_CLIP_PHASE) and s.ready()) {
+    if ((at == v.PACK_MODE10_DURATION or at == v.PACK_MODE10_CLIP_PHASE or at == v.PACK_MODE28_RECOVERY_DURATION) and s.ready()) {
         s.clonewars_native_pack_mode10_rng_debug[@intFromBool(!s.host)] +%= 1;
         if (local != source) s.clonewars_native_pack_mode10_rng_debug[2] +%= 1;
     }
@@ -90,7 +94,7 @@ pub export fn native_pack_attack_seed(member: usize) void {
     seed(member, v.PACK_TIMER_MEMBER, v.PACK_TIMER_SEED, true, true, null);
 }
 pub export fn native_pack_hit_seed(member: usize, at: u32) void {
-    const sites = [_]u32{ v.PACK_HIT_REACTION, v.PACK_HIT_AVOIDANCE, v.PACK_HIT_DEBRIS, v.PACK_HIT_SHOCK, v.PACK_HIT_HEADING, v.PACK_IMPULSE_TIMER, v.PACK_IMPULSE_SPEED, v.PACK_IMPULSE_HEADING, v.PACK_DEATH_CLIP, v.PACK_MODE10_DURATION, v.PACK_MODE10_CLIP_PHASE };
+    const sites = [_]u32{ v.PACK_HIT_REACTION, v.PACK_HIT_AVOIDANCE, v.PACK_HIT_DEBRIS, v.PACK_HIT_SHOCK, v.PACK_HIT_HEADING, v.PACK_IMPULSE_TIMER, v.PACK_IMPULSE_SPEED, v.PACK_IMPULSE_HEADING, v.PACK_DEATH_CLIP, v.PACK_MODE10_DURATION, v.PACK_MODE10_CLIP_PHASE, v.PACK_MODE28_RECOVERY_DURATION };
     for (sites) |known| if (known == at) {
         seed(member, at, at + 5, false, false, &s.clonewars_native_pack_hit_correction);
         return;
@@ -101,7 +105,8 @@ pub export fn native_pack_hit_seed_bridge(member: usize, at: u32, native_stack: 
     defer s.win.SetLastError(saved);
     if (s.ready() and at == v.PACK_HIT_DEBRIS and s.readable(native_stack, 36) and load(u32, native_stack) == at + 5) {
         s.clonewars_native_pack_hit_caller = .{ s.frame.?.epoch, s.frame.?.sequence, s.clock(), @truncate(member), load(u32, native_stack), load(u32, native_stack + 28), load(u32, native_stack + 32), @truncate(native_stack) };
-        @import("pack_hit_query_observer.zig").observe(member, native_stack);
+        seedWithStack(member, at, at + 5, false, false, &s.clonewars_native_pack_hit_correction, native_stack);
+        return;
     }
     native_pack_hit_seed(member, at);
 }
