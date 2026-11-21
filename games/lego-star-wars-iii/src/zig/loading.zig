@@ -27,6 +27,9 @@ fn updateClock(root: usize, level: i32) void {
     own.active = @intFromBool(flags & 1 != 0);
     if (own.active == 0) return;
     var skip = flags & 4 != 0;
+    if (comptime @hasDecl(@import("root"), "background_loopback")) {
+        skip = skip or @import("root").background_loopback.skipIntro();
+    }
     if (epoch != 0 and lan_status() == 3 and peer.epoch == epoch and peer.level == level) {
         skip = skip or peer.skip != 0;
         if (lan_is_host() == 0 and peer.active != 0 and std.math.isFinite(peer.elapsed) and peer.elapsed > win.load(f32, root + 0x3128)) win.store(f32, root + 0x3128, peer.elapsed);
@@ -61,11 +64,22 @@ pub export fn loading_poll() void {
         was_loading = false;
     }
     const phase = win.load(i32, root + 0x1b78);
-    if (phase >= 1 and phase <= 3) updateClock(root, win.load(i32, 0xfb8438)) else if (phase == 0xe and game_current_level() >= 0) {
-        own.level = game_current_level();
-        own.ready = @intFromBool(win.load(i32, 0xe6e61c) < 0 and game_load_status() != 1);
-        own.active = 0;
-        was_loading = false;
+    const native_level = win.load(i32, 0xfb8438);
+    if (phase >= 1 and phase <= 3) {
+        updateClock(root, native_level);
+    } else {
+        const current = game_current_level();
+        const native_idle = win.load(i32, 0xe6e61c) < 0;
+        const idle = native_idle and game_load_status() != 1;
+        // An opening world can already be current while the network transition is still pending.
+        const opening = phase == 0xd and native_idle and (idle or current == native_level) and
+            epoch != 0 and lan_status() == 3 and native_level >= 0 and native_level == game_network_target_level();
+        if (opening or (phase == 0xe and current >= 0)) {
+            own.level = if (opening) native_level else current;
+            own.ready = @intFromBool(opening or idle);
+            own.active = 0;
+            was_loading = false;
+        }
     }
     lan_publish_loading(&own, 0);
 }

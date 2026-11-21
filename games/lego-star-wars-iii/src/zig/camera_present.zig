@@ -11,6 +11,9 @@ fn addedWork(device: usize) void {
     s.clonewars_camera_threads[0] = s.win.GetCurrentThreadId();
     s.network_window_update();
     s.trace_frame +%= 1;
+    if (comptime @hasDecl(@import("root"), "background_loopback")) {
+        if (s.background_capture) @import("root").background_loopback.update();
+    }
     s.game_sync_inspect();
     _ = @import("camera_image.zig").crop(device);
     const preview = s.clonewars_camera_preview;

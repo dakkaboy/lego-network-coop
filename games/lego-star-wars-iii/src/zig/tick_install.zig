@@ -43,10 +43,11 @@ extern fn native_pack_goal_move_bridge() void;
 extern fn native_pack_goal_active_bridge() void;
 extern fn native_pack_hit_int_input() void;
 extern fn native_pack_hit_float_input() void;
+extern fn native_rts_wait_sample_input() void;
 extern fn native_rts_wait_seed_input() void;
 extern fn native_pack_spawn_rng_input() void;
 extern fn native_pack_spawn_birth_input() void;
-pub fn patches() [51]hook.Patch {
+pub fn patches() [52]hook.Patch {
     return [_]hook.Patch{
         .{ .address = s.site.ZILLO_THROW, .expected = "\xe8\x3b\xf8\xff\xff", .target = @intFromPtr(&@import("tick_zillo_rng.zig").prepareAndThrow), .opcode = 0xe8 },
         .{ .address = s.site.ZILLO_RELEASE, .expected = "\xe8\xab\x31\xfd\xff", .target = @intFromPtr(&@import("tick_zillo_rng.zig").prepareAndRelease), .opcode = 0xe8 },
@@ -73,6 +74,7 @@ pub fn patches() [51]hook.Patch {
         .{ .address = 0x791777, .expected = "\xe8\xe4\x4d\x11\x00", .target = @intFromPtr(&reset_native_visibility_cache), .opcode = 0xe8 },
         .{ .address = s.site.RTS_GAME_RNG, .expected = "\xe8\xd2\x6a\xfb\xff", .target = @intFromPtr(&native_rts_registry_input), .opcode = 0xe8 },
         .{ .address = s.site.RTS_PRODUCER_GAME_RNG, .expected = "\x8b\xbe\xb8\x00\x00\x00", .target = @intFromPtr(&native_rts_producer_input), .opcode = 0xe9 },
+        .{ .address = s.site.RTS_WAIT_SAMPLE, .expected = "\x80\x7c\x24\x04\x00", .target = @intFromPtr(&native_rts_wait_sample_input) },
         .{ .address = s.site.RTS_PACK_ADMISSION, .expected = "\x3b\xdf\x7d\x26\x84\xc0\x75\x22", .target = @intFromPtr(&native_rts_pack_gate), .opcode = 0xe9 },
         .{ .address = s.site.RTS_TURRET_HEADING, .expected = "\x66\x89\x86\x80\x08\x00\x00", .target = @intFromPtr(&native_rts_turret_heading_input), .opcode = 0xe9 },
         .{ .address = s.site.PACK_ATTACK, .expected = "\xf6\xc2\x02\x74\x34\xd8\x1d\x44\xae\xad\x00", .target = @intFromPtr(&native_pack_attack_input), .opcode = 0xe9 },

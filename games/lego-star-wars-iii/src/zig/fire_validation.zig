@@ -48,6 +48,7 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
             (data.barc_alignment.body_flags == 0x42 or data.barc_alignment.body_flags == 0x43) and barcBasis(&data.barc_alignment.basis),
         p.SYNC_ACTOR_ARENA_RUN_RANDOM => return g.flags <= 1 and g.action == 0 and g.value >= 0 and g.value <= 65535 and g.character == 119 and data.arena_run_random.behavior_class == 0x6dee68 and data.arena_run_random.run_state == 10,
         p.SYNC_ACTOR_RIDER_FIRE => return g.flags <= 1 and g.action == 0 and boolean and data.rider_fire.behavior_class == 0x6d83dc and data.rider_fire.mount_slot < p.SYNC_MAX_ACTORS and data.rider_fire.mount_generation != 0 and v.finite(data.rider_fire.cooldown),
+        p.SYNC_ACTOR_RYLOTH_FIGHTER_DEATH => return clean and boolean and g.character == 381 and zeros(&data.storage),
         p.SYNC_ACTOR_HAZARD_DEATH => return clean and boolean and zeros(data.storage[4..]),
         p.SYNC_ACTOR_SPELLIT_ADMISSION => return ((g.flags <= 1 and (g.action == 0x24 or g.action == 0x25)) or (g.flags >= 2 and g.flags <= 5 and g.action == 0)) and boolean and zeros(data.storage[4..]),
         p.SYNC_FIRE_TASK_VISIBILITY => return g.flags & p.SYNC_FIRE_TASK_QUEUES_SHOT != 0 and boolean and data.state.repeat <= 255 and v.finite(data.state) and data.state.delta >= 0,

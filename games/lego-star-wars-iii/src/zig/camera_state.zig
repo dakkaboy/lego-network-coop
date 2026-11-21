@@ -76,7 +76,7 @@ pub extern fn network_window_message(usize, u32, usize, isize) c_int;
 pub extern fn capture_frame(usize) void;
 pub extern fn capture_reset() void;
 pub extern fn coop_draw(usize, *const [2]Hud) void;
-pub extern fn coop_set_window(usize) void;
+pub extern fn coop_set_window(usize, bool) void;
 pub extern fn coop_fonts_lost() void;
 pub extern fn coop_fonts_reset() void;
 pub extern fn coop_release_fonts() void;

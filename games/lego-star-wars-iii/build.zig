@@ -121,6 +121,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "mapping-session", .source = "mapping_session_fixture_test" },
         }) |unit| {
             const fixture = b.addLibrary(.{ .name = b.fmt("{s}-{s}", .{ unit.name, configuration.name }), .linkage = .dynamic, .root_module = module(b, native_target, configuration.mode, b.fmt("src/zig/{s}.zig", .{unit.source})), .use_llvm = true });
+            configureMsvcLibc(b, fixture);
             fixture.image_base = 0x65000000;
             fixture.linker_dynamicbase = false;
             native_suite.step.dependOn(&b.addInstallArtifact(fixture, .{}).step);
@@ -140,8 +141,10 @@ pub fn build(b: *std.Build) void {
     const game_module = module(b, native_target, .ReleaseSafe, "src/zig/game_root.zig");
     game_module.addOptions("game_options", game_options);
     const game_object = b.addObject(.{ .name = "clonewars-game", .root_module = game_module, .use_llvm = true });
+    configureMsvcLibc(b, game_object);
     game_object.dll_export_fns = false;
     const game = b.addLibrary(.{ .name = "clonewars-camera", .linkage = .dynamic, .root_module = b.createModule(.{ .target = native_target, .optimize = .ReleaseSafe, .link_libc = true }), .use_llvm = true, .win32_module_definition = gameExports(b, constructor_query) });
+    configureMsvcLibc(b, game);
     game.root_module.addObject(game_object);
     game.root_module.linkSystemLibrary("user32", .{ .use_pkg_config = .no });
     game.root_module.linkSystemLibrary("ws2_32", .{ .use_pkg_config = .no });
@@ -150,6 +153,8 @@ pub fn build(b: *std.Build) void {
     game.root_module.linkSystemLibrary("winmm", .{ .use_pkg_config = .no });
     const proxy_object = b.addObject(.{ .name = "d3d9-proxy", .root_module = module(b, native_target, .ReleaseSafe, "src/zig/proxy.zig"), .use_llvm = true });
     const native_proxy = b.addLibrary(.{ .name = "d3d9", .linkage = .dynamic, .root_module = b.createModule(.{ .target = native_target, .optimize = .ReleaseSafe, .link_libc = true }), .use_llvm = true, .win32_module_definition = b.path("src/engine/proxy.def") });
+    configureMsvcLibc(b, proxy_object);
+    configureMsvcLibc(b, native_proxy);
     native_proxy.root_module.addObject(proxy_object);
     const native_dlls = b.step("dll-native", "Build game DLLs directly with Zig");
     native_dlls.dependOn(&b.addInstallArtifact(game, .{}).step);
@@ -170,6 +175,7 @@ pub fn build(b: *std.Build) void {
     if (tracy_enabled) {
         if (tracyLibrary(b, target)) |tracy| core.root_module.linkLibrary(tracy);
         if (tracyLibrary(b, native_target)) |tracy| {
+            configureMsvcLibc(b, tracy);
             game.root_module.linkLibrary(tracy);
             const tracy_runtime = nativeTest(b, &native_suite, native_target, "tracy_runtime", "native-tracy-runtime");
             tracy_runtime.root_module.linkLibrary(tracy);
@@ -220,6 +226,13 @@ pub fn build(b: *std.Build) void {
     abi_tests.dependOn(&b.addRunArtifact(wire_abi_test).step);
 }
 
+fn configureMsvcLibc(b: *std.Build, compile: *std.Build.Step.Compile) void {
+    const target = compile.root_module.resolved_target.?.result;
+    if (target.os.tag != .windows or target.cpu.arch != .x86 or target.abi != .msvc) return;
+    const path = b.graph.environ_map.get("ZIG_MSVC_X86_LIBC") orelse return;
+    if (path.len != 0) compile.setLibCFile(b.graph.cwdRelativePath(path));
+}
+
 fn module(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, path: []const u8) *std.Build.Module {
     const result = b.createModule(.{ .root_source_file = b.path(path), .target = target, .optimize = optimize, .link_libc = true });
     result.addIncludePath(b.path("src"));
@@ -232,6 +245,7 @@ fn nativeTest(b: *std.Build, suite: *NativeSuite, target: std.Build.ResolvedTarg
         .root_module = module(b, target, .ReleaseSafe, b.fmt("src/zig/{s}_test.zig", .{unit})),
         .use_llvm = true,
     });
+    configureMsvcLibc(b, exe);
     exe.image_base = 0x100000;
     exe.linker_dynamicbase = false;
     exe.win32_manifest = b.path("src/zig/native_tests.manifest");
@@ -281,6 +295,7 @@ fn nativeRegressions(b: *std.Build, suite: *NativeSuite, all: *std.Build.Step, t
     const loader = suite.cases.get("fixture_loader").?;
     for ([_]struct { name: []const u8, mode: std.builtin.OptimizeMode }{ .{ .name = "Debug", .mode = .Debug }, .{ .name = "ReleaseSafe", .mode = .ReleaseSafe } }) |configuration| {
         const environment = b.addExecutable(.{ .name = b.fmt("test_environment_{s}", .{configuration.name}), .root_module = module(b, target, configuration.mode, "src/zig/machine_environment_test.zig"), .use_llvm = true });
+        configureMsvcLibc(b, environment);
         if (chosen(selected, "environment")) _ = regressionRun(b, all, environment, b.fmt("check machine environment/{s}", .{configuration.name}));
         const owner = suite.fixtures.get(b.fmt("owner-{s}", .{configuration.name})).?;
         for ([_][]const u8{ "A", "B" }) |owner_target| for (0..8) |scenario| {
@@ -312,9 +327,12 @@ fn nativeRegressions(b: *std.Build, suite: *NativeSuite, all: *std.Build.Step, t
         }
     }
     const seh = b.addExecutable(.{ .name = "test_seh_guard", .root_module = module(b, target, .Debug, "src/zig/seh_guard_test.zig"), .use_llvm = true });
+    configureMsvcLibc(b, seh);
     if (chosen(selected, "seh_guard")) _ = regressionRun(b, all, seh, "check structured exceptions");
     const publication = b.addExecutable(.{ .name = "test_transition_publication", .root_module = module(b, target, .ReleaseSafe, "src/zig/lan_publication_test.zig"), .use_llvm = true });
     const publication_core = b.addLibrary(.{ .name = "publication-network-core", .linkage = .static, .root_module = module(b, target, .ReleaseSafe, "src/zig/dll_root.zig"), .use_llvm = true });
+    configureMsvcLibc(b, publication);
+    configureMsvcLibc(b, publication_core);
     publication.root_module.linkLibrary(publication_core);
     if (chosen(selected, "transition_publication")) _ = regressionRun(b, all, publication, "check transition publication");
 }

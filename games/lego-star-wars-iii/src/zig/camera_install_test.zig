@@ -98,7 +98,7 @@ export fn network_window_configure(window: usize) void {
     check(@src(), window == 9);
     calls[4] += 1;
 }
-export fn coop_set_window(window: usize) void {
+export fn coop_set_window(window: usize, _: bool) void {
     check(@src(), window == 9);
     calls[5] += 1;
 }

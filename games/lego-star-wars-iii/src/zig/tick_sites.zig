@@ -59,6 +59,7 @@ pub const PACK_FIRE_FIELDS: usize = 11;
 pub const PACK_MODE10_DURATION: u32 = 0x432d8f;
 pub const PACK_MODE10_CLIP_PHASE: u32 = 0x432dc5;
 pub const PACK_MODE28_RECOVERY_DURATION: u32 = 0x432c9c;
+pub const RTS_WAIT_SAMPLE: u32 = 0x5108f0;
 pub const RTS_WAIT_RNG: u32 = 0x5108fa;
 pub const RTS_TURN_INPUT: u32 = 0x546c17;
 pub const ACTOR_TURN_INPUT: u32 = 0x46b0c9;

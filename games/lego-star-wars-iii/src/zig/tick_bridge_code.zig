@@ -1,5 +1,5 @@
 const std = @import("std");
-pub const names = [_][]const u8{ "native_rts_dispatch_observer", "native_world_exit", "native_world_continue", "native_pickup_render_primary_bridge", "native_actor_turn_input_bridge", "native_rts_turn_input_bridge", "native_pack_attack_input", "native_rts_turret_heading_input", "native_pack_hit_int_input", "native_pack_hit_float_input", "native_rts_registry_input", "native_rts_producer_input", "native_rts_wait_seed_input", "native_pack_attack_seed_input", "native_pack_rearm_seed_input", "native_pack_move_timer_seed_input", "native_pack_move_heading_seed_input", "native_pack_move_choice_seed_input", "native_pack_pose_query_input", "native_pack_pose_commit_input", "native_pack_cell_admission_input", "native_pack_goal_move_bridge", "native_pack_goal_active_bridge", "native_pack_formation_input", "native_pack_animation_input", "native_rts_turret_aim_input", "native_gizmo_turret_bridge", "native_weapon_commands_input", "native_fire_visibility_input", "native_pack_mode_input", "native_rts_pack_gate", "native_flow_request_input", "native_track_clock_input", "native_perception_sweep_input", "native_perception_sweep_early", "native_tick_first" };
+pub const names = [_][]const u8{ "native_rts_dispatch_observer", "native_world_exit", "native_world_continue", "native_pickup_render_primary_bridge", "native_actor_turn_input_bridge", "native_rts_turn_input_bridge", "native_pack_attack_input", "native_rts_turret_heading_input", "native_pack_hit_int_input", "native_pack_hit_float_input", "native_rts_registry_input", "native_rts_producer_input", "native_rts_wait_sample_input", "native_rts_wait_seed_input", "native_pack_attack_seed_input", "native_pack_rearm_seed_input", "native_pack_move_timer_seed_input", "native_pack_move_heading_seed_input", "native_pack_move_choice_seed_input", "native_pack_pose_query_input", "native_pack_pose_commit_input", "native_pack_cell_admission_input", "native_pack_goal_move_bridge", "native_pack_goal_active_bridge", "native_pack_formation_input", "native_pack_animation_input", "native_rts_turret_aim_input", "native_gizmo_turret_bridge", "native_weapon_commands_input", "native_fire_visibility_input", "native_pack_mode_input", "native_rts_pack_gate", "native_flow_request_input", "native_track_clock_input", "native_perception_sweep_input", "native_perception_sweep_early", "native_tick_first" };
 pub fn code(comptime name: []const u8) []const u8 {
     if (std.mem.eql(u8, name, "native_rts_dispatch_observer")) return
     \\.text
@@ -399,6 +399,34 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\    popfl
     \\    movl 0xb8(%esi),%edi
     \\    jmp *_rts_producer_resume
+    ;
+    if (std.mem.eql(u8, name, "native_rts_wait_sample_input")) return
+    \\.text
+    \\.globl _native_rts_wait_sample_input
+    \\_native_rts_wait_sample_input:
+    \\    pushfl
+    \\    pushal
+    \\    movl %esp,%eax
+    \\    subl $544,%esp
+    \\    andl $-16,%esp
+    \\    movl %eax,512(%esp)
+    \\    fxsave (%esp)
+    \\    fninit
+    \\    movl $0x1f80,516(%esp)
+    \\    ldmxcsr 516(%esp)
+    \\    cld
+    \\    subl $12,%esp
+    \\    movzbl 40(%eax),%edx
+    \\    pushl %edx
+    \\    call _native_rts_wait_sample
+    \\    addl $16,%esp
+    \\    fxrstor (%esp)
+    \\    movl 512(%esp),%esp
+    \\    movb %al,40(%esp)
+    \\    popal
+    \\    popfl
+    \\    cmpb $0,4(%esp)
+    \\    jmp *_rts_wait_sample_resume
     ;
     if (std.mem.eql(u8, name, "native_rts_wait_seed_input")) return
     \\.text

@@ -27,7 +27,7 @@ test "wire validation: all tick sites and boundary values match the original" {
     var oracle = Cursor.init(0);
     defer oracle.finish();
     inline for (@typeInfo(s).@"struct".decl_names) |name| {
-        if (comptime std.mem.eql(u8, name, "PACK_BEHAVIOR") or std.mem.eql(u8, name, "PACK_FIRE_TARGET") or std.mem.eql(u8, name, "PACK_FIRE_FIELDS") or std.mem.eql(u8, name, "PACK_MODE28_RECOVERY_DURATION") or std.mem.startsWith(u8, name, "PACK_SPAWN_") or std.mem.startsWith(u8, name, "ZILLO_") or std.mem.startsWith(u8, name, "ARENA_ROPE_")) continue;
+        if (comptime std.mem.eql(u8, name, "RTS_WAIT_SAMPLE") or std.mem.eql(u8, name, "PACK_BEHAVIOR") or std.mem.eql(u8, name, "PACK_FIRE_TARGET") or std.mem.eql(u8, name, "PACK_FIRE_FIELDS") or std.mem.eql(u8, name, "PACK_MODE28_RECOVERY_DURATION") or std.mem.startsWith(u8, name, "PACK_SPAWN_") or std.mem.startsWith(u8, name, "ZILLO_") or std.mem.startsWith(u8, name, "ARENA_ROPE_")) continue;
         const site = @field(s, name);
         for (values) |value| {
             try sameGate(&oracle, .{ .site = site, .clock = 17, .value = value });
@@ -38,6 +38,10 @@ test "wire validation: all tick sites and boundary values match the original" {
     }
     for ([_]u32{ 0x8888cd, 0x888889, 0x889edc, 0x9dda14, 0x7b8ae1, 0x7b8afd, 0x7b8b08, 0xfb0fc4, 0, 0xffffffff }) |site|
         for (values) |value| try sameGate(&oracle, .{ .site = site, .clock = 17, .value = value });
+    for (values) |value| {
+        const branch = p.SyncTickGate{ .site = s.RTS_WAIT_SAMPLE, .clock = 17, .value = value };
+        try std.testing.expectEqual(value <= 1, tick.gateValid(branch));
+    }
     try spawnWireCases();
     const recovery = s.PACK_MODE28_RECOVERY_DURATION;
     var gates = [_]p.SyncTickGate{

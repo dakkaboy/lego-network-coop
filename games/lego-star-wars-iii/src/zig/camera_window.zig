@@ -132,7 +132,7 @@ pub fn procedure(window: usize, message: u32, wp: usize, lp: isize) callconv(.wi
     }
     const handled = s.coop_input(window, message, wp, lp);
     s.network_window_update();
-    if (handled != 0) return 0;
+    if (handled != 0) return @intFromBool(message == 0x20);
     return api.CallWindowProcW(s.previous_proc, window, message, wp, lp);
 }
 pub fn find(window: usize, _: isize) callconv(.winapi) i32 {

@@ -32,6 +32,7 @@ pub export var gizmo_turret_resume: usize = 0x838281;
 pub export var weapon_commands_resume: usize = 0x45a930;
 pub export var pack_mode_resume: usize = 0x47575a;
 pub export var pack_mode_abort: usize = 0x475acb;
+pub export var rts_wait_sample_resume: usize = 0x5108f5;
 pub export var rts_pack_admitted: usize = 0x547eca;
 pub export var rts_pack_waiting: usize = 0x547eec;
 pub export var perception_continue: usize = 0x9dd0ff;

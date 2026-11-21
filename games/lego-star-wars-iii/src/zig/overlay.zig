@@ -10,6 +10,7 @@ pub const Hud = extern struct { health: c_int, max_health: c_int, has_studs: c_i
 const Rect = extern struct { left: i32, top: i32, right: i32, bottom: i32 };
 const Viewport = extern struct { x: u32, y: u32, width: u32, height: u32, min_z: f32, max_z: f32 };
 const Bounds = struct { x: f32, y: f32, w: f32, h: f32 };
+const MouseTracking = extern struct { size: u32, flags: u32, window: usize, hover_time: u32 };
 const api = struct {
     extern "shell32" fn ShellExecuteW(usize, [*:0]const u16, [*:0]const u16, ?[*:0]const u16, ?[*:0]const u16, c_int) callconv(.winapi) usize;
     extern "gdi32" fn AddFontMemResourceEx(usize, u32, usize, *u32) callconv(.winapi) usize;
@@ -18,6 +19,8 @@ const api = struct {
     extern "kernel32" fn GetProcAddress(usize, [*:0]const u8) callconv(.winapi) usize;
     extern "kernel32" fn GetTickCount() callconv(.winapi) u32;
     extern "user32" fn GetKeyState(c_int) callconv(.winapi) i16;
+    extern "user32" fn TrackMouseEvent(*MouseTracking) callconv(.winapi) i32;
+    extern "user32" fn SetCursor(usize) callconv(.winapi) usize;
     extern "user32" fn SystemParametersInfoW(u32, u32, *i32, u32) callconv(.winapi) i32;
     extern "user32" fn OpenClipboard(usize) callconv(.winapi) i32;
     extern "user32" fn CloseClipboard() callconv(.winapi) i32;
@@ -46,6 +49,9 @@ var weights = [4]f32{ 1, 0, 0, 0 };
 var last_tick: u32 = 0;
 var focused: i32 = 1;
 var hovered: i32 = -1;
+var pointer_position: ?[2]f32 = null;
+var tracking_pointer = false;
+var background_capture = false;
 var pressed: i32 = -1;
 var selected_address = false;
 var invalid = false;
@@ -427,11 +433,13 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
     label(wide("TAB"), textRect(layout.tab), opening, 0xfff5eedb, false, 0);
     label(wide("ENTER"), textRect(layout.enter), opening, 0xfff5eedb, false, 0);
     label(wide("ESC"), textRect(layout.esc), opening, 0xfff5eedb, false, 0);
+    if (want_open) if (pointer_position) |position| scene.drawPointer(device, position, scale);
 }
 pub export fn coop_toggle() void {
     if (!opened) {
         opened = true;
         want_open = true;
+        pointer_position = null;
         opening = 0;
         last_tick = 0;
         const flags = win.load(u8, 0xf91eb4);
@@ -462,12 +470,20 @@ pub export fn coop_fonts_reset() void {
     };
     scene.reset();
 }
-pub export fn coop_set_window(_: usize) void {}
+pub export fn coop_set_window(_: usize, capture: bool) void {
+    background_capture = capture;
+}
 pub export fn coop_input(window: usize, message: u32, wp: usize, lp: isize) c_int {
+    if (message == 0x2a3) tracking_pointer = false;
     if (!opened) return 0;
-    if (message == 8 or message == 0x1f or (message == 0x1c and wp == 0)) {
+    if (message == 0x20 and want_open and @as(u16, @truncate(@as(usize, @bitCast(lp)))) == 1) {
+        _ = api.SetCursor(0);
+        return 1;
+    }
+    if (message == 0x2a3 or message == 8 or message == 0x1f or (message == 0x1c and wp == 0)) {
         pressed = -1;
         hovered = -1;
+        pointer_position = null;
         return 0;
     }
     if (message == 0x100 and wp == 27) {
@@ -510,8 +526,16 @@ pub export fn coop_input(window: usize, message: u32, wp: usize, lp: isize) c_in
     }
     if (message >= 0x200 and message <= 0x202) {
         const bits: u32 = @truncate(@as(usize, @bitCast(lp)));
-        const x = (@as(f32, @floatFromInt(@as(i16, @bitCast(@as(u16, @truncate(bits)))))) - ox) / scale;
-        const y = (@as(f32, @floatFromInt(@as(i16, @bitCast(@as(u16, @truncate(bits >> 16)))))) - oy) / scale;
+        const px: f32 = @floatFromInt(@as(i16, @bitCast(@as(u16, @truncate(bits)))));
+        const py: f32 = @floatFromInt(@as(i16, @bitCast(@as(u16, @truncate(bits >> 16)))));
+        pointer_position = .{ px, py };
+        // The offscreen window receives test messages while the system pointer stays on the desktop.
+        if (!tracking_pointer and window != 0 and !background_capture) {
+            var request = MouseTracking{ .size = @sizeOf(MouseTracking), .flags = 2, .window = window, .hover_time = 0 };
+            tracking_pointer = api.TrackMouseEvent(&request) != 0;
+        }
+        const x = (px - ox) / scale;
+        const y = (py - oy) / scale;
         scene.pointer(x, y);
         const before_hover = hovered;
         hovered = hit(x, y);

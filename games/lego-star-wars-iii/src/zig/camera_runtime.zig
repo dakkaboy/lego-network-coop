@@ -37,7 +37,7 @@ fn initialize(module: usize) callconv(.winapi) u32 {
         const position = window.backgroundPosition(s.game_window, 0, 0);
         _ = api.SetWindowPos(s.game_window, 1, position.x, position.y, 0, 0, 0x11);
     }
-    s.coop_set_window(s.game_window);
+    s.coop_set_window(s.game_window, s.background_capture);
     _ = s.game_sync_prepare_worker(api.GetWindowThreadProcessId(s.game_window, null));
     var config: [260:0]u16 = undefined;
     const display = window.displayConfig(&config);

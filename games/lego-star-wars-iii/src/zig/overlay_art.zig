@@ -73,6 +73,43 @@ fn constants(device: usize, index: u32, value: *const [4]f32) void {
 }
 pub fn pointer(x: f32, y: f32) void {
     mouse = .{ x / 1280, y / 720 };
+    clonewars_overlay_pointer_debug[0] +%= 1;
+}
+pub export var clonewars_overlay_pointer_debug: [8]u32 = @splat(0);
+pub fn drawPointer(device: usize, position: [2]f32, scale: f32) void {
+    const PointerVertex = extern struct { x: f32, y: f32, z: f32 = 0, rhw: f32 = 1, color: u32 };
+    clonewars_overlay_pointer_debug[1] +%= 1;
+    clonewars_overlay_pointer_debug[2] = @bitCast(position[0]);
+    clonewars_overlay_pointer_debug[3] = @bitCast(position[1]);
+    var block: usize = 0;
+    const block_result = com.method(*const fn (usize, u32, *usize) callconv(.winapi) i32, device, 59)(device, 1, &block);
+    clonewars_overlay_pointer_debug[4] = @bitCast(block_result);
+    if (block_result < 0 or block == 0) return;
+    defer com.release(block);
+    defer _ = com.method(*const fn (usize) callconv(.winapi) i32, block, 5)(block);
+    _ = obj(device, 92, 0);
+    _ = obj(device, 107, 0);
+    const fvf_result = com.method(*const fn (usize, u32) callconv(.winapi) i32, device, 89)(device, 0x44);
+    clonewars_overlay_pointer_debug[5] = @bitCast(fvf_result);
+    if (fvf_result < 0) return;
+    for ([_][2]u32{ .{ 7, 0 }, .{ 14, 0 }, .{ 15, 0 }, .{ 22, 1 }, .{ 27, 0 }, .{ 28, 0 }, .{ 168, 15 }, .{ 174, 0 } }) |r| rs(device, r[0], r[1]);
+    const stage = com.method(*const fn (usize, u32, u32, u32) callconv(.winapi) i32, device, 67);
+    _ = stage(device, 0, 1, 2); // Select diffuse vertex color.
+    _ = stage(device, 0, 2, 0);
+    _ = stage(device, 1, 1, 1);
+    const outline = [_][2]f32{ .{ 0, 0 }, .{ 0, 25 }, .{ 7, 18 }, .{ 18, 18 } };
+    const fill = [_][2]f32{ .{ 2, 5 }, .{ 2, 20 }, .{ 6, 16 }, .{ 13, 16 } };
+    const size = @max(0.75, scale);
+    const draw_strip = com.method(*const fn (usize, u32, u32, *const [4]PointerVertex, u32) callconv(.winapi) i32, device, 83);
+    for ([_][4][2]f32{ outline, fill }, [_]u32{ 0xff0a1420, 0xfffff4d4 }, 0..) |points, color, i| {
+        var vertices: [4]PointerVertex = undefined;
+        for (&vertices, points) |*vertex, point| vertex.* = .{
+            .x = position[0] + point[0] * size - 0.5,
+            .y = position[1] + point[1] * size - 0.5,
+            .color = color,
+        };
+        clonewars_overlay_pointer_debug[6 + i] = @bitCast(draw_strip(device, 5, 2, &vertices, @sizeOf(PointerVertex)));
+    }
 }
 pub fn release() void {
     for (&textures) |*pair| {

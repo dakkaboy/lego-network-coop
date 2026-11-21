@@ -117,6 +117,11 @@ pub export fn native_rts_producer_rng(battlefield: usize) void {
     defer s.win.SetLastError(error_code);
     if (s.ready()) rtsRng(battlefield, if (s.readable(battlefield, 0xc0)) load(usize, battlefield + 0xbc) else 0, v.RTS_PRODUCER_GAME_RNG, v.RTS_PRODUCER_ENGINE_RNG);
 }
+pub export fn native_rts_wait_sample(local: u32) u32 {
+    const saved = s.win.GetLastError();
+    defer s.win.SetLastError(saved);
+    return s.decision(v.RTS_WAIT_SAMPLE, @intFromBool(local != 0));
+}
 pub export fn native_rts_wait_seed(object: usize) void {
     if (!s.ready()) return;
     const error_code = s.win.GetLastError();

@@ -7,7 +7,7 @@ const ws = @import("winsock.zig");
 const threads = @import("threading.zig");
 const port: u16 = if (@hasDecl(root, "lan_port")) root.lan_port else 32510;
 pub const hello = [_]u8{ 'L', 'S', 'W', '3', 'L', 'A', 'N', p.SYNC_PROTOCOL_VERSION, 0x71, 0x6f, 0x83, 0x6d, 0xa4, 0x89, 0x82, 0x30, 0x46, 0x4e, 0x72, 0xe7, 0x6f, 0x59, 0x35, 0xc7, 0x38, 0xb3, 0xbd, 0x35, 0x17, 0x7a, 0x91, 0x02, 0x0e, 0x3b, 0x08, 0xfe, 0x34, 0x61, 0xa9, 0xe0 };
-const Request = struct { host: bool, generation: u32, address: [64]u8 };
+const Request = struct { host: bool, loopback_only: bool, generation: u32, address: [64]u8 };
 const Header = extern struct { magic: u32 = 0x334e414c, kind: u32, size: u32 };
 extern "kernel32" fn GetProcessHeap() callconv(.winapi) usize;
 extern "kernel32" fn HeapAlloc(usize, u32, usize) callconv(.winapi) usize;
@@ -156,6 +156,7 @@ fn workerEnter(ticket: u32) bool {
 fn connectPeer(request: *const Request, listener: *usize, connection: *usize) i32 {
     var endpoint: ws.Address = .{ .port = @byteSwap(port) };
     if (request.host) {
+        if (request.loopback_only and ws.inet_pton(2, "127.0.0.1", &endpoint.address) != 1) return 10022;
         listener.* = ws.socket(2, 1, 6);
         if (listener.* == ws.invalid_socket or ws.bind(listener.*, &endpoint, @sizeOf(ws.Address)) != 0 or ws.listen(listener.*, 1) != 0) return ws.WSAGetLastError();
         while (state.active(request.generation)) {
@@ -212,6 +213,14 @@ fn runSession(parameter: usize) callconv(.winapi) u32 {
     return 0;
 }
 pub export fn lan_start(host: c_int, address: [*:0]const u8) void {
+    start(host != 0, false, address);
+}
+
+pub fn startLoopback(host: bool) void {
+    start(host, true, "127.0.0.1");
+}
+
+fn start(host: bool, loopback_only: bool, address: [*:0]const u8) void {
     state.lock();
     const ticket = state.advanceGeneration();
     if (ticket == 0) {
@@ -219,14 +228,15 @@ pub export fn lan_start(host: c_int, address: [*:0]const u8) void {
         state.unlock();
         return;
     }
-    state.reset(host != 0);
+    state.reset(host);
     state.publishSession(ticket);
     state.unlock();
     const request = allocate(Request, true) orelse {
         _ = state.sessionStatus(ticket, 4, 8);
         return;
     };
-    request.host = host != 0;
+    request.host = host;
+    request.loopback_only = loopback_only;
     request.generation = ticket;
     for (0..request.address.len - 1) |i| {
         const value = address[i];

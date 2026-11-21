@@ -339,6 +339,10 @@ fn rts() void {
     check(@src(), word(0xe637b4, 0) == 3 and word(0xea178c, 0) == 4);
     world.native_rts_registry_rng(addr(registry));
     check(@src(), word(0xe637b4, 0) == 5 and word(0xea178c, 0) == 6 and finish());
+    next(true);
+    check(@src(), world.native_rts_wait_sample(9) == 1 and world.native_rts_wait_sample(0) == 0 and finish());
+    begin(false);
+    check(@src(), world.native_rts_wait_sample(0) == 1 and world.native_rts_wait_sample(9) == 0 and finish());
     const producer = buffer(0x258);
     put(producer, 0x28, battlefield);
     put(producer, 0x250, 3);

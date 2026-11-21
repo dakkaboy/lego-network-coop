@@ -136,7 +136,7 @@ pub fn gateValid(gate: p.SyncTickGate) bool {
         s.PACK_BEHAVIOR + 2 => value == 0 or (value >= 0x400000 and value < 0x1200000 and value & 3 == 0),
         0x8888cd => value <= 255,
         s.GAME_TIME, s.PACK_ANIMATION_CLOCK, s.PACK_ANIMATION_DELTA, s.PACK_DEATH_VERTICAL, s.PACK_DEATH_SPEED, 0x7b8b08 => finite(value),
-        0x888889, s.PACK_FORMATION_LEAVE => value <= 1,
+        0x888889, s.PACK_FORMATION_LEAVE, s.RTS_WAIT_SAMPLE => value <= 1,
         s.RTS_PACK_ADMISSION => value < 32,
         s.RTS_TURRET_HEADING, s.RTS_TURRET_AIM => value >> 16 < p.SYNC_MAX_ACTORS,
         s.RTS_TURRET_PILOT, s.FIRE_VISIBILITY_ACTOR, s.WEAPON_COMMAND_GENERATION => value != 0,
