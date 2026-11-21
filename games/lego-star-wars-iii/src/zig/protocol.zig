@@ -823,6 +823,7 @@ pub const SYNC_ACTOR_ARENA_RUN_RANDOM: c_int = 18;
 pub const SYNC_ACTOR_BARC_ALIGNMENT: c_int = 19;
 pub const SYNC_ACTOR_BARC_SUSPENSION: c_int = 20;
 pub const SYNC_ACTOR_RYLOTH_FIGHTER_DEATH: c_int = 21;
+pub const SYNC_ACTOR_HIDDEN_ENEMY_AIM: c_int = 22;
 pub const SYNC_TRANSITION_NATIVE_CYCLE: u32 = 2;
 
 pub const enum_SyncFireGateKind = c_int;
@@ -912,7 +913,7 @@ pub const SYNC_PROFILE_BYTES = @as(c_int, 0xb5c0);
 
 pub const SYNC_LAYOUT_VERSION = @as(c_int, 55);
 
-pub const SYNC_WIRE_VERSION = @as(c_int, 201);
+pub const SYNC_WIRE_VERSION = @as(c_int, 202);
 
 pub const SYNC_NATIVE_SPAN_PLAN_MASK = @as(c_uint, 7);
 
