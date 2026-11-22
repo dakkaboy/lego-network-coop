@@ -485,6 +485,31 @@ fn hiddenEnemyMeleeClip() void {
         check(@src(), r.reaction_abort_frame(&lease) != 0);
     }
 }
+fn geonosisProjectileCooldown() void {
+    mode = 20;
+    setup();
+    clearDebug();
+    frame.level = 79;
+    var token = tokenFor();
+    var lease: s.Lease = undefined;
+    var outcome = std.mem.zeroes(Snapshot);
+    begin(&token, &lease, 1);
+    win.store(f32, actor + 0xd3c, -0.01);
+    hitReceipt(&outcome, false);
+    check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    begin(&token, &lease, 0);
+    win.store(i8, actor + 0xdde, 5);
+    win.store(f32, actor + 0xd3c, 0.75);
+    receipt.reaction_damage_begin(&outcome.receipt, actor, source);
+    check(@src(), win.load(f32, actor + 0xd3c) == -0.01 and outcome.receipt.hit.timer_before == -0.01);
+    win.store(i8, actor + 0xdde, 4);
+    win.store(f32, actor + 0xd3c, 2.5);
+    receipt.reaction_damage_complete(&outcome.receipt);
+    check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0 and fault == 0);
+}
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 904 and @intFromPtr(&image) < 0x410000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0x790000, 0x8a0000, 0x960000, 0xe60000, 0xea0000 }) |a| protect(a, 0x40);
@@ -612,4 +637,5 @@ fn arenaBeforeHit() void {
         }
         check(@src(), r.reaction_abort_frame(&lease) != 0);
     }
+    geonosisProjectileCooldown();
 }

@@ -19,6 +19,20 @@ pub export fn reaction_damage_begin(receipt: *s.Receipt, actor: usize, source: u
             receipt.hit.life_before = (read(u32, actor + 0x50) & 3) | (@as(u32, read(u8, actor + 0x54)) << 8);
             receipt.hit.action_before = read(i16, actor + 0x2f4);
             receipt.hit.timer_before = read(f32, actor + 0xd3c);
+            if (s.journal.host == 0 and s.journal.frame.?.level == 79 and receipt.hit.timer_before > 0) {
+                if (s.journal.peek()) |entry| {
+                    const clip = &entry.payload.clip;
+                    if (entry.kind == p.SYNC_REACTION_CLIP and entry.slot == receipt.slot and entry.generation == receipt.generation and
+                        clip.selection.clip == -1 and clip.source_id == source and clip.arena_attacker_generation == 0 and
+                        validation.hitValid(&clip.hit) and clip.hit.timer_before <= 0 and clip.hit.health_after < clip.hit.health_before and
+                        clip.hit.health_before == receipt.hit.health_before and clip.hit.life_before == receipt.hit.life_before and
+                        clip.hit.action_before == receipt.hit.action_before and s.live(&receipt.lease))
+                    {
+                        receipt.hit.timer_before = clip.hit.timer_before;
+                        s.win.store(f32, actor + 0xd3c, clip.hit.timer_before);
+                    }
+                }
+            }
         }
     }
 }
