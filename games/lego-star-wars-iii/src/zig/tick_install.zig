@@ -26,6 +26,7 @@ extern fn native_pack_attack_input() void;
 extern fn native_pack_attack_seed_input() void;
 extern fn native_pack_mode_input() void;
 extern fn native_pack_rearm_seed_input() void;
+extern fn native_pack_rearm_completion_input() void;
 extern fn native_pack_formation_input() void;
 extern fn native_fire_visibility_input() void;
 extern fn native_rts_turret_aim_input() void;
@@ -47,7 +48,7 @@ extern fn native_rts_wait_sample_input() void;
 extern fn native_rts_wait_seed_input() void;
 extern fn native_pack_spawn_rng_input() void;
 extern fn native_pack_spawn_birth_input() void;
-pub fn patches() [52]hook.Patch {
+pub fn patches() [53]hook.Patch {
     return [_]hook.Patch{
         .{ .address = s.site.ZILLO_THROW, .expected = "\xe8\x3b\xf8\xff\xff", .target = @intFromPtr(&@import("tick_zillo_rng.zig").prepareAndThrow), .opcode = 0xe8 },
         .{ .address = s.site.ZILLO_RELEASE, .expected = "\xe8\xab\x31\xfd\xff", .target = @intFromPtr(&@import("tick_zillo_rng.zig").prepareAndRelease), .opcode = 0xe8 },
@@ -80,6 +81,7 @@ pub fn patches() [52]hook.Patch {
         .{ .address = s.site.PACK_ATTACK, .expected = "\xf6\xc2\x02\x74\x34\xd8\x1d\x44\xae\xad\x00", .target = @intFromPtr(&native_pack_attack_input), .opcode = 0xe9 },
         .{ .address = s.site.PACK_TIMER_MEMBER, .expected = "\xe8\xa7\x5c\x27\x00", .target = @intFromPtr(&native_pack_attack_seed_input), .opcode = 0xe8 },
         .{ .address = s.site.PACK_MODE_MEMBER, .expected = "\x0f\xb6\x46\x60\x83\xf8\x1d", .target = @intFromPtr(&native_pack_mode_input), .opcode = 0xe9 },
+        .{ .address = 0x46064d, .expected = "\x84\xc0\x0f\x84\xec\x00\x00\x00", .target = @intFromPtr(&native_pack_rearm_completion_input), .opcode = 0xe9 },
         .{ .address = s.site.PACK_REARM_MEMBER, .expected = "\xe8\xc6\x59\x27\x00", .target = @intFromPtr(&native_pack_rearm_seed_input), .opcode = 0xe8 },
         .{ .address = 0x4604b3, .expected = "\x74\x3f\xd9\x44\x24\x20", .target = @intFromPtr(&native_pack_formation_input), .opcode = 0xe9 },
         .{ .address = s.site.FIRE_VISIBILITY, .expected = "\xe8\x78\x8a\xb8\xff", .target = @intFromPtr(&native_fire_visibility_input), .opcode = 0xe8 },

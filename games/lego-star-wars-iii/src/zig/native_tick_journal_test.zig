@@ -958,6 +958,19 @@ fn packs() void {
     const wrong_draw = f.faults;
     pack.native_pack_attack_seed(addr(scene.first));
     check(@src(), word(0xea178c, 0) == 0x87654321 and !finish() and f.faults == wrong_draw + 1);
+    next(true);
+    frame.level = 79;
+    put(0xea178c, 0, 0x12345678);
+    pack.native_pack_rearm_seed(addr(scene.first));
+    f.pose.native_pack_pose_commit(addr(scene.first));
+    check(@src(), finish() and stream(0, 7));
+    begin(false);
+    check(@src(), pack.native_pack_rearm_completion(addr(scene.second), 0) == 0);
+    check(@src(), pack.native_pack_rearm_completion(addr(scene.first), 0) == 1 and f.state.cursor == 0);
+    pack.native_pack_rearm_seed(addr(scene.first));
+    f.pose.native_pack_pose_commit(addr(scene.first));
+    check(@src(), finish());
+    frame.level = 0;
     for ([_]*const fn (usize) callconv(.c) void{ pack.native_pack_move_timer_seed, pack.native_pack_move_heading_seed, pack.native_pack_move_choice_seed }) |draw| {
         next(true);
         put(0xea178c, 0, 0x1234abcd);

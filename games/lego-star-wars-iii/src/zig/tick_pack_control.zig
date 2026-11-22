@@ -110,6 +110,21 @@ pub export fn native_pack_hit_seed_bridge(member: usize, at: u32, native_stack: 
     }
     native_pack_hit_seed(member, at);
 }
+pub export var clonewars_pack_rearm_completion_corrections: u32 = 0;
+pub export fn native_pack_rearm_completion(member: usize, completed: u32) u32 {
+    if (completed != 0 or !s.ready() or s.host or s.frame.?.level != 79) return completed;
+    const gates = s.expected(7) orelse return completed;
+    if (gates[0].site != v.PACK_REARM_MEMBER or gates[1].site != v.PACK_REARM_SEED or gates[2].site != v.PACK_POSE_COMMIT) return completed;
+    const clock = s.clock();
+    if (gates[0].clock != clock or gates[1].clock != clock or gates[2].clock != clock) return completed;
+    const saved = s.win.GetLastError();
+    defer s.win.SetLastError(saved);
+    const rearm = identity.resolve(member, true) orelse return completed;
+    const pose = identity.resolve(member, false) orelse return completed;
+    if (gates[0].value != rearm.key() or gates[2].value != pose.key() or !s.ready()) return completed;
+    clonewars_pack_rearm_completion_corrections +%= 1;
+    return 1;
+}
 pub export fn native_pack_rearm_seed(member: usize) void {
     seed(member, v.PACK_REARM_MEMBER, v.PACK_REARM_SEED, true, true, null);
 }
@@ -210,6 +225,42 @@ pub export fn native_pack_mode(member: usize, entry: usize) void {
             }
         }
     }
+}
+export const pack_rearm_completed: usize = 0x460655;
+export const pack_rearm_pending: usize = 0x460741;
+comptime {
+    asm (
+        \\.text
+        \\.globl _native_pack_rearm_completion_input
+        \\_native_pack_rearm_completion_input:
+        \\    testb %al,%al
+        \\    jnz 1f
+        \\    pushfl
+        \\    pushal
+        \\    movl %esp,%eax
+        \\    subl $544,%esp
+        \\    andl $-16,%esp
+        \\    movl %eax,512(%esp)
+        \\    fxsave (%esp)
+        \\    fninit
+        \\    movl $0x1f80,516(%esp)
+        \\    ldmxcsr 516(%esp)
+        \\    subl $8,%esp
+        \\    pushl $0
+        \\    pushl 4(%eax)
+        \\    cld
+        \\    call _native_pack_rearm_completion
+        \\    addl $16,%esp
+        \\    fxrstor (%esp)
+        \\    movl 512(%esp),%esp
+        \\    testl %eax,%eax
+        \\    popal
+        \\    jz 2f
+        \\    popfl
+        \\1: jmp *_pack_rearm_completed
+        \\2: popfl
+        \\    jmp *_pack_rearm_pending
+    );
 }
 pub export fn native_pack_mode_checked(member: usize, entry: usize) u32 {
     native_pack_mode(member, entry);
