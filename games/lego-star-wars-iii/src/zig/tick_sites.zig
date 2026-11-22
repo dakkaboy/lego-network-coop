@@ -1,5 +1,8 @@
 pub const GAME_TIME: u32 = 0xfb4ad4;
 pub const PACK_BEHAVIOR: u32 = 0x462476;
+pub const PACK_BEHAVIOR_TARGET = PACK_BEHAVIOR + 3;
+pub const pack_behavior_target_sites = [4]u32{ PACK_BEHAVIOR_TARGET, PACK_BEHAVIOR_TARGET + 1, PACK_BEHAVIOR_TARGET + 2, PACK_BEHAVIOR_TARGET + 3 };
+pub const pack_behavior_target_class: u32 = 0xad79dc;
 pub const TURN_SMOOTHING: u32 = 0xfb0fac;
 pub const CLOCK_COEFFICIENTS: u32 = 17;
 pub const GIZMO_TURRET_SOURCE: u32 = 0x83827a;

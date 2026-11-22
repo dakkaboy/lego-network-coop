@@ -43,6 +43,13 @@ fn create(pack: usize) callconv(.{ .x86_thiscall = .{} }) void {
     f.put(pack, 0x150, controller);
     f.win.SetLastError(999);
 }
+fn createTarget(pack: usize, target: *const [4]u32) callconv(.{ .x86_thiscall = .{} }) void {
+    creates += 1;
+    f.put(pack, 0x150, controller);
+    f.put(controller, 0, f.sites.pack_behavior_target_class);
+    f.put(controller, 4, pack);
+    for (target, 0..) |value, i| f.put(controller, 0x10 + i * 4, value);
+}
 fn call(pack: []u8, expected: usize) void {
     f.win.SetLastError(871);
     check(@src(), b.native_pack_behavior(f.addr(pack)) == expected and f.win.GetLastError() == 871);
@@ -55,7 +62,7 @@ pub fn main() void {
     const manager = f.buffer(0x110);
     const registry = f.buffer(12);
     const definition = f.buffer(0x20);
-    const behavior = f.buffer(8);
+    const behavior = f.buffer(0x20);
     controller = f.addr(behavior);
     f.put(pack, 0, 0xadcef0);
     f.put(pack, 0xb8, manager);
@@ -125,4 +132,19 @@ pub fn main() void {
         const expected = [_]u32{ 0x11111111, 0x22222222, controller, 0x44444444, 0x55555555, 0x66666666, f.addr(pack) };
         check(@src(), std.mem.eql(u32, behavior_observed[0..7], &expected) and behavior_observed[7] & 0xcd5 == flags & 0xcd5);
     }
+    const target = [4]u32{ @bitCast(@as(f32, -31.05448)), @bitCast(@as(f32, 0)), @bitCast(@as(f32, -32.99379)), @bitCast(@as(f32, 1.5)) };
+    f.put(behavior, 0, f.sites.pack_behavior_target_class);
+    for (target, 0..) |value, i| f.put(behavior, 0x10 + i * 4, value);
+    std.mem.writeInt(u32, jump[1..5], @intFromPtr(&createTarget) -% 0x437945, .little);
+    f.patch(0x437940, &jump);
+    f.next(true);
+    call(pack, controller);
+    check(@src(), f.finish() and f.frame.tick_gate_count == 7 and f.stream(0, 7));
+    check(@src(), !f.stream(0, 3) and !f.stream(3, 4));
+    f.put(behavior, 0, 0xad7a34);
+    @memset(behavior[0x10..0x20], 0);
+    f.begin(false);
+    call(pack, controller);
+    check(@src(), f.finish() and creates == 2 and f.word(behavior, 0) == f.sites.pack_behavior_target_class);
+    for (target, 0..) |value, i| check(@src(), f.word(behavior, 0x10 + i * 4) == value);
 }
