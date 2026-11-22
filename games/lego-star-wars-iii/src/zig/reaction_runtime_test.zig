@@ -513,6 +513,31 @@ fn geonosisProjectileCooldown() void {
     receipt.reaction_damage_complete(&outcome.receipt);
     check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0 and fault == 0);
 }
+fn geonosisLastHealthPoint() void {
+    mode = 20;
+    setup();
+    clearDebug();
+    frame.level = 79;
+    damage_caller = 0x81f27f;
+    var token = tokenFor();
+    var lease: s.Lease = undefined;
+    var hit: s.Receipt = undefined;
+    begin(&token, &lease, 1);
+    win.store(i8, actor + 0xdde, 1);
+    win.store(f32, actor + 0xd3c, -0.01);
+    receipt.reaction_damage_begin(&hit, actor, source);
+    receipt.reaction_damage_complete(&hit);
+    check(@src(), frame.reaction_count == 1 and frame.reactions[0].payload.clip.hit.health_after == 1);
+    check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    begin(&token, &lease, 0);
+    receipt.reaction_damage_begin(&hit, actor, source);
+    check(@src(), receipt.reaction_projectile_damage_amount(actor, 2) == 0);
+    receipt.reaction_damage_complete(&hit);
+    check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0 and fault == 0);
+}
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 904 and @intFromPtr(&image) < 0x410000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0x790000, 0x8a0000, 0x960000, 0xe60000, 0xea0000 }) |a| protect(a, 0x40);
@@ -641,4 +666,5 @@ fn arenaBeforeHit() void {
         check(@src(), r.reaction_abort_frame(&lease) != 0);
     }
     geonosisProjectileCooldown();
+    geonosisLastHealthPoint();
 }

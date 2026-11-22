@@ -38,7 +38,7 @@ pub export fn reaction_damage_begin(receipt: *s.Receipt, actor: usize, source: u
 }
 pub export var clonewars_projectile_damage_corrections: u32 = 0;
 pub export fn reaction_projectile_damage_amount(actor: usize, amount: c_int) c_int {
-    if (amount != 0 or s.combat_damage_native_caller() != 0x81f27f) return amount;
+    if (amount < 0 or s.combat_damage_native_caller() != 0x81f27f) return amount;
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
     var op: s.Lease = undefined;
@@ -48,15 +48,23 @@ pub export fn reaction_projectile_damage_amount(actor: usize, amount: c_int) c_i
     const clip = &entry.payload.clip;
     const hit = &clip.hit;
     if (clip.selection.clip != -1 or clip.arena_attacker_generation != 0 or clip.source_id == 0 or clip.source_id != s.combat_damage_source_id() or
-        !validation.hitValid(hit) or hit.health_after <= 0 or hit.health_before - hit.health_after != 1 or
-        hit.life_before != hit.life_after or hit.action_before != hit.action_after or hit.timer_before > 0 or hit.timer_after <= 0) return amount;
+        !validation.hitValid(hit) or hit.health_after <= 0 or
+        hit.life_before != hit.life_after or hit.action_before != hit.action_after) return amount;
+    const corrected: c_int = if (amount == 0 and hit.health_before - hit.health_after == 1 and hit.timer_before <= 0 and hit.timer_after > 0)
+        1
+    else if (amount > 0 and hit.health_before == 1 and hit.health_after == 1 and hit.timer_before == hit.timer_after)
+        0
+    else
+        return amount;
     const identity = s.identity(entry);
     if (s.entities_resolve_reference(&identity) != actor or !s.live(&op)) return amount;
     if (read(i8, actor + 0xdde) != hit.health_before or
         (read(u32, actor + 0x50) & 3) | (@as(u32, read(u8, actor + 0x54)) << 8) != hit.life_before or
-        read(i16, actor + 0x2f4) != hit.action_before or !(read(f32, actor + 0xd3c) <= 0)) return amount;
+        read(i16, actor + 0x2f4) != hit.action_before) return amount;
+    const timer = read(f32, actor + 0xd3c);
+    if (!(timer == hit.timer_before or (timer <= 0 and hit.timer_before <= 0))) return amount;
     clonewars_projectile_damage_corrections +%= 1;
-    return 1;
+    return corrected;
 }
 pub export fn reaction_damage_complete(receipt: *const s.Receipt) void {
     const saved = s.win.GetLastError();
@@ -77,6 +85,27 @@ pub export fn reaction_damage_complete(receipt: *const s.Receipt) void {
                 const e = &s.journal.frame.?.reactions[i];
                 const clip = &e.payload.clip;
                 if (e.kind == p.SYNC_REACTION_CLIP and clip.selection.clip == -1 and clip.arena_attacker_generation == 0 and e.slot == receipt.slot and e.generation == receipt.generation and clip.source_id == receipt.source_id) clip.hit = actual;
+            }
+            // A projectile that leaves the last point of health intact can have no clip.
+            if (i == receipt.cursor and s.journal.frame.?.level == 79 and s.combat_damage_native_caller() == 0x81f27f and
+                actual.health_before == 1 and actual.health_after == 1 and actual.life_before == actual.life_after and
+                actual.action_before == actual.action_after and actual.timer_before == actual.timer_after)
+            {
+                var identity = std.mem.zeroes(p.SyncActor);
+                s.entities_describe(&identity, actor);
+                if (!s.live(&receipt.lease)) return;
+                var entry = std.mem.zeroes(p.SyncReactionChoice);
+                if (identity.generation != receipt.generation) {
+                    s.failed(&receipt.lease, actor, null, actual.action_before, receipt.source_id, 6, std.math.maxInt(u32));
+                    return;
+                }
+                s.describe(&entry, actor, &identity, @intCast(receipt.slot), actual.action_before);
+                entry.payload.clip.selection.clip = -1;
+                entry.payload.clip.source_id = receipt.source_id;
+                entry.payload.clip.hit = actual;
+                if (s.reaction_journal_record(&s.journal, &entry) == 0) {
+                    s.failed(&receipt.lease, actor, &entry, actual.action_before, receipt.source_id, 6, std.math.maxInt(u32));
+                }
             }
         }
         return;
