@@ -4,6 +4,14 @@ const s = @import("cadence_state.zig");
 const gate = @import("cadence_gate.zig");
 const equal = @import("validation.zig").equal;
 pub export var clonewars_force_target_failure: [20]u32 = @splat(0);
+fn hostScannedForceCaster(frame: *const p.SyncFrame, query: *const p.SyncForceQueryState) bool {
+    for (frame.fire_task_gates[0..frame.fire_task_gate_count]) |*entry| {
+        if (entry.kind != p.SYNC_ACTOR_FORCE_VISIBILITY) continue;
+        const host = &entry.payload.force;
+        if (host.caster_slot == query.caster_slot and host.caster_generation == query.caster_generation) return true;
+    }
+    return false;
+}
 pub export fn cadence_force_target_visibility(candidate: usize, caster: usize, mode: u32, visible: c_int) c_int {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
@@ -28,6 +36,13 @@ pub export fn cadence_force_target_visibility(candidate: usize, caster: usize, m
     }
     const local: c_int = @intFromBool(visible != 0);
     const frame = s.journal.frame.?;
+    // An extra local scan must not pick a target for a player the host did not scan.
+    if (frame.level == 79 and s.journal.host == 0 and s.journal.failed == 0 and
+        input.caster_slot < 2 and (mode == 1 or mode == 2) and !hostScannedForceCaster(frame, &input))
+    {
+        s.clonewars_force_target_debug[2] +%= @intFromBool(local != 0);
+        return 0;
+    }
     const epoch = frame.epoch;
     const sequence = frame.sequence;
     const controls = frame.inputs;

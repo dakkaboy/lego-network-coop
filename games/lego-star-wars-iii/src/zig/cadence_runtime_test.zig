@@ -95,7 +95,7 @@ export fn entities_observed_generation(_: usize) u32 {
     return 19;
 }
 export fn entities_observed_identity(a: usize, slot: *u32, generation: *u32) c_int {
-    slot.* = if (a == actor) 7 else 8;
+    slot.* = (if (a == actor) @as(u32, 7) else 8) - @as(u32, if (mode == 59) 7 else 0);
     generation.* = if (client and mode == 17) 20 else 19;
     return @intFromBool(a != 0);
 }
@@ -1263,6 +1263,30 @@ fn geonosisCompanionMotionOrder() void {
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
+fn geonosisGuestForceScan() void {
+    mode = 59;
+    setup();
+    frame.level = 79;
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    check(@src(), cf.cadence_force_target_visibility(actor, other, 1, 1) == 1);
+    check(@src(), frame.fire_task_gate_count == 1 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), cf.cadence_force_target_visibility(other, actor, 1, 1) == 0 and s.fire_task_cursor == 0 and fault == 0);
+    check(@src(), cf.cadence_force_target_visibility(actor, other, 1, 0) == 1 and s.fire_task_cursor == 1);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+}
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 3076 and @intFromPtr(&image) < 0x420000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0xe50000, 0xe60000, 0xe90000, 0xea0000, 0xf90000, 0xfa0000, 0xfb0000 }) |address| protect(address, 0x10000, 4);
@@ -1332,6 +1356,7 @@ pub fn main() void {
     arenaRunRandomAbi();
     rylothFighterDeath();
     hiddenEnemyForceEligibility();
+    geonosisGuestForceScan();
 }
 fn arenaRunRandomAbi() void {
     const random = @import("arena_run_random.zig");
