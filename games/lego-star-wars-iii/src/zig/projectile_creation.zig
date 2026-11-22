@@ -5,7 +5,19 @@ const t = s.t;
 const control = @import("projectile_control.zig");
 const tracking = @import("projectile_tracking.zig");
 const launch = @import("projectile_launch.zig");
+const shot_source = @import("shot_source.zig");
 const Machine = @import("machine_environment.zig").Environment;
+fn isGeonosisTurretWeapon(level: i32, weapon: i32, flags: u32, source: u8) bool {
+    return level == 79 and weapon == 31 and flags == 0x800 and source == p.SYNC_SHOT_WEAPON;
+}
+fn isDefenseTurret(actor: usize) bool {
+    return s.valid(actor, 0x1440) and s.read(u16, actor + 0xdc0) == 466;
+}
+pub fn canReplayAfterTick(level: i32, shot: *const p.SyncShot) bool {
+    if (shot_source.isGeonosisBarrage(level, shot.owner, shot.weapon, shot.flags, shot.source)) return true;
+    return isGeonosisTurretWeapon(level, shot.weapon, shot.flags, shot.source) and
+        isDefenseTurret(tracking.actorAt(shot.owner, shot.owner_generation));
+}
 extern fn constructor_lexical_seh(usize, *const fn (usize) callconv(.c) usize, *const fn (usize) callconv(.c) void) usize;
 extern fn combat_observer_projectile_created() void;
 fn native(op: *const t.Operation, birth: ?*const p.SyncShot, kind: u32, caller: u32, manager: usize, owner: usize, origin: usize, transform: usize, weapon: usize, flags: u32, target: usize, source: u8, depth: u32) usize {
@@ -37,7 +49,8 @@ fn replayLeave(call: *Replay, completed: bool) void {
     launch.leave(&call.launch);
     if (!call.context_active or !control.live(&call.op)) return;
     call.context_active = false;
-    if (completed and call.birth.phase == 0) {
+    // Only replay inside the native call advances the frame's RNG.
+    if (completed and call.birth.phase == 0 and call.caller != 0) {
         const after = tracking.context();
         call.incoming.rng_game = after.rng_game;
         call.incoming.rng_engine = after.rng_engine;
@@ -213,19 +226,25 @@ fn invoke(context: usize) callconv(.c) usize {
         const generation = s.entities_generation(call.owner);
         if (!control.live(op)) return 0;
         if (!s.valid(call.weapon, 1) or !control.live(op)) return 0;
+        const weapon = s.read(i8, call.weapon);
+        const level = s.current.?.level;
+        const can_defer = (call.owner == 0 and call.target == 0 and shot_source.isGeonosisBarrage(level, slot, weapon, call.flags, call.source)) or
+            (slot >= 0 and isGeonosisTurretWeapon(level, weapon, call.flags, call.source) and isDefenseTurret(call.owner));
         var i: u32 = 0;
         while (control.live(op) and i < s.current.?.shot_count) : (i += 1) {
             const shot = &s.current.?.shots[i];
             if (s.consumed[i] != 0 or shot.phase != 0) continue;
-            if (@import("shot_source.zig").matches(shot, slot, generation, s.read(i8, call.weapon), call.source, @truncate(call.depth))) {
+            if (shot_source.matches(shot, slot, generation, weapon, call.source, @truncate(call.depth))) {
                 s.consumed[i] = 1;
                 return replay(op, call.manager, shot, call.target, call.caller);
             }
+            if (can_defer) return 0;
+            if (canReplayAfterTick(level, shot)) continue;
             tracking.failure(op, 1, call.owner, call.weapon, call.flags, call.target, call.caller, i);
             if (control.live(op)) s.failed = true;
             break;
         }
-        if (control.live(op)) {
+        if (!can_defer and control.live(op)) {
             tracking.failure(op, 2, call.owner, call.weapon, call.flags, call.target, call.caller, std.math.maxInt(u32));
             s.failed = true;
             s.clonewars_projectile_debug[4] +%= 1;

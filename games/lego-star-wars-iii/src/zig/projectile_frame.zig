@@ -207,6 +207,12 @@ pub export fn projectiles_dispatch_complete() c_int {
     if (!s.valid(manager, 0x3c)) {
         if (control.live(&op)) s.failed = true;
     } else {
+        for (frame.shots[0..frame.shot_count], 0..) |*shot, i| {
+            if (!control.live(&op)) return 0;
+            if (s.consumed[i] != 0 or shot.phase != 0 or !creation.canReplayAfterTick(frame.level, shot)) continue;
+            s.consumed[i] = 1;
+            _ = creation.replay(&op, manager, shot, 0, 0);
+        }
         var i: u32 = 0;
         while (true) : (i += 1) {
             if (!control.live(&op)) return 0;
