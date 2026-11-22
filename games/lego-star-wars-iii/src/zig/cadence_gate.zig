@@ -32,7 +32,7 @@ fn length(kind: u32) usize {
 fn contextFailure(gate: *const p.SyncFireTaskGate, state: [*]const u8) u32 {
     const data = &gate.payload;
     switch (gate.kind) {
-        p.SYNC_ACTOR_MELEE_CONTACT => if (!std.mem.eql(u8, data.storage[0..@sizeOf(p.SyncMeleeContact)], state[0..@sizeOf(p.SyncMeleeContact)])) {
+        p.SYNC_ACTOR_MELEE_CONTACT => if (!std.mem.eql(u8, data.storage[0..@offsetOf(p.SyncMeleeContact, "impact_time")], state[0..@offsetOf(p.SyncMeleeContact, "impact_time")])) {
             return 27;
         },
         p.SYNC_ACTOR_TUBE_CONTACT => if (!std.mem.eql(u8, data.storage[0..12], state[0..12])) {

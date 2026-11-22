@@ -409,7 +409,7 @@ fn jump(address: usize, target: usize) void {
 }
 fn installedHooks() void {
     const patches = @import("cadence_install.zig").patches();
-    check(@src(), patches.len == 50);
+    check(@src(), patches.len == 51);
     for (patches) |patch| {
         check(@src(), (patch.address & 0xffff) + patch.expected.len <= 0x10000);
         protect(patch.address & ~@as(usize, 0xffff), 0x10000, 0x40);
@@ -1169,6 +1169,7 @@ fn hiddenEnemyForceEligibility() void {
     const tubeContact = @import("tube_contact.zig").contact;
     const meleeContact = @import("melee_contact.zig").melee_contact;
     const meleeBounds = @import("melee_contact.zig").melee_bounds;
+    const meleeImpact = @import("melee_contact.zig").melee_impact;
     mode = 58;
     setup();
     frame.level = 64;
@@ -1176,6 +1177,10 @@ fn hiddenEnemyForceEligibility() void {
     win.store([3]f32, model + 0x50, .{ 1, 2, 3 });
     put(model + 0xd4, other);
     win.store(u8, model + 0x1d2, 0x20);
+    put(model + 0x188, 0x9053f0);
+    put(model + 0x11c, 0x839b);
+    put(0xfa3d38, model);
+    put(0xe5f480, 416);
     win.store(i16, other + 0xdc0, 196);
     var token = std.mem.zeroes(Token);
     token.owner = actor;
@@ -1191,10 +1196,12 @@ fn hiddenEnemyForceEligibility() void {
     check(@src(), eligible(other, .area, true) and frame.fire_task_gate_count == 4);
     check(@src(), tubeContact(actor, 0, .search, true) and tubeContact(actor, model, .candidate, true));
     check(@src(), tubeContact(actor, model, .entry, true) and !tubeContact(actor, model, .hold, false));
-    check(@src(), meleeBounds(actor, model) == 2 and meleeContact(actor, model, 0) == 0 and frame.fire_task_gate_count == 8);
-    check(@src(), meleeContact(actor, model, 1) == 1 and frame.fire_task_gate_count == 9);
+    win.store(f32, model + 0xf4, 0.015625);
+    check(@src(), meleeImpact(model, 0x1801) == 0x1801 and frame.fire_task_gate_count == 9);
+    check(@src(), meleeBounds(actor, model) == 2 and meleeContact(actor, model, 0) == 0 and frame.fire_task_gate_count == 9);
+    check(@src(), meleeContact(actor, model, 1) == 1 and frame.fire_task_gate_count == 10);
     check(@src(), std.meta.eql(frame.fire_task_gates[6].payload.tube_position, [3]f32{ 1, 2, 3 }));
-    for (frame.fire_task_gates[0..9]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
+    for (frame.fire_task_gates[0..10]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
     client = true;
@@ -1203,6 +1210,8 @@ fn hiddenEnemyForceEligibility() void {
     check(@src(), !eligible(actor, .area, true) and eligible(actor, .area, false) and eligible(actor, .action, false) and !eligible(actor, .available, true));
     check(@src(), tubeContact(actor, 0, .search, false) and tubeContact(actor, model, .candidate, false));
     check(@src(), tubeContact(actor, model, .entry, false) and !tubeContact(actor, model, .hold, true));
+    win.store(f32, model + 0xf4, 0.01);
+    check(@src(), meleeImpact(model, 0x1805) == 0x1801 and win.load(f32, model + 0xf4) == 0.015625);
     check(@src(), meleeBounds(other, model) == 2);
     check(@src(), meleeBounds(actor, model) == 1 and meleeContact(actor, model, 0) == 1);
     check(@src(), meleeBounds(actor, model) == 0);
@@ -1211,7 +1220,7 @@ fn hiddenEnemyForceEligibility() void {
 
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 3076 and @intFromPtr(&image) < 0x420000 and @intFromPtr(&image) + image.len > 0xfc0000);
-    for ([_]usize{ 0xe60000, 0xe90000, 0xea0000, 0xf90000, 0xfb0000 }) |address| protect(address, 0x10000, 4);
+    for ([_]usize{ 0xe50000, 0xe60000, 0xe90000, 0xea0000, 0xf90000, 0xfa0000, 0xfb0000 }) |address| protect(address, 0x10000, 4);
     for (0..24) |i| {
         const address = 0x20000000 + i * 0x10000;
         check(@src(), win.VirtualAlloc(address, if (address == world) 0x3000 else 0x2000, 0x3000, 4) == address);

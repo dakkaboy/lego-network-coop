@@ -355,7 +355,7 @@ pub const SyncAimTaskState = extern struct {
     reserved: u32,
 };
 
-pub const SyncMeleeContact = extern struct { attacker_slot: u32, attacker_generation: u32 };
+pub const SyncMeleeContact = extern struct { attacker_slot: u32, attacker_generation: u32, attack_pool_slot: u32, impact_time: f32 };
 
 pub const SyncAimBaseState = extern struct {
     rng_engine: u32,
@@ -919,7 +919,7 @@ pub const SYNC_PROFILE_BYTES = @as(c_int, 0xb5c0);
 
 pub const SYNC_LAYOUT_VERSION = @as(c_int, 55);
 
-pub const SYNC_WIRE_VERSION = @as(c_int, 213);
+pub const SYNC_WIRE_VERSION = @as(c_int, 214);
 
 pub const SYNC_NATIVE_SPAN_PLAN_MASK = @as(c_uint, 7);
 

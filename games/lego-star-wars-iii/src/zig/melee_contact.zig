@@ -3,29 +3,59 @@ const s = @import("cadence_state.zig");
 
 pub extern fn melee_contact_thunk() void;
 pub extern fn melee_bounds_thunk() void;
+pub extern fn melee_impact_thunk() void;
 export var melee_contact_continue: usize = 0x92ad65;
 export var melee_contact_skip: usize = 0x92b333;
 export var melee_bounds_continue: usize = 0x92ad17;
 export var melee_bounds_original: usize = 0x92ac87;
+export var melee_impact_continue: usize = 0x74404f;
+export var melee_impact_skip: usize = 0x744070;
 pub export var clonewars_melee_contact_debug: [4]u32 = @splat(0);
+pub export var clonewars_melee_impact_debug: [4]u32 = @splat(0);
 
-fn attackerIdentity(victim: usize, attack: usize) ?p.SyncMeleeContact {
+fn attackerIdentity(attack: usize, attacker: *usize) ?p.SyncMeleeContact {
     var lease: s.Lease = undefined;
-    if (!s.ready(&lease) or s.journal.frame.?.level != 64 or !s.valid(victim, 0x1440) or
-        s.read(u32, victim + 0x50) & 0x200 == 0 or !s.valid(attack, 0x1d3) or
+    if (!s.ready(&lease) or s.journal.frame.?.level != 64 or !s.valid(attack, 0x1d3) or
         s.read(u8, attack + 0x1d2) & 0x20 == 0) return null;
-    const attacker = s.read(usize, attack + 0xd4);
-    if (!s.valid(attacker, 0x1440) or s.read(i16, attacker + 0xdc0) != 196) return null;
-    var identity: p.SyncMeleeContact = undefined;
-    if (s.entities_observed_identity(attacker, &identity.attacker_slot, &identity.attacker_generation) == 0 or !s.live(&lease)) return null;
+    attacker.* = s.read(usize, attack + 0xd4);
+    if (!s.valid(attacker.*, 0x1440) or s.read(i16, attacker.* + 0xdc0) != 196) return null;
+    var identity: p.SyncMeleeContact = .{ .attacker_slot = 0, .attacker_generation = 0, .attack_pool_slot = 0, .impact_time = 0 };
+    if (s.entities_observed_identity(attacker.*, &identity.attacker_slot, &identity.attacker_generation) == 0 or !s.live(&lease)) return null;
     return identity;
+}
+fn playerContact(victim: usize, attack: usize) ?p.SyncMeleeContact {
+    if (!s.valid(victim, 0x1440) or s.read(u32, victim + 0x50) & 0x200 == 0) return null;
+    var attacker: usize = undefined;
+    return attackerIdentity(attack, &attacker);
+}
+
+pub export fn melee_impact(attack: usize, status: u32) u32 {
+    const saved = s.win.GetLastError();
+    defer s.win.SetLastError(saved);
+    var lease: s.Lease = undefined;
+    if (!s.ready(&lease)) return status;
+    var attacker: usize = undefined;
+    var identity = attackerIdentity(attack, &attacker) orelse return status;
+    if (s.read(usize, attack + 0x188) != 0x9053f0 or s.read(u32, attack + 0x11c) != 0x839b) return status;
+    const base = s.read(usize, 0xfa3d38);
+    if (base == 0 or attack < base or (attack - base) % 0x228 != 0) return status;
+    const slot = (attack - base) / 0x228;
+    if (slot >= s.read(u32, 0xe5f480) or slot >= 4096) return status;
+    identity.attack_pool_slot = @intCast(slot);
+    identity.impact_time = s.read(f32, attack + 0xf4);
+    const impact = @import("cadence_gate.zig").apply(attacker, p.SYNC_ACTOR_MELEE_CONTACT, 1, 0, @intFromBool(status & 4 != 0), @ptrCast(&identity), &clonewars_melee_impact_debug);
+    if (!s.live(&lease) or s.journal.host != 0 or s.journal.failed != 0) return status;
+    const authoritative = (status & ~@as(u32, 4)) | (if (impact != 0) @as(u32, 4) else 0);
+    s.win.store(u32, attack + 0x15c, authoritative);
+    s.win.store(f32, attack + 0xf4, identity.impact_time);
+    return authoritative;
 }
 
 pub export fn melee_contact(victim: usize, attack: usize, native_contact: u32) c_int {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
     const local = native_contact != 0;
-    var identity = attackerIdentity(victim, attack) orelse return @intFromBool(local);
+    var identity = playerContact(victim, attack) orelse return @intFromBool(local);
     if (s.journal.host != 0 and !local) return 0;
     return @import("cadence_gate.zig").apply(victim, p.SYNC_ACTOR_MELEE_CONTACT, 0, 0, @intFromBool(local), @ptrCast(&identity), &clonewars_melee_contact_debug);
 }
@@ -33,14 +63,14 @@ pub export fn melee_contact(victim: usize, attack: usize, native_contact: u32) c
 pub export fn melee_bounds(victim: usize, attack: usize) c_int {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
-    const identity = attackerIdentity(victim, attack) orelse return 2;
+    const identity = playerContact(victim, attack) orelse return 2;
     if (s.journal.host != 0) return 2;
     var lease: s.Lease = undefined;
     if (!s.ready(&lease)) return 2;
     const frame = s.journal.frame.?;
     if (s.fire_task_cursor >= frame.fire_task_gate_count) return 0;
     const entry = &frame.fire_task_gates[s.fire_task_cursor];
-    if (entry.kind != p.SYNC_ACTOR_MELEE_CONTACT or
+    if (entry.kind != p.SYNC_ACTOR_MELEE_CONTACT or entry.flags != 0 or
         identity.attacker_slot != entry.payload.melee_contact.attacker_slot or
         identity.attacker_generation != entry.payload.melee_contact.attacker_generation) return 0;
     var reference = s.reference(entry);
@@ -48,6 +78,36 @@ pub export fn melee_bounds(victim: usize, attack: usize) c_int {
 }
 
 comptime {
+    asm (
+        \\.text
+        \\.globl _melee_impact_thunk
+        \\_melee_impact_thunk:
+        \\    pushfl
+        \\    pushal
+        \\    movl %esp,%edx
+        \\    subl $544,%esp
+        \\    andl $-16,%esp
+        \\    movl %edx,512(%esp)
+        \\    fxsave (%esp)
+        \\    fninit
+        \\    movl $0x1f80,516(%esp)
+        \\    ldmxcsr 516(%esp)
+        \\    cld
+        \\    subl $8,%esp
+        \\    movl 16(%edx),%ecx
+        \\    pushl 0x15c(%ecx)
+        \\    pushl 16(%edx)
+        \\    call _melee_impact
+        \\    addl $16,%esp
+        \\    fxrstor (%esp)
+        \\    movl 512(%esp),%esp
+        \\    popal
+        \\    popfl
+        \\    testb $4,0x15c(%ebx)
+        \\    jz 1f
+        \\    jmp *_melee_impact_continue
+        \\1:  jmp *_melee_impact_skip
+    );
     asm (
         \\.text
         \\.globl _melee_contact_thunk
