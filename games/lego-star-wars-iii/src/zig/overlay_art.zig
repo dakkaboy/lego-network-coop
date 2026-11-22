@@ -15,6 +15,7 @@ pub const State = struct {
     opening: f32,
     sound_enabled: bool,
     keypad: ?i32 = null,
+    gamepad: bool,
 };
 
 const Vertex = extern struct { x: f32, y: f32, z: f32 = 0, rhw: f32 = 1, color: u32 };
@@ -100,6 +101,22 @@ pub fn draw(device: usize, width: u32, height: u32, scale: f32, x: f32, y: f32, 
     c.box(.{ 82, 98, 1116, 4 }, 0x55cbd5, a);
     c.box(.{ 96, 194, 1088, 2 }, 0x41536e, a);
     c.box(.{ 96, 576, 1088, 2 }, 0x41536e, a);
+    if (state.gamepad) {
+        const keypad = state.keypad != null;
+        const palette = if (keypad) [4]u32{ 0x586983, 0x20764f, 0x245e91, 0x98454e } else [4]u32{ 0x586983, 0x20764f, 0x98454e, 0 };
+        for (0..@as(usize, if (keypad) 4 else 3)) |index| {
+            const r = layout.padHintIcon(index, keypad);
+            const px: f32 = @floatFromInt(r[0]);
+            const py: f32 = @floatFromInt(r[1]);
+            if (index == 0) {
+                c.box(.{ px + 8, py + 2, 8, 20 }, palette[index], a);
+                c.box(.{ px + 2, py + 8, 20, 8 }, palette[index], a);
+            } else {
+                c.box(.{ px + 2, py, 20, 24 }, palette[index], a);
+                c.box(.{ px, py + 2, 24, 20 }, palette[index], a);
+            }
+        }
+    }
     for ([_]i32{ 6, 7, 11 }) |id| c.control(state, id, 0, 1);
     for (state.weights, 0..) |weight, index| {
         if (weight * a < 0.005) continue;

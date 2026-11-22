@@ -474,7 +474,7 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
     ox = (@as(f32, @floatFromInt(vp.width)) - 1280 * scale) / 2;
     oy = (@as(f32, @floatFromInt(vp.height)) - 720 * scale) / 2 + (1 - opening) * 8 * scale;
     if (!fonts(device)) return;
-    scene.draw(device, vp.width, vp.height, scale, ox, oy, .{ .hovered = hovered, .pressed = pressed, .focused = focused, .camera = camera_selected(), .lan = lan_status(), .hub = game_can_return_to_hub() != 0, .address_invalid = invalid, .fault = game_sync_restart_required() != 0, .view = view, .weights = weights, .opening = opening, .sound_enabled = audio.enabled, .keypad = if (editing_ip) layout.keypad_first + digit else null });
+    scene.draw(device, vp.width, vp.height, scale, ox, oy, .{ .hovered = hovered, .pressed = pressed, .focused = focused, .camera = camera_selected(), .lan = lan_status(), .hub = game_can_return_to_hub() != 0, .address_invalid = invalid, .fault = game_sync_restart_required() != 0, .view = view, .weights = weights, .opening = opening, .sound_enabled = audio.enabled, .keypad = if (editing_ip) layout.keypad_first + digit else null, .gamepad = gamepad });
     label(wide("Network Co-op"), textRect(.{ 176, 109, 928, 66 }), opening, 0xffedf6ff, true, 0);
     key(wide("×"), 6, 0, opening, true);
     key(wide("Settings"), 7, 0, opening, false);
@@ -547,8 +547,15 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
             else => {},
         }
     }
-    const hints = if (editing_ip) wide("D-pad  Navigate     A  Select     X  Delete     B  Done") else if (gamepad) wide("D-pad  Navigate     A  Select     B  Back") else wide("Tab  Navigate     Enter  Select     Esc  Back");
-    label(hints, textRect(layout.hints), opening, 0xffd3e3ef, false, 0);
+    if (gamepad) {
+        const captions = if (editing_ip) [_][*:0]const u16{ wide("Navigate"), wide("Select"), wide("Delete"), wide("Done") } else [_][*:0]const u16{ wide("Navigate"), wide("Select"), wide("Back"), wide("") };
+        const buttons = if (editing_ip) [_][*:0]const u16{ wide(""), wide("A"), wide("X"), wide("B") } else [_][*:0]const u16{ wide(""), wide("A"), wide("B"), wide("") };
+        for (0..@as(usize, if (editing_ip) 4 else 3)) |index| {
+            const rect = layout.padHintIcon(index, editing_ip);
+            if (index != 0) label(buttons[index], textRect(rect), opening, 0xffffffff, false, 0);
+            label(captions[index], textRect(.{ rect[0] + 24, rect[1], layout.pad_hint_widths[index] - 32, rect[3] }), opening, 0xffd3e3ef, false, 0);
+        }
+    } else label(wide("Tab  Navigate     Enter  Select     Esc  Back"), textRect(layout.hints), opening, 0xffd3e3ef, false, 0);
     if (want_open) if (pointer_position) |position| scene.drawPointer(device, position, scale);
 }
 pub export fn coop_toggle() void {

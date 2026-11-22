@@ -7,7 +7,7 @@ pub const bounds = [_][4]i32{
     .{ 736, 344, 144, 56 },
     .{ 1120, 112, 64, 64 },
     .{ 96, 592, 164, 56 },
-    .{ 912, 592, 176, 48 },
+    .{ 848, 592, 176, 56 },
     .{ 448, 496, 384, 48 },
     .{ 568, 420, 144, 56 },
     .{ 1040, 592, 144, 56 },
@@ -16,12 +16,20 @@ pub const join_title = [4]i32{ 320, 220, 640, 56 };
 pub const host_ip = [4]i32{ 432, 288, 416, 32 };
 pub const error_message = [4]i32{ 432, 392, 416, 32 };
 pub const session = [4]i32{ 320, 400, 640, 40 };
-pub const host_ping = [4]i32{ 320, 356, 640, 44 };
+pub const host_ping = [4]i32{ 320, 326, 640, 44 };
 pub const keypad_first = 12;
 pub const keypad_columns = 6;
 pub const keypad_count = 12;
 pub const camera = [4]i32{ 320, 224, 640, 40 };
 pub const hints = [4]i32{ 224, 672, 832, 28 };
+pub const pad_hint_widths = [4]i32{ 124, 104, 110, 92 };
+
+pub fn padHintIcon(index: usize, keypad: bool) [4]i32 {
+    var x: i32 = if (keypad) 425 else 480;
+    for (pad_hint_widths[0..index]) |width| x += width;
+    return .{ x, 674, 24, 24 };
+}
+
 pub const sound = [4]i32{ 400, 420, 144, 56 };
 
 pub fn controlBounds(id: i32, pane: u32) [4]f32 {
