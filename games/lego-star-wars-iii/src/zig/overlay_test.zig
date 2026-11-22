@@ -48,7 +48,7 @@ pub fn main() void {
     check(@src(),ui.previewSnapshot().invalid and starts==0);
     for("10.2.3.4") |c| input(0x102,c,0);key(13);
     check(@src(),starts==1 and status==2 and std.mem.eql(u8,std.mem.sliceTo(&last_address,0),"10.2.3.4"));
-    click(128,620);click(808,300);check(@src(),selected==1);
+    click(128,620);click(808,372);check(@src(),selected==1);
     key(27);check(@src(),ui.previewSnapshot().view==2 and stops==0);
     click(640,488);check(@src(),stops==1 and ui.previewSnapshot().view==0);
     click(400,488);check(@src(),starts==2 and host and status==1);

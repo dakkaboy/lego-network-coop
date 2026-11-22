@@ -110,21 +110,13 @@ fn enabled(id: i32, pane: u32) bool {
 }
 fn bounds(id: i32, pane: u32) Bounds {
     if (id < 0 or id > 11) return .{ .x = 0, .y = 0, .w = 0, .h = 0 };
-    const r = layout.bounds[@intCast(id)];
-    var x = @as(f32, @floatFromInt(r[0]));
-    if ((pane == 1 and id == 2) or (pane == 2 and id == 1)) x = 448;
-    return .{ .x = x, .y = @floatFromInt(r[1]), .w = @floatFromInt(r[2]), .h = @floatFromInt(r[3]) };
+    const r = layout.controlBounds(id, pane);
+    return .{ .x = r[0], .y = r[1], .w = r[2], .h = r[3] };
 }
 fn contentShift(pane: u32) f32 {
-    return (1 - weights[pane]) * (if (pane < view) @as(f32, -22) else 22);
+    return layout.contentShift(pane, view, weights[pane]);
 }
 fn hit(x: f32, y: f32) i32 {
-    if (view == 3 and y >= 268 and y < 332) {
-        const xx = x - contentShift(3);
-        if (xx >= 608 and xx < 672) return 4;
-        if (xx >= 776 and xx < 840) return 5;
-        if (xx >= 448 and xx < 496) return 3;
-    }
     for (0..12) |i| {
         const id: @TypeOf(focused) = @intCast(i);
         if (!enabled(id, view)) continue;
@@ -287,7 +279,7 @@ fn fonts(device: usize) bool {
     font_scale = scale;
     return true;
 }
-fn paint(value: [*:0]const u16, r: Bounds, alpha: f32, color: u32, large: bool, shift: f32, surface: bool) void {
+fn paint(value: [*:0]const u16, r: Bounds, alpha: f32, color: u32, large: bool, shift: f32) void {
     if (alpha < 0.005) return;
     var font = if (large) large_font else if (r.h <= 30) hint_font else normal_font;
     const Draw = *const fn (usize, usize, [*:0]const u16, i32, *Rect, u32, u32) callconv(.winapi) i32;
@@ -298,53 +290,22 @@ fn paint(value: [*:0]const u16, r: Bounds, alpha: f32, color: u32, large: bool, 
     }
     var rect = Rect{ .left = @intFromFloat(ox + (r.x + shift) * scale), .top = @intFromFloat(oy + r.y * scale), .right = @intFromFloat(ox + (r.x + r.w + shift) * scale), .bottom = @intFromFloat(oy + (r.y + r.h) * scale) };
     const a: u32 = @intFromFloat(@min(1, alpha) * 255);
-    if (surface) {
-        var lower = rect;
-        lower.top += 1;
-        lower.bottom += 1;
-        _ = com.method(Draw, font, 15)(font, 0, value, -1, &lower, 0x25, ((a / 4) << 24) | 0x00fff2d9);
-        var upper = rect;
-        upper.top -= 1;
-        upper.bottom -= 1;
-        _ = com.method(Draw, font, 15)(font, 0, value, -1, &upper, 0x25, ((a / 6) << 24) | 0x000b1722);
-    } else {
-        for ([_][2]i32{ .{ -1, 0 }, .{ 1, 0 }, .{ 0, -1 }, .{ 0, 1 } }) |d| {
-            var halo = rect;
-            halo.left += d[0];
-            halo.right += d[0];
-            halo.top += d[1];
-            halo.bottom += d[1];
-            _ = com.method(Draw, font, 15)(font, 0, value, -1, &halo, 0x25, ((a / 12) << 24) | 0x00277492);
-        }
-    }
     _ = com.method(Draw, font, 15)(font, 0, value, -1, &rect, 0x25, (a << 24) | (color & 0xffffff));
 }
 fn label(value: [*:0]const u16, r: Bounds, alpha: f32, color: u32, large: bool, shift: f32) void {
-    paint(value, r, alpha, color, large, shift, false);
+    paint(value, r, alpha, color, large, shift);
 }
 fn textRect(r: [4]i32) Bounds {
     return .{ .x = @floatFromInt(r[0]), .y = @floatFromInt(r[1]), .w = @floatFromInt(r[2]), .h = @floatFromInt(r[3]) };
 }
 fn key(value: [*:0]const u16, id: i32, pane: u32, alpha: f32, large: bool) void {
     var r = bounds(id, pane);
-    r.y += scene.pressOffset(id);
-    const padding: f32 = if (id >= 3 and id <= 5) 6 else 16;
+    if (pressed == id and hovered == id) r.y += 2;
+    const fixed = id == 6 or id == 7 or id == 11;
+    const padding: f32 = if (fixed or (id >= 3 and id <= 5)) 6 else 16;
     r.x += padding;
     r.w -= padding * 2;
-    const dark = id != 6 and id != 7;
-    var color: u32 = if (dark) 0xff211706 else 0xfff7eedc;
-    if (id >= 3 and id <= 5) {
-        const t = scene.selection(id);
-        color = 0xff000000;
-        for ([_]u5{ 0, 8, 16 }) |shift_bits| {
-            const from = @as(f32, @floatFromInt((@as(u32, 0xfff3ecda) >> shift_bits) & 255));
-            const to = @as(f32, @floatFromInt((@as(u32, 0xff211706) >> shift_bits) & 255));
-            color |= @as(u32, @intFromFloat(from + (to - from) * t)) << shift_bits;
-        }
-    }
-
-    if (id == 10) color = if (audio.enabled) 0xff211706 else 0xfff3ecda;
-    paint(value, r, alpha, color, large, if (id == 6 or id == 7 or id == 11) 0 else contentShift(pane), true);
+    paint(value, r, alpha, 0xffedf6ff, large, if (fixed) 0 else contentShift(pane));
 }
 fn advance() void {
     const player = camera_selected();
@@ -378,7 +339,11 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
     ox = (@as(f32, @floatFromInt(vp.width)) - 1280 * scale) / 2;
     oy = (@as(f32, @floatFromInt(vp.height)) - 720 * scale) / 2 + (1 - opening) * 8 * scale;
     if (!fonts(device)) return;
-    _ = scene.draw(device, vp.width, vp.height, scale, ox, oy, .{ .hovered = hovered, .pressed = pressed, .focused = focused, .camera = camera_selected(), .lan = lan_status(), .is_host = lan_is_host() != 0, .hub = game_can_return_to_hub() != 0, .address_focus = view == 1 and focused == 0, .address_invalid = invalid, .fault = game_sync_restart_required() != 0, .view = view, .weights = weights, .opening = opening, .reduced = reduced, .sound_enabled = audio.enabled });
+    scene.draw(device, vp.width, vp.height, scale, ox, oy, .{ .hovered = hovered, .pressed = pressed, .focused = focused, .camera = camera_selected(), .lan = lan_status(), .hub = game_can_return_to_hub() != 0, .address_invalid = invalid, .fault = game_sync_restart_required() != 0, .view = view, .weights = weights, .opening = opening, .sound_enabled = audio.enabled });
+    label(wide("Network Co-op"), textRect(.{ 176, 109, 928, 66 }), opening, 0xffedf6ff, true, 0);
+    key(wide("×"), 6, 0, opening, true);
+    key(wide("Settings"), 7, 0, opening, false);
+    key(wide("GitHub"), 11, 0, opening, false);
     for (weights, 0..) |weight, pane_index| {
         const a = weight * opening;
         if (a < 0.005) continue;
@@ -456,19 +421,16 @@ pub export fn coop_release_fonts() void {
         _ = api.RemoveFontMemResourceEx(font_registration);
         font_registration = 0;
     }
-    scene.release();
 }
 pub export fn coop_fonts_lost() void {
     for ([_]usize{ normal_font, large_font, hint_font }) |f| if (f != 0) {
         _ = com.method(*const fn (usize) callconv(.winapi) i32, f, 16)(f);
     };
-    scene.lost();
 }
 pub export fn coop_fonts_reset() void {
     for ([_]usize{ normal_font, large_font, hint_font }) |f| if (f != 0) {
         _ = com.method(*const fn (usize) callconv(.winapi) i32, f, 17)(f);
     };
-    scene.reset();
 }
 pub export fn coop_set_window(_: usize, capture: bool) void {
     background_capture = capture;
@@ -536,7 +498,7 @@ pub export fn coop_input(window: usize, message: u32, wp: usize, lp: isize) c_in
         }
         const x = (px - ox) / scale;
         const y = (py - oy) / scale;
-        scene.pointer(x, y);
+
         const before_hover = hovered;
         hovered = hit(x, y);
         if (hovered >= 0 and hovered != before_hover and message == 0x200) audio.play(.hover);
