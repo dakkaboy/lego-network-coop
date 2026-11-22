@@ -62,6 +62,24 @@ pub fn main() void {
     click(1152,144);for(0..20) |_| tick();
     check(@src(),!ui.previewSnapshot().menu and win.load(u8,0xf91eb4)==0x80);
     check(@src(),ui.coop_input(0,0x100,13,0)==0);
+    ui.padInput(0x30, 0);
+    check(@src(), ui.previewSnapshot().menu and ui.previewSnapshot().gamepad);
+    ui.padInput(2, 0);
+    ui.padInput(2, 2);
+    check(@src(), ui.previewSnapshot().focus == 2);
+    ui.padInput(0x1000, 0);
+    ui.padInput(0x1000, 0);
+    var digit: u32 = 0;
+    for ([_]u32{ 1, 10, 2, 10, 3, 10, 4 }) |next| {
+        while (digit != next) : (digit = (digit + 1) % 11) ui.padInput(8, 0);
+        ui.padInput(0x1000, 0);
+    }
+    ui.padInput(0x2000, 0);
+    check(@src(), ui.previewSnapshot().focus == 2);
+    ui.padInput(0x1000, 0);
+    check(@src(), starts == 3 and std.mem.eql(u8, std.mem.sliceTo(&last_address, 0), "1.2.3.4"));
+    key(9);
+    check(@src(), !ui.previewSnapshot().gamepad);
     ui.coop_release_fonts();
     std.debug.print("Overlay live-action routing, validation, session preservation, hub confirmation and input restoration passed\n",.{});
 }

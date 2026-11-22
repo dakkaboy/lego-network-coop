@@ -124,6 +124,7 @@ pub fn procedure(window: usize, message: u32, wp: usize, lp: isize) callconv(.wi
     if ((message == 0x101 or message == 0x105) and wp == 0x7b) return 0;
     if (message == 0x112 and wp & 0xfff0 == 0xf100) return 0;
     if (((message == 0x100 or message == 0x104) and wp == 0x7b and @as(usize, @bitCast(lp)) & (@as(usize, 1) << 30) == 0) or message == s.menu_message) {
+        if (message != s.menu_message) _ = s.coop_input(window, message, wp, lp);
         if (s.menu_closed_at != 0 and api.GetTickCount() -% s.menu_closed_at < 350) return 0;
         s.coop_toggle();
         log("in-game LAN screen toggled");

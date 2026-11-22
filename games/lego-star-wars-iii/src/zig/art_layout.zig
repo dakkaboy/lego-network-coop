@@ -17,9 +17,7 @@ pub const host_ip = [4]i32{ 432, 288, 416, 32 };
 pub const error_message = [4]i32{ 432, 392, 416, 32 };
 pub const session = [4]i32{ 320, 400, 640, 40 };
 pub const camera = [4]i32{ 320, 224, 640, 40 };
-pub const tab = [4]i32{ 464, 672, 72, 28 };
-pub const enter = [4]i32{ 596, 672, 88, 28 };
-pub const esc = [4]i32{ 744, 672, 72, 28 };
+pub const hints = [4]i32{ 224, 672, 832, 28 };
 pub const sound = [4]i32{ 400, 420, 144, 56 };
 
 pub fn controlBounds(id: i32, pane: u32) [4]f32 {

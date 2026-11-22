@@ -17,8 +17,10 @@ const api = struct {
     extern "gdi32" fn RemoveFontMemResourceEx(usize) callconv(.winapi) i32;
     extern "kernel32" fn GetModuleHandleW(?[*:0]const u16) callconv(.winapi) usize;
     extern "kernel32" fn GetProcAddress(usize, [*:0]const u8) callconv(.winapi) usize;
+    extern "kernel32" fn LoadLibraryExW([*:0]const u16, usize, u32) callconv(.winapi) usize;
     extern "kernel32" fn GetTickCount() callconv(.winapi) u32;
     extern "user32" fn GetKeyState(c_int) callconv(.winapi) i16;
+    extern "user32" fn GetForegroundWindow() callconv(.winapi) usize;
     extern "user32" fn TrackMouseEvent(*MouseTracking) callconv(.winapi) i32;
     extern "user32" fn SetCursor(usize) callconv(.winapi) usize;
     extern "user32" fn SystemParametersInfoW(u32, u32, *i32, u32) callconv(.winapi) i32;
@@ -50,8 +52,30 @@ var last_tick: u32 = 0;
 var focused: i32 = 1;
 var hovered: i32 = -1;
 var pointer_position: ?[2]f32 = null;
+var last_mouse_message: ?isize = null;
 var tracking_pointer = false;
 var background_capture = false;
+var game_window: usize = 0;
+var gamepad = false;
+var editing_ip = false;
+var digit: i32 = 0;
+const digits = "0123456789.";
+const PadState = extern struct {
+    packet: u32,
+    buttons: u16,
+    triggers: [2]u8,
+    lx: i16,
+    ly: i16,
+    rx: i16,
+    ry: i16,
+};
+const GetPad = *const fn (u32, *PadState) callconv(.winapi) u32;
+const pad_menu: u16 = 0x0030;
+var get_pad: ?GetPad = null;
+var checked_pad = false;
+var pad_focused = false;
+var previous_pad: [4]u16 = @splat(0);
+var disconnected_pad: [4]?u32 = @splat(null);
 var pressed: i32 = -1;
 var selected_address = false;
 var invalid = false;
@@ -81,6 +105,7 @@ fn change(next: u32) void {
     hovered = -1;
     invalid = false;
     confirm_hub = false;
+    editing_ip = false;
     focused = switch (next) {
         1 => 0,
         2 => 1,
@@ -92,8 +117,8 @@ fn change(next: u32) void {
 pub fn previewView(next: u32) void {
     if (next < 4) change(next);
 }
-pub fn previewSnapshot() struct { view: u32, opening: f32, focus: i32, invalid: bool, menu: bool, sound: bool, audio_failures: u32, weights: [4]f32 } {
-    return .{ .view = view, .opening = opening, .focus = focused, .invalid = invalid, .menu = opened, .sound = audio.enabled, .audio_failures = audio.diagnostics.failures, .weights = weights };
+pub fn previewSnapshot() struct { view: u32, opening: f32, focus: i32, invalid: bool, menu: bool, sound: bool, gamepad: bool, audio_failures: u32, weights: [4]f32 } {
+    return .{ .view = view, .opening = opening, .focus = focused, .invalid = invalid, .menu = opened, .sound = audio.enabled, .gamepad = gamepad, .audio_failures = audio.diagnostics.failures, .weights = weights };
 }
 pub fn settled() bool {
     return opening > 0.995 and weights[view] > 0.995;
@@ -327,7 +352,108 @@ fn advance() void {
         win.store(u8, 0xf91eb4, (flags & ~@as(u8, 2)) | previous_block);
     }
 }
+fn navigate(reverse: bool) void {
+    var next = focused;
+    for (0..12) |_| {
+        next = @mod(next + (if (reverse) @as(i32, 11) else 1), 12);
+        if (enabled(next, view)) break;
+    }
+    if (focused != next) audio.play(.hover);
+    focused = next;
+    selected_address = next == 0;
+}
+
+fn back() void {
+    audio.play(.back);
+    if (confirm_hub) confirm_hub = false else if (view == 1 or view == 3) change(if (active()) 2 else 0) else want_open = false;
+}
+
+fn editAddress(input_char: u8) void {
+    if (selected_address) address[0] = 0;
+    selected_address = false;
+    invalid = false;
+    const len = std.mem.len(@as([*:0]const u8, &address));
+    if (input_char == 8 and len > 0) address[len - 1] = 0;
+    if (input_char != 8 and len < 15) {
+        address[len] = input_char;
+        address[len + 1] = 0;
+    }
+}
+
+pub fn padInput(buttons: u16, previous: u16) void {
+    const edges = buttons & ~previous;
+    if (edges == 0) return;
+    gamepad = true;
+    pointer_position = null;
+    hovered = -1;
+    pressed = -1;
+    if (buttons & pad_menu == pad_menu and previous & pad_menu != pad_menu) {
+        coop_toggle();
+        return;
+    }
+    if (!want_open) return;
+    if (editing_ip) {
+        if (edges & 0x2000 != 0) {
+            editing_ip = false;
+            focused = 2;
+            selected_address = false;
+        } else if (edges & 0x4000 != 0) {
+            editAddress(8);
+        } else if (edges & 0x1000 != 0) {
+            editAddress(digits[@intCast(digit)]);
+        } else if (edges & 0xf != 0) {
+            digit = @mod(digit + (if (edges & 0x6 != 0) @as(i32, -1) else 1), digits.len);
+        }
+    } else if (edges & 0x2000 != 0) {
+        back();
+    } else if (edges & 0x1000 != 0) {
+        if (view == 1 and focused == 0) {
+            editing_ip = true;
+            digit = 0;
+        } else activate(focused);
+    } else if (edges & 0xf != 0) {
+        navigate(edges & 0x5 != 0);
+    }
+}
+
+fn pollPads() void {
+    if (background_capture or game_window == 0 or api.GetForegroundWindow() != game_window) {
+        pad_focused = false;
+        return;
+    }
+    if (!checked_pad) {
+        checked_pad = true;
+        const preferred = api.LoadLibraryExW(wide("xinput1_4.dll"), 0, 0x800);
+        const library = if (preferred != 0) preferred else api.LoadLibraryExW(wide("xinput9_1_0.dll"), 0, 0x800);
+        if (library != 0) {
+            const entry = api.GetProcAddress(library, "XInputGetState");
+            if (entry != 0) get_pad = @ptrFromInt(entry);
+        }
+    }
+    const readPad = get_pad orelse return;
+    const now = api.GetTickCount();
+    for (&previous_pad, 0..) |*previous, index| {
+        if (disconnected_pad[index]) |disconnected_at| if (now -% disconnected_at < 1000) continue;
+        var pad: PadState = undefined;
+        if (readPad(@intCast(index), &pad) != 0) {
+            disconnected_pad[index] = now;
+            previous.* = 0;
+            continue;
+        }
+        disconnected_pad[index] = null;
+        var buttons = pad.buttons;
+        if (pad.lx < -18000) buttons |= 4;
+        if (pad.lx > 18000) buttons |= 8;
+        if (pad.ly < -18000) buttons |= 2;
+        if (pad.ly > 18000) buttons |= 1;
+        if (pad_focused) padInput(buttons, previous.*);
+        previous.* = buttons;
+    }
+    pad_focused = true;
+}
+
 pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
+    pollPads();
     if (!opened) return;
     if (view == 2 and lan_status() == 0) change(0);
     if (view == 2 and lan_status() == 4) change(1);
@@ -356,12 +482,14 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
             },
             1 => {
                 label(wide("Join game"), textRect(layout.join_title), a, 0xfff8edce, true, shift);
-                label(wide("Host IP"), textRect(layout.host_ip), a, 0xffbacbd7, false, shift);
+                var digit_label = [_:0]u16{ '[', ' ', ']' };
+                digit_label[1] = digits[@intCast(digit)];
+                label(if (editing_ip) &digit_label else wide("Host IP"), textRect(layout.host_ip), a, 0xffbacbd7, false, shift);
                 var ip: [17]u16 = @splat(0);
                 const len = std.mem.len(@as([*:0]const u8, &address));
                 for (address[0..len], ip[0..len]) |c, *out| out.* = c;
                 label(@ptrCast(&ip), bounds(0, pane), a, if (focused == 0 and selected_address and len > 0) 0xff94e7ff else 0xfff8edce, true, shift);
-                if (focused == 0 and (!selected_address or len == 0) and api.GetTickCount() % 900 < 450) {
+                if (!gamepad and focused == 0 and (!selected_address or len == 0) and api.GetTickCount() % 900 < 450) {
                     var measured = Rect{ .left = 0, .top = 0, .right = 0, .bottom = 0 };
                     _ = com.method(*const fn (usize, usize, [*:0]const u16, i32, *Rect, u32, u32) callconv(.winapi) i32, large_font, 15)(large_font, 0, @ptrCast(&ip), -1, &measured, 0x420, 0xffffffff);
                     var caret = bounds(0, pane);
@@ -395,9 +523,8 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
             else => {},
         }
     }
-    label(wide("TAB"), textRect(layout.tab), opening, 0xfff5eedb, false, 0);
-    label(wide("ENTER"), textRect(layout.enter), opening, 0xfff5eedb, false, 0);
-    label(wide("ESC"), textRect(layout.esc), opening, 0xfff5eedb, false, 0);
+    const hints = if (editing_ip) wide("D-pad  Digit     A  Add     X  Delete     B  Done") else if (gamepad) wide("D-pad  Navigate     A  Select     B  Back") else wide("Tab  Navigate     Enter  Select     Esc  Back");
+    label(hints, textRect(layout.hints), opening, 0xffd3e3ef, false, 0);
     if (want_open) if (pointer_position) |position| scene.drawPointer(device, position, scale);
 }
 pub export fn coop_toggle() void {
@@ -432,12 +559,21 @@ pub export fn coop_fonts_reset() void {
         _ = com.method(*const fn (usize) callconv(.winapi) i32, f, 17)(f);
     };
 }
-pub export fn coop_set_window(_: usize, capture: bool) void {
+pub export fn coop_set_window(window: usize, capture: bool) void {
+    game_window = window;
     background_capture = capture;
 }
 pub export fn coop_input(window: usize, message: u32, wp: usize, lp: isize) c_int {
     if (message == 0x2a3) tracking_pointer = false;
+    if (message == 0x100 or message == 0x104 or message == 0x201 or
+        (message == 0x200 and last_mouse_message != lp))
+    {
+        gamepad = false;
+        editing_ip = false;
+    }
+    if (message == 0x200) last_mouse_message = lp;
     if (!opened) return 0;
+    if (gamepad and message == 0x200) return 1;
     if (message == 0x20 and want_open and @as(u16, @truncate(@as(usize, @bitCast(lp)))) == 1) {
         _ = api.SetCursor(0);
         return 1;
@@ -449,20 +585,11 @@ pub export fn coop_input(window: usize, message: u32, wp: usize, lp: isize) c_in
         return 0;
     }
     if (message == 0x100 and wp == 27) {
-        audio.play(.back);
-        if (confirm_hub) confirm_hub = false else if (view == 1 or view == 3) change(if (active()) 2 else 0) else want_open = false;
+        back();
         return 1;
     }
     if (message == 0x100 and (wp == 9 or (wp >= 0x25 and wp <= 0x28))) {
-        const back = wp == 0x25 or wp == 0x26 or (wp == 9 and api.GetKeyState(0x10) < 0);
-        var next = focused;
-        for (0..12) |_| {
-            next = @mod(next + (if (back) @as(i32, 11) else 1), 12);
-            if (enabled(next, view)) break;
-        }
-        if (focused != next) audio.play(.hover);
-        focused = next;
-        selected_address = next == 0;
+        navigate(wp == 0x25 or wp == 0x26 or (wp == 9 and api.GetKeyState(0x10) < 0));
         return 1;
     }
     if (message == 0x100 and wp == 13) {
@@ -513,15 +640,7 @@ pub export fn coop_input(window: usize, message: u32, wp: usize, lp: isize) c_in
         }
     }
     if (message == 0x102 and view == 1 and focused == 0 and (wp == 8 or wp == '.' or (wp >= '0' and wp <= '9'))) {
-        if (selected_address) address[0] = 0;
-        selected_address = false;
-        invalid = false;
-        const len = std.mem.len(@as([*:0]const u8, &address));
-        if (wp == 8 and len > 0) address[len - 1] = 0;
-        if (wp != 8 and len < 15) {
-            address[len] = @intCast(wp);
-            address[len + 1] = 0;
-        }
+        editAddress(@intCast(wp));
     }
     return @intFromBool((message >= 0x100 and message <= 0x109) or (message >= 0x200 and message <= 0x20e));
 }
