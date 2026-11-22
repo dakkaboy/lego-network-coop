@@ -36,6 +36,28 @@ pub export fn reaction_damage_begin(receipt: *s.Receipt, actor: usize, source: u
         }
     }
 }
+pub export var clonewars_projectile_damage_corrections: u32 = 0;
+pub export fn reaction_projectile_damage_amount(actor: usize, amount: c_int) c_int {
+    if (amount != 0 or s.combat_damage_native_caller() != 0x81f27f) return amount;
+    const saved = s.win.GetLastError();
+    defer s.win.SetLastError(saved);
+    var op: s.Lease = undefined;
+    if (!s.get(&op) or !s.active or s.journal.host != 0 or s.journal.failed != 0 or s.journal.frame.?.level != 79 or !s.valid(actor, 0x1440)) return amount;
+    const entry = s.journal.peek() orelse return amount;
+    if (entry.kind != p.SYNC_REACTION_CLIP or !validation.valid(entry)) return amount;
+    const clip = &entry.payload.clip;
+    const hit = &clip.hit;
+    if (clip.selection.clip != -1 or clip.arena_attacker_generation != 0 or clip.source_id == 0 or clip.source_id != s.combat_damage_source_id() or
+        !validation.hitValid(hit) or hit.health_after <= 0 or hit.health_before - hit.health_after != 1 or
+        hit.life_before != hit.life_after or hit.action_before != hit.action_after or hit.timer_before > 0 or hit.timer_after <= 0) return amount;
+    const identity = s.identity(entry);
+    if (s.entities_resolve_reference(&identity) != actor or !s.live(&op)) return amount;
+    if (read(i8, actor + 0xdde) != hit.health_before or
+        (read(u32, actor + 0x50) & 3) | (@as(u32, read(u8, actor + 0x54)) << 8) != hit.life_before or
+        read(i16, actor + 0x2f4) != hit.action_before or !(read(f32, actor + 0xd3c) <= 0)) return amount;
+    clonewars_projectile_damage_corrections +%= 1;
+    return 1;
+}
 pub export fn reaction_damage_complete(receipt: *const s.Receipt) void {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
