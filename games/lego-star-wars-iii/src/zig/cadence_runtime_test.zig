@@ -1206,6 +1206,8 @@ fn hiddenEnemyForceEligibility() void {
     check(@src(), tubeContact(actor, model, .entry, false) and !tubeContact(actor, model, .hold, true));
     collision_stack[0x28 / 4] = @bitCast(@as(f32, 1));
     check(@src(), meleeBounds(actor, model, @intFromPtr(&collision_stack)) == 1 and meleeContact(actor, model, 0) == 1);
+    collision_stack[0x28 / 4] = @bitCast(@as(f32, -1));
+    check(@src(), meleeBounds(actor, model, @intFromPtr(&collision_stack)) == 0);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 

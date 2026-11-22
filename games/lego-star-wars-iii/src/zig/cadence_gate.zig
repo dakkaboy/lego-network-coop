@@ -176,6 +176,9 @@ pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, sta
             }
         }
     }
+    // A guest-only broad-phase probe cannot reach the native hit path.
+    // cadence_finish still requires every host gate to be consumed.
+    if (s.journal.host == 0 and kind == p.SYNC_ACTOR_MELEE_CONTACT and flags == 1) return 0;
     if (s.clonewars_actor_gate_failure[0] == 0) {
         var slot: u32 = std.math.maxInt(u32);
         var generation: u32 = 0;
