@@ -8,7 +8,7 @@ const launch = @import("projectile_launch.zig");
 const shot_source = @import("shot_source.zig");
 const Machine = @import("machine_environment.zig").Environment;
 fn isGeonosisTurretWeapon(level: i32, weapon: i32, flags: u32, source: u8) bool {
-    return level == 79 and weapon == 31 and flags == 0x800 and source == p.SYNC_SHOT_WEAPON;
+    return level == 79 and (weapon == 29 or weapon == 31) and flags == 0x800 and source == p.SYNC_SHOT_WEAPON;
 }
 fn isDefenseTurret(actor: usize) bool {
     return s.valid(actor, 0x1440) and s.read(u16, actor + 0xdc0) == 466;

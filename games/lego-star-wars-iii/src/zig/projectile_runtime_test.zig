@@ -174,7 +174,8 @@ fn primaryCall() usize {
 }
 fn nativeCreation(manager: usize, owner: usize, o: usize, tr: usize, w: usize, flags: u32, x: usize) usize {
     const turret = frame.level == 79;
-    check(@src(), manager == manager_root and owner == actor and w != 0 and win.load(i8, w) == (if (turret) @as(i8, 31) else 7) and flags == (if (turret) @as(u32, 0x800) else 0) and x == 0 and win.load(f32, o) == 1 and win.load(f32, tr) == 1);
+    const expected_weapon = if (turret) frame.shots[0].weapon else 7;
+    check(@src(), manager == manager_root and owner == actor and w != 0 and win.load(i8, w) == expected_weapon and flags == (if (turret) @as(u32, 0x800) else 0) and x == 0 and win.load(f32, o) == 1 and win.load(f32, tr) == 1);
     native_calls += 1;
     native_input[0] = win.load(u32, 0xfb4b6c);
     native_input[1] = win.load(u32, 0xe637b4);
@@ -610,7 +611,7 @@ fn installedHooks() void {
     check(@src(), lifecycle.projectiles_finish() != 0 and control.projectiles_frame_lease_get(&captured) != 0 and control.projectiles_abort_frame(&captured) != 0);
     use_launch_bridges = false;
 }
-fn replayMissingTurretShot() void {
+fn replayMissingTurretShot(weapon_id: i32) void {
     mode = 10;
     setup(false);
     session.level = 79;
@@ -622,13 +623,15 @@ fn replayMissingTurretShot() void {
     frame.shots[0] = std.mem.zeroes(p.SyncShot);
     frame.shots[0].id = 9;
     frame.shots[0].owner_generation = 19;
-    frame.shots[0].weapon = 31;
+    frame.shots[0].weapon = weapon_id;
     frame.shots[0].flags = 0x800;
     frame.shots[0].origin = origin.*;
     frame.shots[0].transform = transform.*;
     frame.projectile_count = 1;
     frame.projectiles[0].id = 9;
     begin();
+    weapon.* = if (weapon_id == 31) 29 else 31;
+    _ = @as(Primary, @ptrFromInt(0x44e4a8))(manager_root, 0, actor, @intFromPtr(origin), @intFromPtr(transform), @intFromPtr(weapon), 0x800, 0);
     check(@src(), native_calls == 0 and lifecycle.projectiles_dispatch_pending() == 1);
     check(@src(), lifecycle.projectiles_dispatch_complete() != 0 and native_calls == 1);
     check(@src(), tracking.find(9) != null and win.load(u32, 0xe637b4) == 234 and win.load(u32, 0xea178c) == 123);
@@ -672,6 +675,7 @@ pub fn main() void {
         if (mode == 33 and !host) check(@src(), out.dispatch_pending == 1 and out.finish == 0);
         if (mode == 34 or mode == 35) check(@src(), out.rejections != 0 and out.remove_calls == 0);
     }
-    replayMissingTurretShot();
+    replayMissingTurretShot(31);
+    replayMissingTurretShot(29);
     installedHooks();
 }
