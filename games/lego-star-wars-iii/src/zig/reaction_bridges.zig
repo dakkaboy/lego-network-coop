@@ -66,22 +66,25 @@ comptime {
         \\    fninit
         \\    movl $0x1f80,516(%esp)
         \\    ldmxcsr 516(%esp)
-        \\    movl 8(%eax),%edx
+
         \\    subl $8,%esp
-        \\    pushl 0x10(%edx)
+        \\    pushl 16(%eax)
         \\    pushl 4(%eax)
         \\    cld
         \\    call _reaction_projectile_damage_amount
         \\    addl $16,%esp
         \\    movl 512(%esp),%edx
+        \\    cmpl 16(%edx),%eax
+        \\    je 1f
         \\    movl 8(%edx),%ecx
         \\    movl %eax,0x10(%ecx)
+        \\    movl %eax,16(%edx)
+        \\1:
         \\    fxrstor (%esp)
         \\    movl %edx,%esp
         \\    popal
         \\    popfl
-        \\    movl 0x10(%ebp),%ebx
-        \\    cmpl $-1,%ebx
+        \\    movsbl 0xdde(%esi),%edi
         \\    jmp *_reaction_projectile_damage_resume
         \\.globl _reaction_arena_contact_thunk
         \\_reaction_arena_contact_thunk:
