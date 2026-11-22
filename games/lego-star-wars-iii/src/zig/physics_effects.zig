@@ -18,6 +18,10 @@ pub export var clonewars_effect_update_debug: [12]u32 = @splat(0);
 pub export var effect_rest_resume: usize = 0x743cb1;
 pub export var effect_moving_resume: usize = 0x7445ad;
 extern fn physics_effect_rest_thunk() void;
+extern fn physics_effect_eviction_thunk() void;
+export const effect_eviction_active = &state.active;
+export const effect_eviction_skip: usize = 0x742064;
+export const effect_eviction_candidate: usize = 0x74205d;
 pub export var clonewars_breakup_launch_debug: [4]u32 = @splat(0);
 pub export var clonewars_breakup_source_failure: [8]u32 = @splat(0);
 pub export var clonewars_breakup_launch_motion_debug: [14]u32 = @splat(0);
@@ -516,6 +520,8 @@ pub export fn physics_input_install() c_int {
     const addresses = [_]usize{ 0x71ab90, 0x71ac10 };
     const prefixes = [2][6]u8{ .{ 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c }, .{ 0x56, 0x68, 0x98, 0xf4, 0xe5, 0 } };
     const update_prefix = [_]u8{ 0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf0 };
+    const eviction_prefix = [_]u8{ 0xf7, 0x80, 0x1c, 1, 0, 0, 0, 2, 0, 0, 0x75, 7 };
+    if (!readable(0x742051, eviction_prefix.len) or !equal(&read([eviction_prefix.len]u8, 0x742051), &eviction_prefix)) return 0;
     const rest_prefix = [_]u8{ 0xf6, 0xc4, 0x41, 0x0f, 0x85, 0xfc, 8, 0, 0 };
     if (!readable(0x743bb0, 6) or !equal(&read([6]u8, 0x743bb0), &update_prefix) or !readable(0x743ca8, 9) or !equal(&read([9]u8, 0x743ca8), &rest_prefix)) return 0;
     if (!readable(0x7427d8, birth.len) or !equal(&read([7]u8, 0x7427d8), &birth) or !readable(0x905f33, launch.len) or !equal(&read([5]u8, 0x905f33), &launch)) return 0;
@@ -539,6 +545,7 @@ pub export fn physics_input_install() c_int {
         if (!patch(address, 6, @intFromPtr(hook), false)) return 0;
     }
     if (!patch(0x905f33, 5, @intFromPtr(&physics_breakup_launch_thunk), true)) return 0;
+    if (!patch(0x742051, eviction_prefix.len, @intFromPtr(&physics_effect_eviction_thunk), false)) return 0;
     state.clonewars_physics_input_debug[4] = 3;
     return 1;
 }

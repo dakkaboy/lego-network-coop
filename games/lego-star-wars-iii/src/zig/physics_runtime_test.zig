@@ -459,7 +459,7 @@ fn install() void {
     @memcpy(bytes(0x743bb6, 13), &[_]u8{ 0xff, 0x75, 8, 0xe8, 0, 0, 0, 0, 0x83, 0xc4, 4, 0xc9, 0xc3 });
     put(0x743bba, @intFromPtr(&nativeUpdate) -% 0x743bbe);
     @memcpy(bytes(0x743ca8, 9), &[_]u8{ 0xf6, 0xc4, 0x41, 0x0f, 0x85, 0xfc, 8, 0, 0 });
-    for ([_]usize{ 0x700000, 0x71ab90, 0x71ac10, 0x7427d8, 0x905f33 }) |a| protect(a, 64);
+    for ([_]usize{ 0x700000, 0x71ab90, 0x71ac10, 0x742051, 0x7427d8, 0x905f33 }) |a| protect(a, 64);
     @memcpy(bytes(0x71ab90, 6), &[_]u8{ 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c });
     @memcpy(bytes(0x71ac10, 6), &[_]u8{ 0x56, 0x68, 0x98, 0xf4, 0xe5, 0 });
     @memcpy(bytes(0x71ab96, 12), &[_]u8{ 0x57, 0xe8, 0, 0, 0, 0, 0x83, 0xc4, 4, 0x5f, 0x5e, 0xc3 });
@@ -468,6 +468,7 @@ fn install() void {
     put(0x71ac1b, @intFromPtr(&nativeSpin) -% 0x71ac1f);
     @memcpy(bytes(0x7427d8, 7), &[_]u8{ 0x8b, 0x8c, 0x24, 8, 2, 0, 0 });
     @memcpy(bytes(0x905f33, 5), &[_]u8{ 0xe8, 0xb8, 0x0b, 6, 0 });
+    @memcpy(bytes(0x742051, 12), &[_]u8{ 0xf7, 0x80, 0x1c, 1, 0, 0, 0, 2, 0, 0, 0x75, 7 });
     check(@src(), e.physics_input_install() != 0);
     spins = .{ 0x71ab95 +% win.load(u32, 0x71ab91), 0x71ac15 +% win.load(u32, 0x71ac11) };
 }
@@ -594,6 +595,27 @@ pub fn main() void {
     put(descriptor + 4, 0x1da3ee00);
     e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, @intFromPtr(&native_frame));
     check(@src(), s.physics_input_finish() != 0 and win.load(u32, descriptor + 4) == 0x1da3ee00);
+    s.physics_input_cancel();
+    setup();
+    put(0xfb8438, 79);
+    put(pool + 0x11c, 0x40000091);
+    put(pool + 0x198, 0x904e80);
+    const eviction_probe: usize = 0x700020;
+    @memcpy(bytes(eviction_probe, 9), &[_]u8{ 0x8b, 0x44, 0x24, 4, 0xe9, 0, 0, 0, 0 });
+    put(eviction_probe + 5, 0x742051 - (eviction_probe + 9));
+    @memcpy(bytes(0x74205d, 6), &[_]u8{ 0xb8, 1, 0, 0, 0, 0xc3 });
+    @memcpy(bytes(0x742064, 3), &[_]u8{ 0x31, 0xc0, 0xc3 });
+    const evictionCandidate: *const fn (usize) callconv(.c) u32 = @ptrFromInt(eviction_probe);
+    check(@src(), evictionCandidate(pool) == 1);
+    check(@src(), s.physics_input_begin(frame, 1) != 0);
+    check(@src(), evictionCandidate(pool) == 0);
+    put(pool + 0x198, 0);
+    check(@src(), evictionCandidate(pool) == 1);
+    put(pool + 0x198, 0x904e80);
+    put(0xfb8438, 12);
+    check(@src(), evictionCandidate(pool) == 1);
+    put(pool + 0x11c, 0x200);
+    check(@src(), evictionCandidate(pool) == 0);
     s.physics_input_cancel();
     effectRestTests();
 }

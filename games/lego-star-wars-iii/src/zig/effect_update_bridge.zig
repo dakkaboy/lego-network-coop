@@ -1,5 +1,22 @@
 pub const code =
     \\.text
+    \\.globl _physics_effect_eviction_thunk
+    \\_physics_effect_eviction_thunk:
+    \\testl $0x200,0x11c(%eax)
+    \\jnz 2f
+    \\testl $0x40000000,0x11c(%eax)
+    \\jz 1f
+    \\cmpl $79,0xfb8438
+    \\jne 1f
+    \\cmpl $0x904e80,0x198(%eax)
+    \\jne 1f
+    \\pushl %ecx
+    \\movl _effect_eviction_active,%ecx
+    \\cmpb $0,(%ecx)
+    \\popl %ecx
+    \\jne 2f
+    \\1: jmp *_effect_eviction_candidate
+    \\2: jmp *_effect_eviction_skip
     \\.globl _physics_effect_rest_thunk
     \\_physics_effect_rest_thunk:
     \\pushfl
