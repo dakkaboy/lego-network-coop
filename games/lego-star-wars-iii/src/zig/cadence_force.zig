@@ -3,6 +3,7 @@ const p = @import("protocol.zig");
 const s = @import("cadence_state.zig");
 const gate = @import("cadence_gate.zig");
 const equal = @import("validation.zig").equal;
+pub export var clonewars_force_target_failure: [20]u32 = @splat(0);
 pub export fn cadence_force_target_visibility(candidate: usize, caster: usize, mode: u32, visible: c_int) c_int {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
@@ -26,7 +27,20 @@ pub export fn cadence_force_target_visibility(candidate: usize, caster: usize, m
         return visible;
     }
     const local: c_int = @intFromBool(visible != 0);
+    const frame = s.journal.frame.?;
+    const epoch = frame.epoch;
+    const sequence = frame.sequence;
+    const controls = frame.inputs;
     const result = gate.apply(candidate, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, local, @ptrCast(&input), &s.clonewars_force_target_debug);
+    const failure = &s.clonewars_actor_gate_failure;
+    if (clonewars_force_target_failure[0] == 0 and failure[0] == epoch and failure[1] == sequence and failure[3] == p.SYNC_ACTOR_FORCE_VISIBILITY) {
+        clonewars_force_target_failure = .{
+            epoch,                      sequence,                input.clock,                    mode,                        @truncate(candidate),           @truncate(caster),
+            input.caster_slot,          input.caster_generation, s.read(u16, candidate + 0xdc0), s.read(u16, caster + 0xdc0), s.read(u16, candidate + 0x2f4), s.read(u16, caster + 0x2f4),
+            controls[0].held,           controls[0].pressed,     controls[1].held,               controls[1].pressed,         s.read(u32, 0xf91eb4),          s.read(u32, candidate + 0x50),
+            s.read(u32, caster + 0x50), @intCast(local),
+        };
+    }
     if (result != local and s.clonewars_force_target_correction[0] == 0 and s.live(&op) and s.journal.failed == 0) {
         var slot: u32 = std.math.maxInt(u32);
         var generation: u32 = 0;

@@ -211,6 +211,11 @@ fn run() Snapshot {
     }
     if (mode == 4) put(actor + 0x50, 0x203);
     if (mode == 5) win.store(u8, actor + 0x138e, 0);
+    if (mode >= 18) {
+        frame.level = if (mode == 20) 63 else 64;
+        put(actor + 0x4c, 0x400);
+        win.store(u16, actor + 0x2f4, 0xffff);
+    }
     enter(&b);
     source();
     if (mode == 10) source();
@@ -235,6 +240,11 @@ fn run() Snapshot {
         if (mode == 14) put(actor + 0x4c, 0x400);
         if (mode == 15) put(0xfb4b6c, 44);
         if (mode == 16) frame.model_input_count = 0;
+        if (mode >= 18) win.store(u16, actor + 0x2f4, switch (mode) {
+            18 => 1,
+            19, 20 => 10,
+            else => 0x29,
+        });
         enter(&b);
         source();
         consumers(&out);
@@ -355,6 +365,14 @@ pub fn main() void {
         check(@src(), checksum == hash);
         if (mode == 0 or mode == 2 or mode == 3) check(@src(), out.finish != 0 and out.projection_count == 1);
         if (mode == 17) check(@src(), out.finish != 0 and out.correction[0] != 0 and out.outcome.valid != 0 and out.cf4 == 0);
+    }
+    for (18..22) |variant| {
+        mode = @intCast(variant);
+        const out = run();
+        if (mode <= 19) {
+            check(@src(), out.finish != 0 and out.fault == 0);
+            check(@src(), win.load(u16, actor + 0x2f4) == if (mode == 18) @as(u16, 1) else 10);
+        } else check(@src(), out.finish == 0 and out.fault == 20 and out.failure[7] == 9);
     }
     installedBridge();
 }

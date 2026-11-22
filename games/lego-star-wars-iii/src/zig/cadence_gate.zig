@@ -24,12 +24,16 @@ fn length(kind: u32) usize {
         p.SYNC_ACTOR_ARENA_RUN_RANDOM => @sizeOf(p.SyncArenaRunRandomState),
         p.SYNC_ACTOR_BARC_SUSPENSION => @sizeOf(p.SyncBarcSuspensionState),
         p.SYNC_ACTOR_BARC_ALIGNMENT => @sizeOf(p.SyncBarcAlignmentState),
+        p.SYNC_ACTOR_TUBE_CONTACT => @sizeOf([3]f32),
         else => @sizeOf(p.SyncFireTaskState),
     };
 }
 fn contextFailure(gate: *const p.SyncFireTaskGate, state: [*]const u8) u32 {
     const data = &gate.payload;
     switch (gate.kind) {
+        p.SYNC_ACTOR_TUBE_CONTACT => if (!std.mem.eql(u8, data.storage[0..12], state[0..12])) {
+            return 26;
+        },
         p.SYNC_ACTOR_BARC_SUSPENSION => if (!std.mem.eql(u8, data.storage[0..@sizeOf(p.SyncBarcSuspensionState)], state[0..@sizeOf(p.SyncBarcSuspensionState)])) {
             return 25;
         },
@@ -112,7 +116,7 @@ pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, sta
     if (!s.get(&op) or !s.active) return value;
     const bytes = length(kind);
     const failure: c_int = switch (kind) {
-        p.SYNC_FIRE_TASK_VISIBILITY, p.SYNC_ACTOR_DEATH_BREAKUP, p.SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY, p.SYNC_ACTOR_HAZARD_DEATH, p.SYNC_ACTOR_RYLOTH_FIGHTER_DEATH => 0,
+        p.SYNC_FIRE_TASK_VISIBILITY, p.SYNC_ACTOR_DEATH_BREAKUP, p.SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY, p.SYNC_ACTOR_HAZARD_DEATH, p.SYNC_ACTOR_RYLOTH_FIGHTER_DEATH, p.SYNC_ACTOR_FORCE_ELIGIBILITY, p.SYNC_ACTOR_TUBE_CONTACT => 0,
         p.SYNC_ACTOR_BREAKUP_VISIBILITY => 1,
         else => value,
     };

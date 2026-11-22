@@ -70,7 +70,7 @@ pub export var rider_fire_hidden_resume: usize = 0x4397ef;
 extern fn rider_fire_visibility_thunk() void;
 extern fn arena_run_random_thunk() void;
 extern fn zillo_support_throw_thunk() void;
-pub fn patches() [38]hooks.Patch {
+pub fn patches() [48]hooks.Patch {
     return [_]hooks.Patch{
         .{ .address = 0x99a39b, .expected = "\x33\x8a\x68\x02\x00\x00", .target = @intFromPtr(&@import("barc_suspension.zig").barc_suspension_thunk) },
         .{ .address = 0x9977c9, .expected = "\xe8\xc2\x4a\xff\xff", .target = @intFromPtr(&@import("barc_alignment.zig").barc_alignment_thunk), .opcode = 0xe8 },
@@ -95,6 +95,16 @@ pub fn patches() [38]hooks.Patch {
         .{ .address = 0x89a093, .expected = "\x80\x78\x42\x00\x0f\x84\xdc\x00\x00\x00", .target = @intFromPtr(&aim_task_visibility_thunk) },
         .{ .address = 0x541180, .expected = "\x55\x8b\xec\x83\xe4\xf0", .target = @intFromPtr(&rts_competitor_input_thunk) },
         .{ .address = 0x7f8177, .expected = "\x80\x78\x42\x00\x0f\x84\x30\x02\x00\x00", .target = @intFromPtr(&force_target_visibility_thunk) },
+        .{ .address = 0x84bc7f, .expected = "\x80\x7e\x56\x00\x75\x18\x8b\x15\x20\x4a\xfb\x00\x56\x52\xe8\x5e\x2d\x08\x00\x83\xc4\x08\x84\xc0\x0f\x84\xd1\x01\x00\x00", .target = @intFromPtr(&@import("force_request.zig").force_request_eligible_thunk) },
+        .{ .address = 0x84bc9d, .expected = "\x0f\xb7\x86\xf4\x02\x00\x00\x66\x83\xf8\xff\x74\x2f\x8b\x15\xf8\x5e\xe7\x00\x0f\xbf\xc8\x8b\xc1\xc1\xe0\x04\x8b\x44\x10\x08\x83\xe0\x04\x33\xd2\x0b\xc2\x75\x14\x3b\x0d\xcc\xae\xe6\x00\x74\x0c\x3b\x0d\xd0\xae\xe6\x00\x0f\x85\x95\x01\x00\x00", .target = @intFromPtr(&@import("force_request.zig").force_request_action_thunk) },
+        .{ .address = 0x84bcfd, .expected = "\x85\xc0\x74\x30\x8b\x03", .target = @intFromPtr(&@import("force_request.zig").force_request_available_thunk) },
+        .{ .address = 0x804aa5, .expected = "\x85\xc0\x0f\x85\x2d\x02\x00\x00", .target = @intFromPtr(&@import("tube_contact.zig").tube_hold_thunk) },
+        .{ .address = 0x804b6a, .expected = "\x85\xc0\x75\x1c\x83\xbe\xd4\x02\x00\x00\x05\x75\x08\x39\x86\xdc\x02\x00\x00\x75\x0b", .target = @intFromPtr(&@import("tube_contact.zig").tube_entry_thunk) },
+        .{ .address = 0x804b25, .expected = "\x84\xc0\x0f\x84\xac\x01\x00\x00", .target = @intFromPtr(&@import("tube_contact.zig").tube_search_thunk) },
+        .{ .address = 0x804b40, .expected = "\x0f\xb7\x47\x62\x84\xc3\x74\x37\xd0\xe8\x84\xc3\x74\x31\x80\x7f\x73\x00\x75\x2b\x84\x9f\xa0\x00\x00\x00\x75\x23", .target = @intFromPtr(&@import("tube_contact.zig").tube_candidate_thunk) },
+        .{ .address = 0x9b7058, .expected = "\xe8\xc3\xd9\xe4\xff", .target = @intFromPtr(&@import("tube_contact.zig").tube_update_trace_thunk), .opcode = 0xe8 },
+        .{ .address = 0x9b831c, .expected = "\xe8\xff\xc6\xe4\xff", .target = @intFromPtr(&@import("tube_contact.zig").tube_update_trace_thunk), .opcode = 0xe8 },
+        .{ .address = 0x4518ba, .expected = "\xe8\x21\x68\x3a\x00", .target = @intFromPtr(&@import("force_query_observe.zig").force_query_observe_thunk), .opcode = 0xe8 },
         .{ .address = 0x9ddc19, .expected = "\x8b\x86\x64\x01\x00\x00", .target = @intFromPtr(&primary_perception_thunk) },
         .{ .address = 0x899ed0, .expected = "\xd9\x44\x24\x14\x8b\x44\x24\x0c", .target = @intFromPtr(&aim_base_input_thunk) },
         .{ .address = 0x963ca5, .expected = "\x80\x78\x42\x00\x75\x09", .target = @intFromPtr(&script_shoot_visibility_thunk) },

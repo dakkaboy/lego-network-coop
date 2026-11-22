@@ -5,7 +5,7 @@ comptime {
     _ = @import("abi_probe.zig");
 }
 pub fn main() void {
-    check(@src(), @sizeOf(usize) == 4 and p.SYNC_LAYOUT_VERSION == 55 and p.SYNC_WIRE_VERSION == 201);
+    check(@src(), @sizeOf(usize) == 4 and p.SYNC_LAYOUT_VERSION == 55 and p.SYNC_WIRE_VERSION == 207);
     const expected = [_]u32{
         1935308937,
         1663980093,

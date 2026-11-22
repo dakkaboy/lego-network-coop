@@ -13,6 +13,9 @@ extern fn entities_observed_generation(usize) u32;
 extern fn model_context_canonicalize(*const p.SyncModelInput, *const p.SyncModelInputContext, *p.SyncModelInputContext, *u32) c_int;
 extern fn model_input_journal_record(*t.Journal, *const p.SyncModelInput) c_int;
 extern fn model_input_journal_validate(*t.Journal, ?*const p.SyncModelInput, c_int, *const p.SyncModelInput) c_int;
+fn hiddenEnemyMotionAction(action: u32) bool {
+    return action == 0xffff or action == 1 or action == 10;
+}
 pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) void {
     var op: t.Lease = undefined;
     const s = state.qualified(&op) orelse return;
@@ -93,6 +96,12 @@ pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) voi
                 return;
             }
             local.context.actor_76 = e.context.actor_76;
+            // These actions take the same path through the model producer. Keep the native action intact.
+            if (state.journal.frame.?.level == 64 and local.context.actor_4c_mask == 1 and
+                hiddenEnemyMotionAction(e.context.action) and hiddenEnemyMotionAction(raw.context.action))
+            {
+                local.context.action = e.context.action;
+            }
             if (local.context.actor_4c_mask == 0) {
                 local.context.cf4_raw = e.context.cf4_raw;
                 local.context.model_42 = e.context.model_42;

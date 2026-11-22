@@ -409,9 +409,9 @@ fn jump(address: usize, target: usize) void {
 }
 fn installedHooks() void {
     const patches = @import("cadence_install.zig").patches();
-    check(@src(), patches.len == 38);
+    check(@src(), patches.len == 48);
     for (patches) |patch| {
-        check(@src(), patch.expected.len <= 32);
+        check(@src(), (patch.address & 0xffff) + patch.expected.len <= 0x10000);
         protect(patch.address & ~@as(usize, 0xffff), 0x10000, 0x40);
         @memcpy(@as([*]u8, @ptrFromInt(patch.address))[0..patch.expected.len], patch.expected);
     }
@@ -1164,6 +1164,41 @@ fn rylothFighterDeath() void {
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 }
 
+fn hiddenEnemyForceEligibility() void {
+    const eligible = @import("force_request.zig").eligible;
+    const tubeContact = @import("tube_contact.zig").contact;
+    mode = 58;
+    setup();
+    frame.level = 64;
+    put(actor + 0x50, 0x203);
+    win.store([3]f32, model + 0x50, .{ 1, 2, 3 });
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    check(@src(), !eligible(actor, .area, false) and eligible(actor, .area, true) and eligible(actor, .action, true) and !eligible(actor, .available, false));
+    check(@src(), eligible(other, .area, true) and frame.fire_task_gate_count == 4);
+    check(@src(), tubeContact(actor, 0, .search, true) and tubeContact(actor, model, .candidate, true));
+    check(@src(), tubeContact(actor, model, .entry, true) and !tubeContact(actor, model, .hold, false));
+    check(@src(), frame.fire_task_gate_count == 8 and std.meta.eql(frame.fire_task_gates[6].payload.tube_position, [3]f32{ 1, 2, 3 }));
+    for (frame.fire_task_gates[0..8]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), !eligible(actor, .area, true) and eligible(actor, .area, false) and eligible(actor, .action, false) and !eligible(actor, .available, true));
+    check(@src(), tubeContact(actor, 0, .search, false) and tubeContact(actor, model, .candidate, false));
+    check(@src(), tubeContact(actor, model, .entry, false) and !tubeContact(actor, model, .hold, true));
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+}
+
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 3076 and @intFromPtr(&image) < 0x420000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0xe60000, 0xe90000, 0xea0000, 0xf90000, 0xfb0000 }) |address| protect(address, 0x10000, 4);
@@ -1232,6 +1267,7 @@ pub fn main() void {
     arenaRunRandomChecks();
     arenaRunRandomAbi();
     rylothFighterDeath();
+    hiddenEnemyForceEligibility();
 }
 fn arenaRunRandomAbi() void {
     const random = @import("arena_run_random.zig");

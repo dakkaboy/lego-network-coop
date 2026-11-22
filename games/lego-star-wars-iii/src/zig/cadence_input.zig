@@ -1,6 +1,7 @@
 const std = @import("std");
 const p = @import("protocol.zig");
 const s = @import("cadence_state.zig");
+pub export var clonewars_actor_gate_unconsumed: [8]u32 = @splat(0);
 const Token = @import("cohort_types.zig").Token;
 extern fn cadence_journal_begin(*s.Journal, *p.SyncFrame, c_int) void;
 pub export fn cadence_bind_cohort(original: ?*const Token) c_int {
@@ -63,6 +64,11 @@ pub export fn cadence_finish() c_int {
         return 0;
     }
     if (s.journal.host == 0 and s.fire_task_cursor != s.journal.frame.?.fire_task_gate_count) {
+        const frame = s.journal.frame.?;
+        if (clonewars_actor_gate_unconsumed[0] == 0 and s.fire_task_cursor < frame.fire_task_gate_count) {
+            const entry = &frame.fire_task_gates[s.fire_task_cursor];
+            clonewars_actor_gate_unconsumed = .{ frame.epoch, frame.sequence, s.fire_task_cursor, frame.fire_task_gate_count, entry.kind, entry.slot, entry.generation, entry.flags };
+        }
         s.clonewars_fire_task_gate_debug[3] +%= 1;
         s.journal.failed = 6;
         s.failed(&op, 0, null, 6);
