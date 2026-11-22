@@ -283,5 +283,17 @@ comptime {
         \\    leal 8(%esp),%esp
         \\    ret $4
         \\    
+        \\.globl _background_device_guard
+        \\_background_device_guard:
+        \\    pushfl
+        \\    testl %eax,%eax
+        \\    jz 1f
+        \\    popfl
+        \\    movl (%eax),%ecx
+        \\    leal 0x10(%esi),%edx
+        \\    jmp *_background_device_continue
+        \\1:
+        \\    popfl
+        \\    jmp *_background_device_skip
     );
 }

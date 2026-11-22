@@ -6,6 +6,9 @@ const hooks = @import("hook_transaction.zig");
 const log = @import("camera_log.zig").line;
 extern fn camera_order_hook() void;
 extern fn camera_target_end() void;
+extern fn background_device_guard() void;
+export const background_device_continue: usize = 0x63b307;
+export const background_device_skip: usize = 0x63b310;
 pub fn callAt(site: usize, native: usize, target: usize, allowed: bool, prefix: []const u8) c_int {
     if (!allowed or site == 0 or native == 0 or target == 0 or !s.readable(native, prefix.len) or !s.readable(site, 5) or !std.mem.eql(u8, @as([*]const u8, @ptrFromInt(native))[0..prefix.len], prefix) or s.load(u8, site) != 0xe8) return 0;
     const destination = site +% 5 +% s.load(u32, site + 1);
@@ -50,6 +53,11 @@ fn trampoline(comptime Function: type, at: usize, prefix: []const u8, target: us
 }
 pub fn mainInstall(module: usize) bool {
     s.diagnostics_install(module);
+    if (s.background_capture) {
+        // A background device reset can leave a surface without its native interface.
+        const patches = [_]hooks.Patch{.{ .address = 0x63b302, .expected = "\x8b\x08\x8d\x56\x10", .target = @intFromPtr(&background_device_guard) }};
+        if (hooks.apply(&patches)) log("background device reset guard installed");
+    }
     for (s.tables, &s.originals) |table, *original| {
         const target = table + 8;
         var protection: u32 = 0;
