@@ -43,6 +43,7 @@ pub export fn cadence_begin(frame: *p.SyncFrame, host: c_int) c_int {
     }
     cadence_journal_begin(&s.journal, frame, host);
     s.fire_task_cursor = 0;
+    s.early_motion = .empty;
     s.aim_task_scope = std.mem.zeroes(s.AimTaskScope);
     s.spellit_scope_count = 0;
     if (host != 0) frame.fire_task_gate_count = 0;

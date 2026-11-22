@@ -1218,6 +1218,38 @@ fn hiddenEnemyForceEligibility() void {
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
+fn geonosisCompanionMotionOrder() void {
+    mode = 58;
+    setup();
+    frame.level = 79;
+    win.store(u16, other + 0xdc0, 259);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    var debug: [4]u32 = @splat(0);
+    var motion = std.mem.zeroes(p.SyncCharacterMotionState);
+    motion.velocity[0] = 2;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, null, &debug);
+    _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), frame.fire_task_gate_count == 2 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    motion.velocity[0] = 3;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), motion.velocity[0] == 2 and s.fire_task_cursor == 0);
+    check(@src(), gate.apply(actor, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 0, null, &debug) == 1);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+}
+
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 3076 and @intFromPtr(&image) < 0x420000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0xe50000, 0xe60000, 0xe90000, 0xea0000, 0xf90000, 0xfa0000, 0xfb0000 }) |address| protect(address, 0x10000, 4);
@@ -1422,4 +1454,5 @@ fn arenaRunRandomChecks() void {
         }
         check(@src(), ci.cadence_abort_frame(&lease) != 0);
     }
+    geonosisCompanionMotionOrder();
 }
