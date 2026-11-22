@@ -400,6 +400,16 @@ fn hazardDeath(frame: *p.SyncFrame, actor: usize) void {
         finish();
         win.store(u32, 0xfb4b6c, 51);
     }
+    frame.level = 79;
+    begin(frame, true);
+    _ = hazard.cadence_hazard_death(actor, 0, 0, 0);
+    finish();
+    begin(frame, false);
+    check(@src(), hazard.cadence_hazard_death(actor, 0x4000, 0, 0) == 0);
+    check(@src(), hazard.cadence_hazard_death(actor, 0, 0, 0) == 0x40);
+    check(@src(), s.fire_task_cursor == 1 and s.journal.failed == 0 and fault == 0);
+    finish();
+    frame.level = 0;
     begin(frame, true);
     _ = hazard.cadence_hazard_death(actor, 0, 0, 0);
     finish();

@@ -25,6 +25,12 @@ pub export fn cadence_hazard_death(actor: usize, status: u32, controller: usize,
         s.failed(&op, actor, null, 21);
         return 0x40;
     }
+    const packet = s.journal.frame.?;
+    // Geonosis can reach the boundary check on the guest after the host's last actor gate.
+    // Without a host decision the guest must leave the actor alive.
+    if (packet.level == 79 and s.journal.host == 0 and s.fire_task_cursor == packet.fire_task_gate_count) {
+        return if (mask != 0) mask else 0x40;
+    }
     var state = std.mem.zeroes(p.SyncFireTaskState);
     state.repeat = s.read(u32, 0xfb4b6c);
     const crossed = @import("cadence_gate.zig").apply(actor, p.SYNC_ACTOR_HAZARD_DEATH, 0, 0, @intFromBool(mask == 0), @ptrCast(&state), &clonewars_hazard_death_debug);
