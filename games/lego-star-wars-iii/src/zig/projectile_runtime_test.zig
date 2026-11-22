@@ -611,7 +611,7 @@ fn installedHooks() void {
     check(@src(), lifecycle.projectiles_finish() != 0 and control.projectiles_frame_lease_get(&captured) != 0 and control.projectiles_abort_frame(&captured) != 0);
     use_launch_bridges = false;
 }
-fn replayMissingTurretShot(weapon_id: i32) void {
+fn replayMissingTurretShot(weapon_id: i32, retired_locally: bool) void {
     mode = 10;
     setup(false);
     session.level = 79;
@@ -629,7 +629,9 @@ fn replayMissingTurretShot(weapon_id: i32) void {
     frame.shots[0].transform = transform.*;
     frame.projectile_count = 1;
     frame.projectiles[0].id = 9;
+    if (retired_locally) frame.shot_count = 0;
     begin();
+    if (retired_locally) s.tracked[0] = .{ .birth = frame.shots[0], .object = 0, .resource = resource(0), .native_stamp = 1000 };
     weapon.* = if (weapon_id == 31) 29 else 31;
     _ = @as(Primary, @ptrFromInt(0x44e4a8))(manager_root, 0, actor, @intFromPtr(origin), @intFromPtr(transform), @intFromPtr(weapon), 0x800, 0);
     check(@src(), native_calls == 0 and lifecycle.projectiles_dispatch_pending() == 1);
@@ -675,7 +677,8 @@ pub fn main() void {
         if (mode == 33 and !host) check(@src(), out.dispatch_pending == 1 and out.finish == 0);
         if (mode == 34 or mode == 35) check(@src(), out.rejections != 0 and out.remove_calls == 0);
     }
-    replayMissingTurretShot(31);
-    replayMissingTurretShot(29);
+    replayMissingTurretShot(31, false);
+    replayMissingTurretShot(29, false);
+    replayMissingTurretShot(29, true);
     installedHooks();
 }

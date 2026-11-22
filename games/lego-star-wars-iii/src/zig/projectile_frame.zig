@@ -228,6 +228,18 @@ pub export fn projectiles_dispatch_complete() c_int {
                 s.failed = true;
                 continue;
             };
+            if (entry.object == 0 and entry.resource != 0 and creation.canReplayAfterTick(frame.level, &entry.birth)) {
+                // The host still owns this projectile after the guest removed its local copy.
+                const birth = entry.birth;
+                const resource = entry.resource;
+                _ = creation.replay(&op, manager, &birth, 0, 0);
+                if (!control.live(&op)) return 0;
+                if (entry.resource != resource) {
+                    tracking.failure(&op, 5, tracking.actorAt(birth.owner, birth.owner_generation), 0, state.id, entry.object, 0, std.math.maxInt(u32));
+                    s.failed = true;
+                    continue;
+                }
+            }
             if (!s.valid(entry.object, 0x210)) {
                 if (!control.live(&op)) return 0;
                 tracking.failure(&op, 5, tracking.actorAt(entry.birth.owner, entry.birth.owner_generation), 0, state.id, entry.object, 0, std.math.maxInt(u32));
