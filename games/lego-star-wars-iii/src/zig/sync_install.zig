@@ -11,15 +11,21 @@ fn pause(menu: usize, player: c_int, sound: u32) callconv(.{ .x86_thiscall = .{}
         native(menu, player, sound);
     }
 }
+fn updateMissionMap(map: usize) callconv(.{ .x86_thiscall = .{} }) void {
+    // A network level change can retire the map before its last scheduled update.
+    if (s.win.load(usize, 0xe906bc) == 0) return;
+    const native: *const fn (usize) callconv(.{ .x86_thiscall = .{} }) void = @ptrFromInt(0x4e1430);
+    native(map);
+}
 fn base() bool {
     if (s.base_install_state != 0) return s.base_install_state > 0;
     s.base_install_state = -1;
-    const sites = [_]usize{ 0x889fa0, 0x8889ba, 0x58f4c6, 0x58f5e7, 0x5e2a15, 0x634a95, 0x755347, 0x9c53fd, 0x9c33bf, 0x9c53f7, 0x7adc6e, 0x84a06d };
-    const originals = [_]usize{ 0x889640, 0x887ac0, 0x57b340, 0x57b340, 0x57b340, 0x57b340, 0x57b340, 0x9ab020, 0x9ab020, 0x8b0f90, 0x8a4780, 0x7b8630 };
+    const sites = [_]usize{ 0x889fa0, 0x8889ba, 0x58f4c6, 0x58f5e7, 0x5e2a15, 0x634a95, 0x755347, 0x9c53fd, 0x9c33bf, 0x9c53f7, 0x7adc6e, 0x84a06d, 0x4e1a99 };
+    const originals = [_]usize{ 0x889640, 0x887ac0, 0x57b340, 0x57b340, 0x57b340, 0x57b340, 0x57b340, 0x9ab020, 0x9ab020, 0x8b0f90, 0x8a4780, 0x7b8630, 0x4e1430 };
     const refresh = @intFromPtr(&@import("sync_input.zig").refresh);
     const prep = @import("sync_prep.zig");
     const dispatch = @import("sync_dispatch.zig");
-    const targets = [_]usize{ @intFromPtr(&dispatch.tick), @intFromPtr(&dispatch.world), refresh, refresh, refresh, refresh, refresh, @intFromPtr(&prep.normal), @intFromPtr(&prep.prepareAlternate), @intFromPtr(&sync_actor_ai_normal_hook), @intFromPtr(&pause), @intFromPtr(&api.game_native_scene_entry) };
+    const targets = [_]usize{ @intFromPtr(&dispatch.tick), @intFromPtr(&dispatch.world), refresh, refresh, refresh, refresh, refresh, @intFromPtr(&prep.normal), @intFromPtr(&prep.prepareAlternate), @intFromPtr(&sync_actor_ai_normal_hook), @intFromPtr(&pause), @intFromPtr(&api.game_native_scene_entry), @intFromPtr(&updateMissionMap) };
     var expected: [sites.len][5]u8 = undefined;
     var patches: [sites.len]hooks.Patch = undefined;
     for (sites, originals, targets, &expected, &patches) |at, original, target, *bytes, *patch| {
