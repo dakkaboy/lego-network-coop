@@ -29,6 +29,7 @@ fn base() bool {
     }
     if (!hooks.apply(&patches) or api.native_tick_install() == 0 or api.object_progress_install() == 0) return false;
     @atomicStore(i32, &s.clonewars_input_prep_installed, 7, .seq_cst);
+    @import("arena_hint.zig").install();
     s.base_install_state = 1;
     return true;
 }
