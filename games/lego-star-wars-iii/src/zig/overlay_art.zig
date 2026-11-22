@@ -73,15 +73,20 @@ const Canvas = struct {
     }
 
     fn control(self: Canvas, state: State, id: i32, pane: u32, weight: f32) void {
-        var r = layout.controlBounds(id, pane);
+        var r = layout.controlBounds(id, pane, state.keypad != null);
         const fixed = id == 6 or id == 7 or id == 11;
         if (!fixed) r[0] += layout.contentShift(pane, state.view, weight);
         if (state.pressed == id and state.hovered == id) r[1] += 2;
         const emphasized = id == 1 or id == 2 or (id >= 3 and id <= 5 and state.camera == id - 4) or (id == 10 and state.sound_enabled);
+        const selected_key = id >= layout.keypad_first and state.focused == id;
         const edge: u32 = if (id == 0 and state.address_invalid) 0xf5787e else if (state.focused == id or state.hovered == id) 0x9ce2fc else if (emphasized) 0x3dbac7 else 0x41536e;
-        const top: u32 = if (id == 0) 0x101a29 else if (state.pressed == id) 0x203647 else if (emphasized) 0x1a5668 else 0x24334a;
-        const bottom: u32 = if (id == 0) 0x101a29 else if (emphasized) 0x163b52 else 0x192638;
+        const top: u32 = if (id == 0) 0x101a29 else if (selected_key) 0x1e536b else if (state.pressed == id) 0x203647 else if (emphasized) 0x1a5668 else 0x24334a;
+        const bottom: u32 = if (id == 0) 0x101a29 else if (selected_key or emphasized) 0x163b52 else 0x192638;
         const alpha = state.opening * weight;
+        if (selected_key) {
+            self.box(.{ r[0] - 4, r[1] - 4, r[2] + 8, r[3] + 8 }, 0x48cadd, alpha * 0.18);
+            self.box(.{ r[0] - 2, r[1] - 2, r[2] + 4, r[3] + 4 }, 0x5bd7e9, alpha * 0.32);
+        }
         self.box(r, edge, alpha);
         self.quad(.{ r[0] + 2, r[1] + 2, r[2] - 4, r[3] - 4 }, color(top, alpha), color(bottom, alpha));
     }
@@ -96,11 +101,12 @@ pub fn draw(device: usize, width: u32, height: u32, scale: f32, x: f32, y: f32, 
     const c = Canvas{ .device = device, .scale = scale, .x = x, .y = y };
     const a = state.opening;
     c.box(.{ -x / scale, -y / scale, @as(f32, @floatFromInt(width)) / scale, @as(f32, @floatFromInt(height)) / scale }, 0x080f19, a * 0.64);
-    c.box(.{ 80, 96, 1120, 568 }, 0x41536e, a);
-    c.quad(.{ 82, 98, 1116, 564 }, color(0x1c2a3e, a), color(0x101a29, a));
-    c.box(.{ 82, 98, 1116, 4 }, 0x55cbd5, a);
-    c.box(.{ 96, 194, 1088, 2 }, 0x41536e, a);
-    c.box(.{ 96, 576, 1088, 2 }, 0x41536e, a);
+    c.box(.{ 148, 94, 984, 552 }, 0x41536e, a);
+    c.quad(.{ 150, 96, 980, 548 }, color(0x1c2a3e, a), color(0x101a29, a));
+    c.box(.{ 150, 96, 980, 4 }, 0x55cbd5, a);
+    c.box(.{ 166, 178, 948, 2 }, 0x41536e, a);
+    c.box(.{ 166, 508, 948, 2 }, 0x41536e, a);
+    c.box(.{ 166, 582, 948, 2 }, 0x41536e, a);
     if (state.gamepad) {
         const keypad = state.keypad != null;
         const palette = if (keypad) [4]u32{ 0x586983, 0x20764f, 0x245e91, 0x98454e } else [4]u32{ 0x586983, 0x20764f, 0x98454e, 0 };
@@ -125,14 +131,16 @@ pub fn draw(device: usize, width: u32, height: u32, scale: f32, x: f32, y: f32, 
             0 => for ([_]i32{ 1, 2 }) |id| c.control(state, id, pane, weight),
             1 => {
                 c.control(state, 0, pane, weight);
+                c.control(state, 2, pane, weight);
                 c.control(state, 8, pane, weight);
                 if (state.keypad) |selected| {
+                    c.box(.{ 598 + layout.contentShift(pane, state.view, weight), 198, 2, 294 }, 0x41536e, a * weight);
                     var keypad_state = state;
                     keypad_state.focused = selected;
                     for (0..layout.keypad_count) |key_index| {
                         c.control(keypad_state, layout.keypad_first + @as(i32, @intCast(key_index)), pane, weight);
                     }
-                } else c.control(state, 2, pane, weight);
+                }
             },
             2 => {
                 const status: u32 = if (state.fault) 0xf5787e else if (state.lan == 3) 0x67dcb2 else 0xe9bc67;

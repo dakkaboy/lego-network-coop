@@ -136,7 +136,7 @@ fn enabled(id: i32, pane: u32) bool {
 }
 fn bounds(id: i32, pane: u32) Bounds {
     if (id < 0 or id >= layout.keypad_first + layout.keypad_count) return .{ .x = 0, .y = 0, .w = 0, .h = 0 };
-    const r = layout.controlBounds(id, pane);
+    const r = layout.controlBounds(id, pane, editing_ip);
     return .{ .x = r[0], .y = r[1], .w = r[2], .h = r[3] };
 }
 fn contentShift(pane: u32) f32 {
@@ -475,7 +475,7 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
     oy = (@as(f32, @floatFromInt(vp.height)) - 720 * scale) / 2 + (1 - opening) * 8 * scale;
     if (!fonts(device)) return;
     scene.draw(device, vp.width, vp.height, scale, ox, oy, .{ .hovered = hovered, .pressed = pressed, .focused = focused, .camera = camera_selected(), .lan = lan_status(), .hub = game_can_return_to_hub() != 0, .address_invalid = invalid, .fault = game_sync_restart_required() != 0, .view = view, .weights = weights, .opening = opening, .sound_enabled = audio.enabled, .keypad = if (editing_ip) layout.keypad_first + digit else null, .gamepad = gamepad });
-    label(wide("Network Co-op"), textRect(.{ 176, 109, 928, 66 }), opening, 0xffedf6ff, true, 0);
+    label(wide("Network Co-op"), textRect(.{ 224, 106, 832, 60 }), opening, 0xffedf6ff, true, 0);
     key(wide("×"), 6, 0, opening, true);
     key(wide("Settings"), 7, 0, opening, false);
     key(wide("GitHub"), 11, 0, opening, false);
@@ -490,8 +490,8 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
                 key(wide("CONNECT"), 2, pane, a, true);
             },
             1 => {
-                label(wide("Join game"), textRect(layout.join_title), a, 0xfff8edce, true, shift);
-                label(wide("Host IP"), textRect(layout.host_ip), a, 0xffbacbd7, false, shift);
+                label(wide("Join game"), textRect(if (editing_ip) layout.keypad_title else layout.join_title), a, 0xfff8edce, true, shift);
+                label(wide("Host IP"), textRect(if (editing_ip) layout.keypad_host_ip else layout.host_ip), a, 0xffbacbd7, false, shift);
                 var ip: [17]u16 = @splat(0);
                 const len = std.mem.len(@as([*:0]const u8, &address));
                 for (address[0..len], ip[0..len]) |c, *out| out.* = c;
@@ -508,13 +508,14 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
                     10061 => wide("Connection refused"),
                     10060 => wide("Connection timed out"),
                     else => wide("Connection failed"),
-                }, textRect(layout.error_message), a, 0xffffa697, false, shift);
+                }, textRect(if (editing_ip) layout.keypad_error else layout.error_message), a, 0xffffa697, false, shift);
                 if (editing_ip) {
                     for (digits, 0..) |character, index| {
                         const caption = [_:0]u16{if (character == 8) 0x232b else character};
                         key(&caption, layout.keypad_first + @as(i32, @intCast(index)), pane, a, false);
                     }
-                } else key(wide("CONNECT"), 2, pane, a, true);
+                }
+                key(wide("Connect"), 2, pane, a, true);
                 key(wide("BACK"), 8, pane, a, false);
             },
             2 => {
