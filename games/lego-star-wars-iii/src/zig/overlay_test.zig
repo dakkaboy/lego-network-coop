@@ -12,6 +12,7 @@ var status: c_int = 0;
 var host = false;
 var last_address: [16]u8 = @splat(0);
 export fn lan_status() c_int { return status; }
+export fn lan_ping_us() u32 { return 1000; }
 export fn lan_error() i32 { return 10061; }
 export fn lan_is_host() c_int { return @intFromBool(host); }
 export fn lan_start(role: c_int, address: [*:0]const u8) void {
@@ -69,14 +70,15 @@ pub fn main() void {
     check(@src(), ui.previewSnapshot().focus == 2);
     ui.padInput(0x1000, 0);
     ui.padInput(0x1000, 0);
-    var digit: u32 = 0;
-    for ([_]u32{ 1, 10, 2, 10, 3, 10, 4 }) |next| {
-        while (digit != next) : (digit = (digit + 1) % 11) ui.padInput(8, 0);
-        ui.padInput(0x1000, 0);
-    }
-    ui.padInput(0x2000, 0);
-    check(@src(), ui.previewSnapshot().focus == 2);
-    ui.padInput(0x1000, 0);
+    ui.padInput(8, 0);
+    ui.padInput(0x1000, 0); // 1
+    ui.padInput(2, 0);
+    for (0..3) |_| ui.padInput(8, 0);
+    ui.padInput(0x1000, 0); // .
+    input(0x102, '2', 0);
+    check(@src(), !ui.previewSnapshot().gamepad and ui.previewSnapshot().focus == 0);
+    for (".3.4") |character| input(0x102, character, 0);
+    key(13);
     check(@src(), starts == 3 and std.mem.eql(u8, std.mem.sliceTo(&last_address, 0), "1.2.3.4"));
     key(9);
     check(@src(), !ui.previewSnapshot().gamepad);

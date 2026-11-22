@@ -33,6 +33,7 @@ const api = struct {
 };
 extern fn lan_status() c_int;
 extern fn lan_error() i32;
+extern fn lan_ping_us() u32;
 extern fn lan_is_host() c_int;
 extern fn lan_start(c_int, [*:0]const u8) void;
 extern fn lan_stop() void;
@@ -59,7 +60,7 @@ var game_window: usize = 0;
 var gamepad = false;
 var editing_ip = false;
 var digit: i32 = 0;
-const digits = "0123456789.";
+const digits = "0123456789.\x08";
 const PadState = extern struct {
     packet: u32,
     buttons: u16,
@@ -134,7 +135,7 @@ fn enabled(id: i32, pane: u32) bool {
     };
 }
 fn bounds(id: i32, pane: u32) Bounds {
-    if (id < 0 or id > 11) return .{ .x = 0, .y = 0, .w = 0, .h = 0 };
+    if (id < 0 or id >= layout.keypad_first + layout.keypad_count) return .{ .x = 0, .y = 0, .w = 0, .h = 0 };
     const r = layout.controlBounds(id, pane);
     return .{ .x = r[0], .y = r[1], .w = r[2], .h = r[3] };
 }
@@ -402,7 +403,15 @@ pub fn padInput(buttons: u16, previous: u16) void {
         } else if (edges & 0x1000 != 0) {
             editAddress(digits[@intCast(digit)]);
         } else if (edges & 0xf != 0) {
-            digit = @mod(digit + (if (edges & 0x6 != 0) @as(i32, -1) else 1), digits.len);
+            const row = @divTrunc(digit, layout.keypad_columns);
+            const column = @mod(digit, layout.keypad_columns);
+            if (edges & 0x3 != 0) {
+                digit = @mod(digit + layout.keypad_columns, digits.len);
+            } else {
+                const offset: i32 = if (edges & 0x4 != 0) -1 else 1;
+                digit = row * layout.keypad_columns + @mod(column + offset, layout.keypad_columns);
+            }
+            audio.play(.hover);
         }
     } else if (edges & 0x2000 != 0) {
         back();
@@ -465,7 +474,7 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
     ox = (@as(f32, @floatFromInt(vp.width)) - 1280 * scale) / 2;
     oy = (@as(f32, @floatFromInt(vp.height)) - 720 * scale) / 2 + (1 - opening) * 8 * scale;
     if (!fonts(device)) return;
-    scene.draw(device, vp.width, vp.height, scale, ox, oy, .{ .hovered = hovered, .pressed = pressed, .focused = focused, .camera = camera_selected(), .lan = lan_status(), .hub = game_can_return_to_hub() != 0, .address_invalid = invalid, .fault = game_sync_restart_required() != 0, .view = view, .weights = weights, .opening = opening, .sound_enabled = audio.enabled });
+    scene.draw(device, vp.width, vp.height, scale, ox, oy, .{ .hovered = hovered, .pressed = pressed, .focused = focused, .camera = camera_selected(), .lan = lan_status(), .hub = game_can_return_to_hub() != 0, .address_invalid = invalid, .fault = game_sync_restart_required() != 0, .view = view, .weights = weights, .opening = opening, .sound_enabled = audio.enabled, .keypad = if (editing_ip) layout.keypad_first + digit else null });
     label(wide("Network Co-op"), textRect(.{ 176, 109, 928, 66 }), opening, 0xffedf6ff, true, 0);
     key(wide("×"), 6, 0, opening, true);
     key(wide("Settings"), 7, 0, opening, false);
@@ -482,9 +491,7 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
             },
             1 => {
                 label(wide("Join game"), textRect(layout.join_title), a, 0xfff8edce, true, shift);
-                var digit_label = [_:0]u16{ '[', ' ', ']' };
-                digit_label[1] = digits[@intCast(digit)];
-                label(if (editing_ip) &digit_label else wide("Host IP"), textRect(layout.host_ip), a, 0xffbacbd7, false, shift);
+                label(wide("Host IP"), textRect(layout.host_ip), a, 0xffbacbd7, false, shift);
                 var ip: [17]u16 = @splat(0);
                 const len = std.mem.len(@as([*:0]const u8, &address));
                 for (address[0..len], ip[0..len]) |c, *out| out.* = c;
@@ -502,12 +509,29 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
                     10060 => wide("Connection timed out"),
                     else => wide("Connection failed"),
                 }, textRect(layout.error_message), a, 0xffffa697, false, shift);
-                key(wide("CONNECT"), 2, pane, a, true);
+                if (editing_ip) {
+                    for (digits, 0..) |character, index| {
+                        const caption = [_:0]u16{if (character == 8) 0x232b else character};
+                        key(&caption, layout.keypad_first + @as(i32, @intCast(index)), pane, a, false);
+                    }
+                } else key(wide("CONNECT"), 2, pane, a, true);
                 key(wide("BACK"), 8, pane, a, false);
             },
             2 => {
                 const status = if (game_sync_restart_required() != 0) wide("Restart the game") else if (lan_status() == 3) wide("Connected") else if (lan_is_host() != 0) wide("Waiting for player") else wide("Connecting…");
                 label(status, textRect(layout.session), a, if (lan_status() == 3) 0xffa9edcc else 0xfff8edce, false, shift);
+                if (lan_status() == 3 and lan_is_host() == 0) {
+                    const ping = lan_ping_us();
+                    if (ping == 0) {
+                        label(wide("Host ping  --"), textRect(layout.host_ping), a, 0xffbacbd7, false, shift);
+                    } else {
+                        var message: [32]u8 = undefined;
+                        const formatted = std.fmt.bufPrint(&message, "Host ping  {d} ms", .{(@as(u64, ping) + 999) / 1000}) catch unreachable;
+                        var display: [32:0]u16 = @splat(0);
+                        for (formatted, display[0..formatted.len]) |character, *out| out.* = character;
+                        label(&display, textRect(layout.host_ping), a, 0xffbacbd7, false, shift);
+                    }
+                }
                 key(if (lan_status() == 3) wide("DISCONNECT") else wide("CANCEL"), 1, pane, a, true);
             },
             3 => {
@@ -523,7 +547,7 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
             else => {},
         }
     }
-    const hints = if (editing_ip) wide("D-pad  Digit     A  Add     X  Delete     B  Done") else if (gamepad) wide("D-pad  Navigate     A  Select     B  Back") else wide("Tab  Navigate     Enter  Select     Esc  Back");
+    const hints = if (editing_ip) wide("D-pad  Navigate     A  Select     X  Delete     B  Done") else if (gamepad) wide("D-pad  Navigate     A  Select     B  Back") else wide("Tab  Navigate     Enter  Select     Esc  Back");
     label(hints, textRect(layout.hints), opening, 0xffd3e3ef, false, 0);
     if (want_open) if (pointer_position) |position| scene.drawPointer(device, position, scale);
 }
@@ -565,7 +589,7 @@ pub export fn coop_set_window(window: usize, capture: bool) void {
 }
 pub export fn coop_input(window: usize, message: u32, wp: usize, lp: isize) c_int {
     if (message == 0x2a3) tracking_pointer = false;
-    if (message == 0x100 or message == 0x104 or message == 0x201 or
+    if (message == 0x100 or message == 0x102 or message == 0x104 or message == 0x201 or
         (message == 0x200 and last_mouse_message != lp))
     {
         gamepad = false;

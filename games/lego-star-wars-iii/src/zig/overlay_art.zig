@@ -14,6 +14,7 @@ pub const State = struct {
     weights: [4]f32,
     opening: f32,
     sound_enabled: bool,
+    keypad: ?i32 = null,
 };
 
 const Vertex = extern struct { x: f32, y: f32, z: f32 = 0, rhw: f32 = 1, color: u32 };
@@ -105,7 +106,17 @@ pub fn draw(device: usize, width: u32, height: u32, scale: f32, x: f32, y: f32, 
         const pane: u32 = @intCast(index);
         switch (pane) {
             0 => for ([_]i32{ 1, 2 }) |id| c.control(state, id, pane, weight),
-            1 => for ([_]i32{ 0, 2, 8 }) |id| c.control(state, id, pane, weight),
+            1 => {
+                c.control(state, 0, pane, weight);
+                c.control(state, 8, pane, weight);
+                if (state.keypad) |selected| {
+                    var keypad_state = state;
+                    keypad_state.focused = selected;
+                    for (0..layout.keypad_count) |key_index| {
+                        c.control(keypad_state, layout.keypad_first + @as(i32, @intCast(key_index)), pane, weight);
+                    }
+                } else c.control(state, 2, pane, weight);
+            },
             2 => {
                 const status: u32 = if (state.fault) 0xf5787e else if (state.lan == 3) 0x67dcb2 else 0xe9bc67;
                 c.box(.{ 610 + layout.contentShift(pane, state.view, weight), 378, 60, 4 }, status, weight * a);

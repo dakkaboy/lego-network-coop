@@ -88,6 +88,9 @@ pub fn main() void {
     deadline = t.GetTickCount64() + 3000;
     while (t.state.lan_peer_ack() != 43 and t.GetTickCount64() < deadline) t.sleep(1);
     check(@src(), t.state.lan_peer_ack() == 43 and t.state.lan_remote_transition().native_entry == t.p.SYNC_TRANSITION_NATIVE_CYCLE);
+    deadline = t.GetTickCount64() + 3000;
+    while (t.state.lan_ping_us() == 0 and t.GetTickCount64() < deadline) t.sleep(1);
+    check(@src(), t.state.lan_ping_us() != 0);
     const serial = t.state.lan_session_serial();
     t.state.lan_stop();
     check(@src(), t.state.lan_session_serial() > serial and t.state.lan_status() == 0);

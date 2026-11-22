@@ -88,10 +88,16 @@ fn exchange(socket: usize, ticket: u32, host: bool) bool {
     }
     var sent = GetTickCount() -% 20;
     var received = GetTickCount();
+    var sampled_ping = received -% 1000;
     var sent_epoch: u32 = 0;
     var sent_ack: u32 = 0;
     while (state.active(ticket)) {
-        if (GetTickCount() -% received > 10000) return fail(10060);
+        const now = GetTickCount();
+        if (now -% received > 10000) return fail(10060);
+        if (!host and now -% sampled_ping >= 1000) {
+            state.sessionPing(ticket, ws.roundTripUs(socket));
+            sampled_ping = now;
+        }
         var own: state.Peer = undefined;
         const publish = state.publicationSnapshot(ticket, &own, GetTickCount() -% sent >= 20, sent_epoch, sent_ack);
         if (publish < 0) break;

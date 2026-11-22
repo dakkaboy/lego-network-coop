@@ -16,11 +16,24 @@ pub const join_title = [4]i32{ 320, 220, 640, 56 };
 pub const host_ip = [4]i32{ 432, 288, 416, 32 };
 pub const error_message = [4]i32{ 432, 392, 416, 32 };
 pub const session = [4]i32{ 320, 400, 640, 40 };
+pub const host_ping = [4]i32{ 320, 356, 640, 44 };
+pub const keypad_first = 12;
+pub const keypad_columns = 6;
+pub const keypad_count = 12;
 pub const camera = [4]i32{ 320, 224, 640, 40 };
 pub const hints = [4]i32{ 224, 672, 832, 28 };
 pub const sound = [4]i32{ 400, 420, 144, 56 };
 
 pub fn controlBounds(id: i32, pane: u32) [4]f32 {
+    if (id >= keypad_first) {
+        const index = id - keypad_first;
+        return .{
+            @floatFromInt(400 + @mod(index, keypad_columns) * 82),
+            @floatFromInt(420 + @divTrunc(index, keypad_columns) * 64),
+            70,
+            54,
+        };
+    }
     const r = bounds[@intCast(id)];
     var x: f32 = @floatFromInt(r[0]);
     if ((pane == 1 and id == 2) or (pane == 2 and id == 1)) x = 448;

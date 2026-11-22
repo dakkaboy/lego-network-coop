@@ -26,6 +26,7 @@ pub const Peer = extern struct {
 };
 pub const Transition = extern struct { epoch: u32, level: i32, native_entry: u32 };
 pub var status: i32 = 0;
+var ping_us: u32 = 0;
 pub var error_code: i32 = 0;
 pub var generation: u32 = 0;
 pub var published_session: u32 = 0;
@@ -340,6 +341,16 @@ pub fn publishSession(ticket: u32) void {
 pub export fn lan_session_serial() u32 {
     return @atomicLoad(u32, &published_session, .seq_cst);
 }
+pub fn sessionPing(ticket: u32, value: u32) void {
+    lock();
+    defer unlock();
+    if (active(ticket)) @atomicStore(u32, &ping_us, value, .seq_cst);
+}
+
+pub export fn lan_ping_us() u32 {
+    return if (lan_status() == 3) @atomicLoad(u32, &ping_us, .seq_cst) else 0;
+}
+
 pub fn sessionStatus(ticket: u32, next: i32, error_code_value: i32) bool {
     lock();
     defer unlock();
@@ -393,6 +404,7 @@ pub fn takeFrame(ticket: u32, value: *p.SyncFrame) bool {
 }
 
 pub fn reset(host: bool) void {
+    @atomicStore(u32, &ping_us, 0, .seq_cst);
     clearFrames();
     local_state = .{};
     peer_state = .{};
