@@ -15,6 +15,14 @@ pub fn hitSame(a: *const p.SyncReactionHitOutcome, b: ?*const p.SyncReactionHitO
     inline for (@typeInfo(p.SyncReactionHitOutcome).@"struct".field_names) |name| if (@field(a, name) != @field(other, name)) return false;
     return true;
 }
+pub fn projectileHitSame(expected: *const p.SyncReactionHitOutcome, actual: ?*const p.SyncReactionHitOutcome) bool {
+    const other = actual orelse return false;
+    if (!hitValid(other)) return false;
+    var normalized = other.*;
+    // Expired cooldowns admit the same hit regardless of how far below zero they ran.
+    if (expected.timer_before <= 0 and normalized.timer_before <= 0) normalized.timer_before = expected.timer_before;
+    return hitSame(expected, &normalized);
+}
 pub fn valid(entry: ?*const p.SyncReactionChoice) bool {
     const e = entry orelse return false;
     if (e.slot >= p.SYNC_MAX_ACTORS or e.generation == 0 or !abi.validLevel(e.character) or e.old_action < -32768 or e.old_action > 32767 or !v.finite(e.origin)) return false;

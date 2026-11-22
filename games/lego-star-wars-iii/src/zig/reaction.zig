@@ -2,7 +2,7 @@ const p = @import("protocol.zig");
 pub const Journal = @import("journal.zig").Journal("reactions", "reaction_count");
 
 pub const valid = @import("reaction_validation.zig").valid;
-const hitSame = @import("reaction_validation.zig").hitSame;
+const projectileHitSame = @import("reaction_validation.zig").projectileHitSame;
 pub export fn reaction_journal_begin(j: *Journal, frame: *p.SyncFrame, host: c_int) void {
     j.begin(frame, host);
     if (host != 0) frame.reaction_reserved = 0;
@@ -33,7 +33,7 @@ pub export fn reaction_journal_complete_no_clip(journal: ?*Journal, begin: u32, 
     if (j.host != 0 or j.failed != 0 or source == 0 or generation == 0 or begin > j.cursor or j.cursor > j.frame.?.reaction_count or j.cursor > p.SYNC_MAX_ACTORS) return 0;
     for (j.frame.?.reactions[begin..j.cursor]) |*e| {
         if (e.kind == p.SYNC_REACTION_CLIP and e.slot == slot and e.generation == generation and e.payload.clip.source_id == source) {
-            if (e.payload.clip.hit.completed != 0 and !hitSame(&e.payload.clip.hit, actual)) {
+            if (e.payload.clip.hit.completed != 0 and !projectileHitSame(&e.payload.clip.hit, actual)) {
                 j.failed = 11;
                 return -1;
             }
@@ -44,7 +44,7 @@ pub export fn reaction_journal_complete_no_clip(journal: ?*Journal, begin: u32, 
     const clip = &e.payload.clip;
     if (!valid(e) or e.kind != p.SYNC_REACTION_CLIP or clip.selection.clip != -1 or clip.arena_attacker_generation != 0 or
         e.slot != slot or e.generation != generation or clip.source_id != source or clip.hit.completed == 0) return 0;
-    if (!hitSame(&clip.hit, actual)) {
+    if (!projectileHitSame(&clip.hit, actual)) {
         j.failed = 11;
         return -1;
     }

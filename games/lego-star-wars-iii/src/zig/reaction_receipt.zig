@@ -49,7 +49,7 @@ pub export fn reaction_damage_complete(receipt: *const s.Receipt) void {
     var i = receipt.cursor;
     while (i < s.journal.cursor) : (i += 1) {
         const e = &s.journal.frame.?.reactions[i];
-        if (e.kind == p.SYNC_REACTION_CLIP and e.payload.clip.hit.completed != 0 and e.slot == receipt.slot and e.generation == receipt.generation and e.payload.clip.source_id == receipt.source_id and !validation.hitSame(&e.payload.clip.hit, &actual)) {
+        if (e.kind == p.SYNC_REACTION_CLIP and e.payload.clip.hit.completed != 0 and e.slot == receipt.slot and e.generation == receipt.generation and e.payload.clip.source_id == receipt.source_id and !validation.projectileHitSame(&e.payload.clip.hit, &actual)) {
             expected = e;
             break;
         }

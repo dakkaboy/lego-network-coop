@@ -118,6 +118,11 @@ test "reaction: mismatched hit receipt fails without consuming it" {
     try std.testing.expectEqual(@as(c_int, 11), peer.failed);
     try std.testing.expectEqual(@as(u32, 0), peer.cursor);
     reaction.reaction_journal_begin(&peer, f, 0);
-    try std.testing.expectEqual(@as(c_int, 1), reaction.reaction_journal_complete_no_clip(&peer, 0, 3, 8, 77, &clip.hit));
+    var expired = clip.hit;
+    expired.timer_before = -0.03;
+    try std.testing.expectEqual(@as(c_int, 1), reaction.reaction_journal_complete_no_clip(&peer, 0, 3, 8, 77, &expired));
     try std.testing.expectEqual(@as(c_int, 1), peer.finish());
+    reaction.reaction_journal_begin(&peer, f, 0);
+    expired.timer_before = 0.03;
+    try std.testing.expectEqual(@as(c_int, -1), reaction.reaction_journal_complete_no_clip(&peer, 0, 3, 8, 77, &expired));
 }
