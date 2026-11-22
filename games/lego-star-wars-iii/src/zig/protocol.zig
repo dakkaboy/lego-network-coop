@@ -355,6 +355,8 @@ pub const SyncAimTaskState = extern struct {
     reserved: u32,
 };
 
+pub const SyncMeleeContact = extern struct { attacker_slot: u32, attacker_generation: u32 };
+
 pub const SyncAimBaseState = extern struct {
     rng_engine: u32,
     rng_game: u32,
@@ -472,6 +474,7 @@ const FireTaskPayload = extern union {
     force: SyncForceQueryState,
     aim_base: SyncAimBaseState,
     tube_position: [3]f32,
+    melee_contact: SyncMeleeContact,
     force_geometry: SyncForceGeometryState,
     spellit: SyncSpellItQueryState,
     character_motion: SyncCharacterMotionState,
@@ -826,6 +829,7 @@ pub const SYNC_ACTOR_BARC_SUSPENSION: c_int = 20;
 pub const SYNC_ACTOR_RYLOTH_FIGHTER_DEATH: c_int = 21;
 pub const SYNC_ACTOR_FORCE_ELIGIBILITY: c_int = 22;
 pub const SYNC_ACTOR_TUBE_CONTACT: c_int = 23;
+pub const SYNC_ACTOR_MELEE_CONTACT: c_int = 24;
 pub const SYNC_TRANSITION_NATIVE_CYCLE: u32 = 2;
 
 pub const enum_SyncFireGateKind = c_int;
@@ -915,7 +919,7 @@ pub const SYNC_PROFILE_BYTES = @as(c_int, 0xb5c0);
 
 pub const SYNC_LAYOUT_VERSION = @as(c_int, 55);
 
-pub const SYNC_WIRE_VERSION = @as(c_int, 207);
+pub const SYNC_WIRE_VERSION = @as(c_int, 210);
 
 pub const SYNC_NATIVE_SPAN_PLAN_MASK = @as(c_uint, 7);
 

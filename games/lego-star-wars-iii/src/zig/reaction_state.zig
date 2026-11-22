@@ -33,6 +33,7 @@ pub extern fn entities_slot(usize) c_int;
 pub extern fn entities_resolve_reference(*const p.SyncActor) usize;
 pub extern fn entities_actor(u32, u32) usize;
 pub extern fn combat_damage_source_id() u32;
+pub extern fn combat_damage_native_caller() u32;
 extern fn game_sync_native_fault(c_int) void;
 pub fn live(op: *const Lease) bool {
     return binding.live(op) and journal.frame != null and @intFromPtr(journal.frame.?) == op.cohort.frame;

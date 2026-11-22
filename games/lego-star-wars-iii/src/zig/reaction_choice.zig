@@ -83,10 +83,16 @@ pub export fn reaction_apply_choice(actor: usize, output: *u32) void {
             s.failed(&op, actor, entry, action, source, 8, local_clip);
             return;
         }
+        const journal_action = if (entry) |e| matched: {
+            // Hidden Enemy melee damage has already selected the same victim. Replay the clip when only idle/walk differs.
+            if (source == 0 and s.journal.frame.?.level == 64 and s.combat_damage_native_caller() == 0x871848 and
+                ((action == -1 and e.old_action == 1) or (action == 1 and e.old_action == -1))) break :matched e.old_action;
+            break :matched action;
+        } else action;
         // Native selection can retain its input ID when no candidate clip is available.
-        const allowed = if (entry) |e| e.kind == p.SYNC_REACTION_CLIP and e.payload.clip.selection.clip != -2 and validation.valid(e) and matches and e.old_action == action and e.payload.clip.source_id == source and (e.payload.clip.selection.clip == -1 or @as(u32, @bitCast(e.payload.clip.selection.clip)) == local_clip or available(actor, e.payload.clip.selection.clip)) else false;
+        const allowed = if (entry) |e| e.kind == p.SYNC_REACTION_CLIP and e.payload.clip.selection.clip != -2 and validation.valid(e) and matches and e.old_action == journal_action and e.payload.clip.source_id == source and (e.payload.clip.selection.clip == -1 or @as(u32, @bitCast(e.payload.clip.selection.clip)) == local_clip or available(actor, e.payload.clip.selection.clip)) else false;
         if (!s.live(&op)) return;
-        if (s.reaction_journal_apply(&s.journal, entry, @intFromBool(matches), action, source, @intFromBool(allowed), output) == 0) {
+        if (s.reaction_journal_apply(&s.journal, entry, @intFromBool(matches), journal_action, source, @intFromBool(allowed), output) == 0) {
             s.failed(&op, actor, entry, action, source, @bitCast(s.journal.failed), local_clip);
             return;
         }

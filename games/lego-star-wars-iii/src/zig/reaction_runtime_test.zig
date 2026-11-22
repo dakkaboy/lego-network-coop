@@ -27,6 +27,7 @@ var retained = true;
 var clip_available = true;
 var available_calls: u32 = 0;
 var source: u32 = 23;
+var damage_caller: u32 = 0;
 var updates: u32 = 0;
 var describes: u32 = 0;
 var resolves: u32 = 0;
@@ -77,6 +78,9 @@ export fn game_sync_native_fault(value: c_int) void {
 }
 export fn combat_damage_source_id() u32 {
     return source;
+}
+export fn combat_damage_native_caller() u32 {
+    return damage_caller;
 }
 export fn combat_damage_source_ready() c_int {
     return 1;
@@ -161,6 +165,7 @@ fn setup() void {
     available_calls = 0;
     client = false;
     source = 23;
+    damage_caller = 0;
     updates = 0;
     describes = 0;
     resolves = 0;
@@ -447,6 +452,39 @@ fn unchangedNativeChoice() void {
         check(@src(), r.reaction_abort_frame(&lease) != 0);
     }
 }
+fn hiddenEnemyMeleeClip() void {
+    for (0..3) |variant| {
+        mode = 60 + @as(u32, @intCast(variant));
+        setup();
+        clearDebug();
+        source = 0;
+        frame.level = if (variant == 2) 63 else 64;
+        damage_caller = if (variant == 1) 0 else 0x871848;
+        win.store(i16, actor + 0x2f4, -1);
+        var token = tokenFor();
+        var lease: s.Lease = undefined;
+        begin(&token, &lease, 1);
+        reaction_fixture_clip = 522;
+        invoke_choice();
+        check(@src(), frame.reaction_count == 1 and r.reaction_finish() != 0);
+        check(@src(), r.reaction_abort_frame(&lease) != 0);
+        client = true;
+        frame.sequence += 1;
+        token.sequence = frame.sequence;
+        token.release += 1;
+        begin(&token, &lease, 0);
+        win.store(i16, actor + 0x2f4, 1);
+        reaction_fixture_clip = 73;
+        invoke_choice();
+        check(@src(), win.load(i16, actor + 0x2f4) == 1);
+        if (variant == 0) {
+            check(@src(), reaction_fixture_clip == 522 and fault == 0 and r.reaction_finish() != 0);
+        } else {
+            check(@src(), reaction_fixture_clip == 73 and fault == 17 and r.reaction_finish() == 0);
+        }
+        check(@src(), r.reaction_abort_frame(&lease) != 0);
+    }
+}
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 904 and @intFromPtr(&image) < 0x410000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0x790000, 0x8a0000, 0x960000, 0xe60000, 0xea0000 }) |a| protect(a, 0x40);
@@ -481,6 +519,7 @@ pub fn main() void {
     }
     installedHooks();
     unchangedNativeChoice();
+    hiddenEnemyMeleeClip();
     arenaBeforeHit();
     actionTraceChecks();
 }

@@ -409,7 +409,7 @@ fn jump(address: usize, target: usize) void {
 }
 fn installedHooks() void {
     const patches = @import("cadence_install.zig").patches();
-    check(@src(), patches.len == 48);
+    check(@src(), patches.len == 50);
     for (patches) |patch| {
         check(@src(), (patch.address & 0xffff) + patch.expected.len <= 0x10000);
         protect(patch.address & ~@as(usize, 0xffff), 0x10000, 0x40);
@@ -1167,11 +1167,17 @@ fn rylothFighterDeath() void {
 fn hiddenEnemyForceEligibility() void {
     const eligible = @import("force_request.zig").eligible;
     const tubeContact = @import("tube_contact.zig").contact;
+    const meleeContact = @import("melee_contact.zig").melee_contact;
+    const meleeBounds = @import("melee_contact.zig").melee_bounds;
     mode = 58;
     setup();
     frame.level = 64;
     put(actor + 0x50, 0x203);
     win.store([3]f32, model + 0x50, .{ 1, 2, 3 });
+    put(model + 0xd4, other);
+    win.store(i16, other + 0xdc0, 196);
+    var collision_stack: [24]u32 = @splat(0);
+    collision_stack[0x28 / 4] = @bitCast(@as(f32, -1));
     var token = std.mem.zeroes(Token);
     token.owner = actor;
     token.owner_nonce = 1;
@@ -1186,8 +1192,10 @@ fn hiddenEnemyForceEligibility() void {
     check(@src(), eligible(other, .area, true) and frame.fire_task_gate_count == 4);
     check(@src(), tubeContact(actor, 0, .search, true) and tubeContact(actor, model, .candidate, true));
     check(@src(), tubeContact(actor, model, .entry, true) and !tubeContact(actor, model, .hold, false));
-    check(@src(), frame.fire_task_gate_count == 8 and std.meta.eql(frame.fire_task_gates[6].payload.tube_position, [3]f32{ 1, 2, 3 }));
-    for (frame.fire_task_gates[0..8]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
+    check(@src(), meleeBounds(actor, model, @intFromPtr(&collision_stack)) == 1 and meleeContact(actor, model, 1) == 1);
+    check(@src(), frame.fire_task_gate_count == 10);
+    check(@src(), std.meta.eql(frame.fire_task_gates[6].payload.tube_position, [3]f32{ 1, 2, 3 }));
+    for (frame.fire_task_gates[0..10]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
     client = true;
@@ -1196,6 +1204,8 @@ fn hiddenEnemyForceEligibility() void {
     check(@src(), !eligible(actor, .area, true) and eligible(actor, .area, false) and eligible(actor, .action, false) and !eligible(actor, .available, true));
     check(@src(), tubeContact(actor, 0, .search, false) and tubeContact(actor, model, .candidate, false));
     check(@src(), tubeContact(actor, model, .entry, false) and !tubeContact(actor, model, .hold, true));
+    collision_stack[0x28 / 4] = @bitCast(@as(f32, 1));
+    check(@src(), meleeBounds(actor, model, @intFromPtr(&collision_stack)) == 1 and meleeContact(actor, model, 0) == 1);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
