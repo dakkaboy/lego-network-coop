@@ -7,12 +7,13 @@ export var melee_contact_continue: usize = 0x92ad65;
 export var melee_contact_skip: usize = 0x92b333;
 export var melee_bounds_continue: usize = 0x92ad17;
 export var melee_bounds_original: usize = 0x92ac87;
-pub export var clonewars_melee_contact_debug: [2][4]u32 = @splat(@splat(0));
+pub export var clonewars_melee_contact_debug: [4]u32 = @splat(0);
 
 fn attackerIdentity(victim: usize, attack: usize) ?p.SyncMeleeContact {
     var lease: s.Lease = undefined;
     if (!s.ready(&lease) or s.journal.frame.?.level != 64 or !s.valid(victim, 0x1440) or
-        s.read(u32, victim + 0x50) & 0x200 == 0 or !s.valid(attack, 0xd8)) return null;
+        s.read(u32, victim + 0x50) & 0x200 == 0 or !s.valid(attack, 0x1d3) or
+        s.read(u8, attack + 0x1d2) & 0x20 == 0) return null;
     const attacker = s.read(usize, attack + 0xd4);
     if (!s.valid(attacker, 0x1440) or s.read(i16, attacker + 0xdc0) != 196) return null;
     var identity: p.SyncMeleeContact = undefined;
@@ -20,36 +21,30 @@ fn attackerIdentity(victim: usize, attack: usize) ?p.SyncMeleeContact {
     return identity;
 }
 
-fn decision(victim: usize, stage: u16, local: bool, identity: *p.SyncMeleeContact) c_int {
-    return @import("cadence_gate.zig").apply(victim, p.SYNC_ACTOR_MELEE_CONTACT, stage, 0, @intFromBool(local), @ptrCast(identity), &clonewars_melee_contact_debug[stage]);
-}
-
 pub export fn melee_contact(victim: usize, attack: usize, native_contact: u32) c_int {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
     const local = native_contact != 0;
     var identity = attackerIdentity(victim, attack) orelse return @intFromBool(local);
-    return decision(victim, 0, local, &identity);
+    if (s.journal.host != 0 and !local) return 0;
+    return @import("cadence_gate.zig").apply(victim, p.SYNC_ACTOR_MELEE_CONTACT, 0, 0, @intFromBool(local), @ptrCast(&identity), &clonewars_melee_contact_debug);
 }
 
-pub export fn melee_bounds(victim: usize, attack: usize, stack: usize) c_int {
+pub export fn melee_bounds(victim: usize, attack: usize) c_int {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
-    var identity = attackerIdentity(victim, attack) orelse return 2;
-    const read = s.read;
-    // The native broad phase tests two horizontal axes and conditionally tests the vertical axis.
-    const horizontal = !(read(f32, victim + 0x3c) < read(f32, stack + 0x28) or
-        read(f32, victim + 0x30) > read(f32, stack + 0x34) or
-        read(f32, victim + 0x44) < read(f32, stack + 0x30) or
-        read(f32, victim + 0x38) > read(f32, stack + 0x3c));
-    const vertical_required = read(u32, stack + 0x54) != 0 and
-        (read(u32, read(usize, victim + 0xf08) + 0x14) & 0x2000 == 0 or read(u8, attack + 0x11c) & 0x40 == 0);
-    const vertical = !vertical_required or !(read(f32, victim + 0x40) < read(f32, stack + 0x2c) or
-        read(f32, victim + 0x34) > read(f32, stack + 0x38));
-    const admitted = horizontal and vertical;
-    // A rejected host probe has no downstream contact decision to replay.
-    if (s.journal.host != 0 and !admitted) return 0;
-    return decision(victim, 1, admitted, &identity);
+    const identity = attackerIdentity(victim, attack) orelse return 2;
+    if (s.journal.host != 0) return 2;
+    var lease: s.Lease = undefined;
+    if (!s.ready(&lease)) return 2;
+    const frame = s.journal.frame.?;
+    if (s.fire_task_cursor >= frame.fire_task_gate_count) return 0;
+    const entry = &frame.fire_task_gates[s.fire_task_cursor];
+    if (entry.kind != p.SYNC_ACTOR_MELEE_CONTACT or
+        identity.attacker_slot != entry.payload.melee_contact.attacker_slot or
+        identity.attacker_generation != entry.payload.melee_contact.attacker_generation) return 0;
+    var reference = s.reference(entry);
+    return @intFromBool(s.entities_resolve_reference(&reference) == victim and s.live(&lease));
 }
 
 comptime {
@@ -100,9 +95,7 @@ comptime {
         \\    movl $0x1f80,516(%esp)
         \\    ldmxcsr 516(%esp)
         \\    cld
-        \\    subl $4,%esp
-        \\    leal 36(%edx),%ecx
-        \\    pushl %ecx
+        \\    subl $8,%esp
         \\    pushl 0(%edx)
         \\    pushl 4(%edx)
         \\    call _melee_bounds

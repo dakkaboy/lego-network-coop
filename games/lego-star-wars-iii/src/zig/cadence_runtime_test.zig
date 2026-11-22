@@ -1175,9 +1175,8 @@ fn hiddenEnemyForceEligibility() void {
     put(actor + 0x50, 0x203);
     win.store([3]f32, model + 0x50, .{ 1, 2, 3 });
     put(model + 0xd4, other);
+    win.store(u8, model + 0x1d2, 0x20);
     win.store(i16, other + 0xdc0, 196);
-    var collision_stack: [24]u32 = @splat(0);
-    collision_stack[0x28 / 4] = @bitCast(@as(f32, -1));
     var token = std.mem.zeroes(Token);
     token.owner = actor;
     token.owner_nonce = 1;
@@ -1192,13 +1191,10 @@ fn hiddenEnemyForceEligibility() void {
     check(@src(), eligible(other, .area, true) and frame.fire_task_gate_count == 4);
     check(@src(), tubeContact(actor, 0, .search, true) and tubeContact(actor, model, .candidate, true));
     check(@src(), tubeContact(actor, model, .entry, true) and !tubeContact(actor, model, .hold, false));
-    collision_stack[0x28 / 4] = @bitCast(@as(f32, 1));
-    check(@src(), meleeBounds(actor, model, @intFromPtr(&collision_stack)) == 0 and frame.fire_task_gate_count == 8);
-    collision_stack[0x28 / 4] = @bitCast(@as(f32, -1));
-    check(@src(), meleeBounds(actor, model, @intFromPtr(&collision_stack)) == 1 and meleeContact(actor, model, 1) == 1);
-    check(@src(), frame.fire_task_gate_count == 10);
+    check(@src(), meleeBounds(actor, model) == 2 and meleeContact(actor, model, 0) == 0 and frame.fire_task_gate_count == 8);
+    check(@src(), meleeContact(actor, model, 1) == 1 and frame.fire_task_gate_count == 9);
     check(@src(), std.meta.eql(frame.fire_task_gates[6].payload.tube_position, [3]f32{ 1, 2, 3 }));
-    for (frame.fire_task_gates[0..10]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
+    for (frame.fire_task_gates[0..9]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
     client = true;
@@ -1207,10 +1203,9 @@ fn hiddenEnemyForceEligibility() void {
     check(@src(), !eligible(actor, .area, true) and eligible(actor, .area, false) and eligible(actor, .action, false) and !eligible(actor, .available, true));
     check(@src(), tubeContact(actor, 0, .search, false) and tubeContact(actor, model, .candidate, false));
     check(@src(), tubeContact(actor, model, .entry, false) and !tubeContact(actor, model, .hold, true));
-    collision_stack[0x28 / 4] = @bitCast(@as(f32, 1));
-    check(@src(), meleeBounds(actor, model, @intFromPtr(&collision_stack)) == 1 and meleeContact(actor, model, 0) == 1);
-    collision_stack[0x28 / 4] = @bitCast(@as(f32, -1));
-    check(@src(), meleeBounds(actor, model, @intFromPtr(&collision_stack)) == 0);
+    check(@src(), meleeBounds(other, model) == 2);
+    check(@src(), meleeBounds(actor, model) == 1 and meleeContact(actor, model, 0) == 1);
+    check(@src(), meleeBounds(actor, model) == 0);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
