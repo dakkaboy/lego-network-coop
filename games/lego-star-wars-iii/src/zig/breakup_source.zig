@@ -4,6 +4,7 @@ const Entry = struct { resource: usize = 0, runtime: usize = 0, key: [4]u32 = @s
 var entries: [@import("protocol.zig").SYNC_MAX_ACTORS]Entry = @splat(.{});
 var current_epoch: u32 = 0;
 pub export var clonewars_breakup_source_debug: [6]u32 = @splat(0);
+pub const rts_breakup_site = 0x54ef4d;
 pub const team_breakup_site = 0x540475;
 pub const team_breakup_type = 0x1f;
 

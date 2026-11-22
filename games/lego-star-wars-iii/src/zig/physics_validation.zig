@@ -6,7 +6,8 @@ const breakup = @import("breakup_source.zig");
 
 fn breakupSite(site: u32, model: u32) bool {
     return (site == 0x905f38 and model <= 65535) or
-        (site == breakup.team_breakup_site and model == breakup.team_breakup_type);
+        (site == breakup.team_breakup_site and model == breakup.team_breakup_type) or
+        (site == breakup.rts_breakup_site and model == 0);
 }
 
 fn nonzero(words: anytype) bool {

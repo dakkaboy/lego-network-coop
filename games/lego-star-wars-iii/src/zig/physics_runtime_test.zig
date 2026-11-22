@@ -583,6 +583,18 @@ pub fn main() void {
         }
         s.physics_input_cancel();
     }
+    mode = 108;
+    setup();
+    const native_frame = [4]usize{ 0, 0x54ef4d, 0, descriptor };
+    put(descriptor + 4, 0x1d76ce00);
+    check(@src(), s.physics_input_begin(frame, 1) != 0);
+    e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, @intFromPtr(&native_frame));
+    check(@src(), frame.physics_choice_count == 3 and frame.physics_choices[0].site == 0x54ef4d);
+    client();
+    put(descriptor + 4, 0x1da3ee00);
+    e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, @intFromPtr(&native_frame));
+    check(@src(), s.physics_input_finish() != 0 and win.load(u32, descriptor + 4) == 0x1da3ee00);
+    s.physics_input_cancel();
     effectRestTests();
 }
 

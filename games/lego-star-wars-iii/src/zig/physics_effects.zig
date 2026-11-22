@@ -60,7 +60,14 @@ fn describe(effect: usize, kind: u32, site: u32, choice: *Choice) bool {
 const LaunchSource = struct { site: u32 = 0x905f38, model: u32, name: [2]u32 = @splat(0) };
 fn launchSource(descriptor: usize, handle: usize, native_frame: usize) LaunchSource {
     var source: LaunchSource = .{ .model = read(u16, descriptor + 4) };
-    const team_breakup = readable(native_frame, 16) and read(usize, native_frame + 4) == breakup.team_breakup_site;
+    const caller = if (readable(native_frame, 16)) read(usize, native_frame + 4) else 0;
+    const team_breakup = caller == breakup.team_breakup_site;
+    if (caller == breakup.rts_breakup_site) {
+        source.site = breakup.rts_breakup_site;
+        // This caller supplies a local object pointer. The mesh and launch recipe identify the debris.
+        source.model = 0;
+        if (read(usize, native_frame + 12) != descriptor) return source;
+    }
     if (team_breakup) {
         source.site = breakup.team_breakup_site;
         source.model = breakup.team_breakup_type;
