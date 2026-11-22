@@ -486,8 +486,13 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
         const shift = contentShift(pane);
         switch (pane) {
             0 => {
-                key(wide("CREATE GAME"), 1, pane, a, true);
-                key(wide("CONNECT"), 2, pane, a, true);
+                const titles = [_][*:0]const u16{ wide("Create game"), wide("Connect") };
+                const details = [_][*:0]const u16{ wide("Host a LAN session"), wide("Join using the host IP") };
+                for (titles, details, 1..) |title, detail, id| {
+                    const r = bounds(@intCast(id), pane);
+                    label(title, .{ .x = r.x + 14, .y = r.y + 37, .w = r.w - 28, .h = 44 }, a, 0xffedf6ff, true, shift);
+                    label(detail, .{ .x = r.x + 14, .y = r.y + 86, .w = r.w - 28, .h = 29 }, a, 0xffd3e3ef, false, shift);
+                }
             },
             1 => {
                 label(wide("Join game"), textRect(if (editing_ip) layout.keypad_title else layout.join_title), a, 0xfff8edce, true, shift);
@@ -520,7 +525,7 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
             },
             2 => {
                 const status = if (game_sync_restart_required() != 0) wide("Restart the game") else if (lan_status() == 3) wide("Connected") else if (lan_is_host() != 0) wide("Waiting for player") else wide("Connecting…");
-                label(status, textRect(layout.session), a, if (lan_status() == 3) 0xffa9edcc else 0xfff8edce, false, shift);
+                label(status, textRect(layout.session), a, if (game_sync_restart_required() != 0) 0xffffa697 else if (lan_status() == 3) 0xffa9edcc else 0xfff8edce, true, shift);
                 if (lan_status() == 3 and lan_is_host() == 0) {
                     const ping = lan_ping_us();
                     if (ping == 0) {
@@ -536,7 +541,8 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
                 key(if (lan_status() == 3) wide("DISCONNECT") else wide("CANCEL"), 1, pane, a, true);
             },
             3 => {
-                label(wide("Camera"), textRect(layout.camera), a, 0xfff8edce, true, shift);
+                label(wide("Settings"), textRect(layout.settings_title), a, 0xfff8edce, true, shift);
+                label(wide("Camera"), textRect(layout.camera), a, 0xffd3e3ef, false, shift);
                 key(wide("Auto"), 3, pane, a, false);
                 key(wide("Player 1"), 4, pane, a, false);
                 key(wide("Player 2"), 5, pane, a, false);

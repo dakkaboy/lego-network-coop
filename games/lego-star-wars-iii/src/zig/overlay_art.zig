@@ -72,6 +72,11 @@ const Canvas = struct {
         self.quad(r, tint, tint);
     }
 
+    fn panel(self: Canvas, rect: [4]f32, shift: f32, alpha: f32) void {
+        self.box(.{ rect[0] + shift, rect[1], rect[2], rect[3] }, 0x41536e, alpha);
+        self.box(.{ rect[0] + shift + 1, rect[1] + 1, rect[2] - 2, rect[3] - 2 }, 0x131e2e, alpha);
+    }
+
     fn control(self: Canvas, state: State, id: i32, pane: u32, weight: f32) void {
         var r = layout.controlBounds(id, pane, state.keypad != null);
         const fixed = id == 6 or id == 7 or id == 11;
@@ -144,10 +149,15 @@ pub fn draw(device: usize, width: u32, height: u32, scale: f32, x: f32, y: f32, 
             },
             2 => {
                 const status: u32 = if (state.fault) 0xf5787e else if (state.lan == 3) 0x67dcb2 else 0xe9bc67;
-                c.box(.{ 610 + layout.contentShift(pane, state.view, weight), 378, 60, 4 }, status, weight * a);
+                const shift = layout.contentShift(pane, state.view, weight);
+                c.panel(layout.session_panel, shift, a * weight);
+                c.box(.{ 615 + shift, 268, 50, 4 }, status, weight * a);
                 c.control(state, 1, pane, weight);
             },
             3 => {
+                const shift = layout.contentShift(pane, state.view, weight);
+                c.panel(layout.settings_panel, shift, a * weight);
+                c.box(.{ 332 + shift, 355, 616, 1 }, 0x41536e, a * weight);
                 for ([_]i32{ 3, 4, 5, 8, 10 }) |id| c.control(state, id, pane, weight);
                 if (state.hub) c.control(state, 9, pane, weight);
             },
