@@ -70,7 +70,7 @@ pub export var rider_fire_hidden_resume: usize = 0x4397ef;
 extern fn rider_fire_visibility_thunk() void;
 extern fn arena_run_random_thunk() void;
 extern fn zillo_support_throw_thunk() void;
-pub fn patches() [51]hooks.Patch {
+pub fn patches() [52]hooks.Patch {
     return [_]hooks.Patch{
         .{ .address = 0x99a39b, .expected = "\x33\x8a\x68\x02\x00\x00", .target = @intFromPtr(&@import("barc_suspension.zig").barc_suspension_thunk) },
         .{ .address = 0x9977c9, .expected = "\xe8\xc2\x4a\xff\xff", .target = @intFromPtr(&@import("barc_alignment.zig").barc_alignment_thunk), .opcode = 0xe8 },
@@ -89,6 +89,7 @@ pub fn patches() [51]hooks.Patch {
         .{ .address = 0x8789f0, .expected = "\x8b\x74\x24\x54\x8b\x4d\x24", .target = @intFromPtr(&attack_support_thunk) },
         .{ .address = 0x968a94, .expected = "\x84\xdb\x0f\x85\xaf\x02\x00\x00", .target = @intFromPtr(&breakup_visibility_thunk) },
         .{ .address = 0x991d01, .expected = "\x80\xb8\xde\x0d\x00\x00\x00\x0f\x8f\xab\x02\x00\x00", .target = @intFromPtr(&@import("ryloth_fighter_death.zig").ryloth_fighter_death_thunk) },
+        .{ .address = 0x427a2f, .expected = "\xf7\xc6\x00\x00\x00\x40", .target = @intFromPtr(&@import("geonosis_vehicle_death.zig").geonosis_vehicle_death_thunk) },
         .{ .address = 0x968f14, .expected = "\x83\xbc\x24\xa0\x00\x00\x00\x00", .target = @intFromPtr(&death_breakup_thunk) },
         .{ .address = 0x9c49b3, .expected = "\x80\x7a\x42\x00\x74\x50", .target = @intFromPtr(&fall_visibility_thunk) },
         .{ .address = 0x899f37, .expected = "\x8b\x4f\x10\x85\xc9", .target = @intFromPtr(&aim_task_input_thunk) },

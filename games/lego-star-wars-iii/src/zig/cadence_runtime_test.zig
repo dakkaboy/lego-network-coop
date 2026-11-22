@@ -409,7 +409,7 @@ fn jump(address: usize, target: usize) void {
 }
 fn installedHooks() void {
     const patches = @import("cadence_install.zig").patches();
-    check(@src(), patches.len == 51);
+    check(@src(), patches.len == 52);
     for (patches) |patch| {
         check(@src(), (patch.address & 0xffff) + patch.expected.len <= 0x10000);
         protect(patch.address & ~@as(usize, 0xffff), 0x10000, 0x40);
@@ -1164,6 +1164,36 @@ fn rylothFighterDeath() void {
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 }
 
+fn geonosisVehicleDeath() void {
+    const decide = @import("geonosis_vehicle_death.zig").geonosis_vehicle_death_input;
+    mode = 60;
+    setup();
+    frame.level = 79;
+    win.store(i16, actor + 0xdc0, 417);
+    put(actor + 0x142c, model);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    check(@src(), decide(actor, model, 0x20) == 0x20);
+    check(@src(), decide(actor, model, 0x40000020) == 0x40000020 and frame.fire_task_gate_count == 2);
+    for (frame.fire_task_gates[0..2]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    put(model + 0x84, 0x40000020);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), decide(actor, model, 0x40000020) == 0x20 and win.load(u32, model + 0x84) == 0x20);
+    check(@src(), decide(actor, model, 0x20) == 0x40000020 and fault == 0);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+}
 fn hiddenEnemyForceEligibility() void {
     const eligible = @import("force_request.zig").eligible;
     const tubeContact = @import("tube_contact.zig").contact;
@@ -1355,6 +1385,7 @@ pub fn main() void {
     arenaRunRandomChecks();
     arenaRunRandomAbi();
     rylothFighterDeath();
+    geonosisVehicleDeath();
     hiddenEnemyForceEligibility();
     geonosisGuestForceScan();
 }
