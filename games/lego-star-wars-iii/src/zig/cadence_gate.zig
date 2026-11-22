@@ -115,25 +115,33 @@ fn contextFailure(gate: *const p.SyncFireTaskGate, state: [*]const u8) u32 {
     }
     return 0;
 }
-fn replayEarlyCompanionMotion(op: *const s.Lease, actor: usize, state: [*]u8, debug: *[4]u32) bool {
+fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16, action: u16, local: c_int, state: ?[*]u8, debug: *[4]u32) ?c_int {
     const frame = s.journal.frame.?;
-    if (frame.level != 79 or !s.valid(actor, 0x1440) or s.read(u16, actor + 0xdc0) != 259) return false;
-    // The Geonosis companion can update before the host's intervening Force queries.
+    if (frame.level != 79) return null;
+    const competitor = kind == p.SYNC_ACTOR_RTS_COMPETITOR and frame.fire_task_gates[s.fire_task_cursor].kind == kind;
+    const companion = kind == p.SYNC_ACTOR_CHARACTER_MOTION and state != null and s.valid(actor, 0x1440) and s.read(u16, actor + 0xdc0) == 259;
+    if (!competitor and !companion) return null;
+    // Competitor iteration can differ within a block. The companion can precede Force queries.
     var i = s.fire_task_cursor + 1;
     while (i < frame.fire_task_gate_count) : (i += 1) {
         const entry = &frame.fire_task_gates[i];
-        if (s.early_motion.isSet(i) or entry.kind != p.SYNC_ACTOR_CHARACTER_MOTION) continue;
+        if (competitor and entry.kind != kind) break;
+        if (s.early_actor_gates.isSet(i) or entry.kind != kind or entry.flags != flags or entry.action != action) continue;
         var identity = s.reference(entry);
         const resolved = s.entities_resolve_reference(&identity);
-        if (!s.live(op)) return false;
+        if (!s.live(op)) return null;
         if (resolved != actor) continue;
-        if (contextFailure(entry, state) != 0) return false;
-        s.early_motion.set(i);
-        @memcpy(state[0..@sizeOf(p.SyncCharacterMotionState)], entry.payload.storage[0..@sizeOf(p.SyncCharacterMotionState)]);
+        if (state) |pointer| {
+            if (contextFailure(entry, pointer) != 0) return null;
+            const bytes = length(kind);
+            @memcpy(pointer[0..bytes], entry.payload.storage[0..bytes]);
+        }
+        s.early_actor_gates.set(i);
         debug[1] +%= 1;
-        return true;
+        debug[2] +%= @intFromBool(local != entry.value);
+        return entry.value;
     }
-    return false;
+    return null;
 }
 pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, state: ?[*]u8, debug: *[4]u32) c_int {
     var op: s.Lease = undefined;
@@ -189,7 +197,7 @@ pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, sta
                     return failure;
                 }
                 s.fire_task_cursor += 1;
-                while (s.fire_task_cursor < s.journal.frame.?.fire_task_gate_count and s.early_motion.isSet(s.fire_task_cursor)) s.fire_task_cursor += 1;
+                while (s.fire_task_cursor < s.journal.frame.?.fire_task_gate_count and s.early_actor_gates.isSet(s.fire_task_cursor)) s.fire_task_cursor += 1;
                 debug[1] +%= 1;
                 debug[2] +%= @intFromBool(value != gate.value);
                 if (state) |output| @memcpy(output[0..bytes], gate.payload.storage[0..bytes]);
@@ -197,7 +205,9 @@ pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, sta
             }
         }
     }
-    if (s.journal.host == 0 and kind == p.SYNC_ACTOR_CHARACTER_MOTION and state != null and replayEarlyCompanionMotion(&op, actor, state.?, debug)) return value;
+    if (s.journal.host == 0 and s.fire_task_cursor < s.journal.frame.?.fire_task_gate_count) {
+        if (replayEarlyActorGate(&op, actor, kind, flags, action, value, state, debug)) |result| return result;
+    }
     if (!s.live(&op)) return failure;
     if (s.clonewars_actor_gate_failure[0] == 0) {
         var slot: u32 = std.math.maxInt(u32);

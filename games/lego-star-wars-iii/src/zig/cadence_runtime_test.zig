@@ -1248,6 +1248,19 @@ fn geonosisCompanionMotionOrder() void {
     check(@src(), motion.velocity[0] == 2 and s.fire_task_cursor == 0);
     check(@src(), gate.apply(actor, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 0, null, &debug) == 1);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+
+    client = false;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    _ = gate.apply(actor, p.SYNC_ACTOR_RTS_COMPETITOR, 0, 0, 1, null, &debug);
+    _ = gate.apply(other, p.SYNC_ACTOR_RTS_COMPETITOR, 0, 0, 2, null, &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), gate.apply(other, p.SYNC_ACTOR_RTS_COMPETITOR, 0, 0, 0, null, &debug) == 2 and s.fire_task_cursor == 0);
+    check(@src(), gate.apply(actor, p.SYNC_ACTOR_RTS_COMPETITOR, 0, 0, 0, null, &debug) == 1);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
 pub fn main() void {
