@@ -1192,6 +1192,9 @@ fn hiddenEnemyForceEligibility() void {
     check(@src(), eligible(other, .area, true) and frame.fire_task_gate_count == 4);
     check(@src(), tubeContact(actor, 0, .search, true) and tubeContact(actor, model, .candidate, true));
     check(@src(), tubeContact(actor, model, .entry, true) and !tubeContact(actor, model, .hold, false));
+    collision_stack[0x28 / 4] = @bitCast(@as(f32, 1));
+    check(@src(), meleeBounds(actor, model, @intFromPtr(&collision_stack)) == 0 and frame.fire_task_gate_count == 8);
+    collision_stack[0x28 / 4] = @bitCast(@as(f32, -1));
     check(@src(), meleeBounds(actor, model, @intFromPtr(&collision_stack)) == 1 and meleeContact(actor, model, 1) == 1);
     check(@src(), frame.fire_task_gate_count == 10);
     check(@src(), std.meta.eql(frame.fire_task_gates[6].payload.tube_position, [3]f32{ 1, 2, 3 }));

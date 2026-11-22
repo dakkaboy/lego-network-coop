@@ -46,7 +46,10 @@ pub export fn melee_bounds(victim: usize, attack: usize, stack: usize) c_int {
         (read(u32, read(usize, victim + 0xf08) + 0x14) & 0x2000 == 0 or read(u8, attack + 0x11c) & 0x40 == 0);
     const vertical = !vertical_required or !(read(f32, victim + 0x40) < read(f32, stack + 0x2c) or
         read(f32, victim + 0x34) > read(f32, stack + 0x38));
-    return decision(victim, 1, horizontal and vertical, &identity);
+    const admitted = horizontal and vertical;
+    // A rejected host probe has no downstream contact decision to replay.
+    if (s.journal.host != 0 and !admitted) return 0;
+    return decision(victim, 1, admitted, &identity);
 }
 
 comptime {
