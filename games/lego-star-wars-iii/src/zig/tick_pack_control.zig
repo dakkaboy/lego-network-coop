@@ -64,8 +64,10 @@ fn seedWithStack(member: usize, at: u32, seed_site: u32, with_target: bool, requ
     const local = load(u32, 0xea178c);
     const values = [_]u32{ id.key(), local };
     const sites = [_]u32{ at, seed_site };
-    if (at == v.PACK_HIT_DEBRIS) {
-        const expected = s.firstExpected();
+    const expected = s.firstExpected();
+    const unexpected_reaction = at == v.PACK_HIT_REACTION and !s.host and s.frame.?.level == 79 and
+        (expected == null or expected.?.site != at or expected.?.clock != s.clock() or expected.?.value != values[0]);
+    if (at == v.PACK_HIT_DEBRIS or unexpected_reaction) {
         const pack = load(usize, member + 0x68);
         s.clonewars_native_pack_seed_context = .{ s.frame.?.epoch, s.frame.?.sequence, s.clock(), at, @truncate(member), id.index, id.witness, values[0], local, if (expected) |e| e.value else 0, if (expected) |e| e.site else 0, if (expected) |e| e.clock else 0, load(u32, member + 0x6c), load(u32, member + 0x70), load(u32, pack + 0xac), @import("tick_pack_mutation.zig").clonewars_pack_membership_revision };
         if (native_stack != 0) @import("pack_hit_query_observer.zig").observe(member, native_stack, id);

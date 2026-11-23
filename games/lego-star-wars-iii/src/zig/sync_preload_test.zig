@@ -319,6 +319,15 @@ pub fn main() void {
     s.store(u32, 0xea178c, 101);
     check(@src(), preload.prepare(@intFromPtr(&engine), @intFromPtr(&packet), 1) == 1 and s.load(u32, 0xfb4b6c) == 43 and s.load(u32, 0xea178c) == 53);
     check(@src(), preload.game_sync_preload_track_input(&.{ 71, 73 }, 0x40000000) == 0x3f800000 and preload.game_sync_preload_flow_input(@intFromPtr(&root) + 0x1b44, 5) == 3 and s.core.preload_flow.track_count == 1 and s.core.preload_flow.flow_count == 1);
+    s.preload.level = 3;
+    received_receipt.hub_count = 1;
+    received_receipt.hub_choices[0] = .{ .owner = 0x54f79325, .ordinal = 0, .character = 189 };
+    check(@src(), preload.game_sync_preload_hub_choice(0x54f79325, 0, 183) == 189 and s.core.preload_flow.hub_count == 1);
+    check(@src(), s.core.preload_flow.hub_choices[0].character == 189);
+    check(@src(), preload.game_sync_preload_hub_choice(0xa26339a4, 6, 184) == 0xffffffff and s.core.preload_flow.hub_count == 1);
+    s.core.preload_flow.hub_count = 0;
+    check(@src(), preload.game_sync_preload_hub_choice(0x54f79374, 0, 183) == 183 and s.reject_bits != 0 and s.core.preload_flow.hub_count == 0);
+    s.reject_bits = 0;
     s.core.preload_flow.track_count = 0;
     check(@src(), preload.game_sync_preload_track_input(&.{ 71, 74 }, 0x40000000) == 0x40000000 and s.reject_bits != 0 and s.core.preload_flow.track_count == 0);
     setup();

@@ -432,6 +432,20 @@ fn rts() void {
         if (mutation == 0) check(@src(), actual == minus500 and look == 1000 and finish()) else check(@src(), actual == minus570 and look == 1100 and !finish() and f.faults == before + 1);
         check(@src(), win.GetLastError() == 742);
     }
+    const original_level = frame.level;
+    next(true);
+    frame.level = 79;
+    look = 1000;
+    _ = actor.native_rts_turn_input(addr(turret), minus500, addr(&look));
+    check(@src(), world.native_rts_wait_sample(0) == 0 and finish() and stream(0, 5));
+    begin(false);
+    look = 1100;
+    check(@src(), world.native_rts_wait_sample(0) == 0);
+    check(@src(), actor.native_rts_turn_input(addr(turret), minus570, addr(&look)) == minus500 and look == 1000 and finish());
+    begin(false);
+    _ = world.native_rts_wait_sample(0);
+    check(@src(), !finish());
+    frame.level = original_level;
     var vtable: [0x164 / 4]u32 = @splat(0);
     vtable[0x160 / 4] = 0x12344321;
     put(turret, 0, &vtable);

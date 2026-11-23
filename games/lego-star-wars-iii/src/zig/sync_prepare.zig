@@ -8,6 +8,30 @@ const numeric = @import("numeric_input.zig");
 const span = @import("span_types.zig");
 const load = s.load;
 const store = s.store;
+pub const FrameWindow = struct {
+    session: u32 = 0,
+    epoch: u32 = 0,
+    ack: u32 = 0,
+    measured_at: u64 = 0,
+    limit: u32 = 3,
+
+    pub fn update(self: *FrameWindow, session: u32, epoch: u32, ack: u32, now: u64) u32 {
+        if (session != self.session or epoch != self.epoch or ack < self.ack) {
+            self.* = .{ .session = session, .epoch = epoch, .ack = ack, .measured_at = now };
+        } else if (now - self.measured_at >= 500) {
+            // Leave room for a 90 ms round trip and some scheduling delay.
+            // A slower guest needs fewer queued frames to cover the same time.
+            const elapsed = now - self.measured_at;
+            const progressed = @as(u64, ack - self.ack);
+            const in_flight = (progressed * 120 + elapsed - 1) / elapsed;
+            self.limit = @intCast(std.math.clamp(1 + in_flight, 3, 8));
+            self.ack = ack;
+            self.measured_at = now;
+        }
+        return self.limit;
+    }
+};
+var host_window: FrameWindow = .{};
 pub fn control(out: *span.Control, _: usize) callconv(.c) c_int {
     var status: @import("tag_state.zig").Session = undefined;
     if (authority.tagSession(&status) == 0) return 0;
@@ -133,9 +157,11 @@ pub fn enter(owner: *s.owner.Scope, nonce: u32, packet: usize, receiver: usize, 
     const environment: *[512]u8 = @ptrFromInt(fx);
     if (s.core.host != 0) {
         s.interval.sequence = s.sequence;
-        const unacknowledged = api.sync_epoch_unacknowledged(&s.interval, api.lan_epoch(), api.lan_peer_ack());
+        const ack = api.lan_peer_ack();
+        const unacknowledged = api.sync_epoch_unacknowledged(&s.interval, api.lan_epoch(), ack);
+        const limit = host_window.update(s.core.session, s.interval.epoch, ack, @import("sync_platform.zig").now());
         s.clonewars_coherent_waits[2] = unacknowledged;
-        if (unacknowledged >= 3) {
+        if (unacknowledged >= limit) {
             s.clonewars_coherent_waits[0] +%= 1;
             return 2;
         }

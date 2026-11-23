@@ -98,7 +98,8 @@ fn indexOf(value: usize) ?usize {
     return null;
 }
 fn identity(index: usize) p.SyncTagIdentity {
-    return .{ .character = @intCast(10 + index), .spawn_tag = @intCast(31 + index), .spawn_source = .{ .producer = 42, .serial = @intCast(100 + index) } };
+    const character: i32 = if (mode >= 40 and index == 1) 418 else @intCast(10 + index);
+    return .{ .character = character, .spawn_tag = @intCast(31 + index), .spawn_source = .{ .producer = 42, .serial = @intCast(100 + index) } };
 }
 fn provider(out: *s.Session) callconv(.c) c_int {
     session_reads += 1;
@@ -275,19 +276,19 @@ noinline fn run(scenario: u32, host_role: bool) Snapshot {
     generations = .{ 19, 20, 21 };
     for (0..3) |i| {
         win.store(usize, actor(i) + 0x6cc, @intFromPtr(&controllers[i]));
-        win.store(i16, actor(i) + 0xdc0, if (mode == 6 and i == 0) 5000 else @intCast(10 + i));
+        win.store(i16, actor(i) + 0xdc0, if (mode == 6 and i == 0) 5000 else @intCast(identity(i).character));
     }
     frame = std.mem.zeroes(p.SyncFrame);
     frame.epoch = 7;
     frame.sequence = 2;
-    frame.level = 6;
+    frame.level = if (mode >= 40 and mode <= 42) 24 else 6;
     token = .{ .owner = 123, .owner_nonce = 4, .cohort_nonce = 5, .thread = win.GetCurrentThreadId(), .release = 3, .epoch = 7, .sequence = 2, .frame = @intFromPtr(&frame) };
     control = std.mem.zeroes(s.ControlLease);
     control.thread = token.thread;
     control.release = 3;
     control.epoch = 7;
-    control.level = 6;
-    session = .{ .epoch = 7, .level = 6, .classification = 4, .session = 17 };
+    control.level = frame.level;
+    session = .{ .epoch = 7, .level = frame.level, .classification = 4, .session = 17 };
     adapter = std.mem.zeroes(s.Adapter);
     adapter.window_thread = token.thread;
     phase = 1;
@@ -308,6 +309,7 @@ noinline fn run(scenario: u32, host_role: bool) Snapshot {
     if (!host) {
         frame.tag_count = 1;
         frame.tags[0] = recordedTag(0, if (mode == 8) 0 else 1);
+        if (mode == 42) frame.tags[0] = recordedTag(1, 0);
         if (mode == 9) frame.tags[0].from_generation = 0;
         if (mode == 6) frame.tags[0].from_identity.character = 5000;
         if (mode == 12) frame.tags[0].parent = 9;
@@ -352,7 +354,11 @@ noinline fn run(scenario: u32, host_role: bool) Snapshot {
         }
         phase = 2;
         if (mode == 26) session.session += 1;
-        if (mode != 10 and mode != 20 and mode != 39) {
+        if (mode >= 40) {
+            const clock: u32 = if (mode == 40) 43 else 44;
+            tag_test_clock.clock = clock;
+            out.results[5] = @intFromBool(@import("tag_frame.zig").replayGunganVehicleHandoff(clock));
+        } else if (mode != 10 and mode != 20 and mode != 39) {
             win.SetLastError(333);
             out.results[5] = seh.all(0, if (mode == 14 or mode == 15 or mode == 33) invokeUpdate else invoke);
         }
@@ -449,6 +455,14 @@ pub fn main() void {
             check(@src(), actual.owners[0][0] == 1 and actual.owners[0][1] == 1 and actual.owners[0][2] == 1 and actual.owners[0][3] == 2);
         }
     };
+    for (40..44) |scenario| {
+        const actual = run(@intCast(scenario), false);
+        const replayed_early = scenario == 41 or scenario == 42;
+        check(@src(), actual.results[5] == 1 and actual.results[6] == @intFromBool(!replayed_early));
+        check(@src(), actual.calls == 1 and actual.results[8] == 1);
+        check(@src(), actual.controllers[0] == 2 and actual.controllers[1] == 1);
+        check(@src(), actual.clock.clock == @as(u32, if (scenario == 40) 43 else 44));
+    }
     installerTest();
 }
 comptime {

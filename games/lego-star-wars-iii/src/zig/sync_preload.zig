@@ -15,7 +15,7 @@ pub fn packetValid(packet: usize) bool {
 fn waitValid(session: u32, release: u32, root: usize) bool {
     return api.lan_status() == 3 and session == api.lan_session_serial() and release == api.coherent_frame_release() and s.core.preload_epoch == s.interval.epoch and s.core.preload_world == load(usize, 0xfb4a20) and root == load(usize, 0xfb2e60) and api.native_owner_scope_valid(s.core.owner, s.core.owner_nonce) != 0 and s.fault == 0 and @atomicLoad(u32, &s.reject_bits, .seq_cst) == 0;
 }
-const Kind = enum { flow, track };
+const Kind = enum { flow, track, hub };
 fn awaitReceipt(comptime kind: Kind, serial: u32, ordinal: u32, witness: ?*const [2]u32, value: *u32, debug: *[8]u32) bool {
     const session = s.core.session;
     const release = s.core.release;
@@ -28,9 +28,30 @@ fn awaitReceipt(comptime kind: Kind, serial: u32, ordinal: u32, witness: ?*const
         }
         var source = std.mem.zeroes(s.p.SyncPreloadReceipt);
         if (api.lan_remote_preload_receipt(s.interval.epoch, s.preload.level, &source) != 0) {
-            const result = if (kind == .track) api.preload_track_read(&source, serial, ordinal, witness, value) else blk: {
-                debug[7] = source.flow_count;
-                break :blk api.preload_flow_request_read(&source, serial, ordinal, value);
+            const result: c_int = switch (kind) {
+                .track => api.preload_track_read(&source, serial, ordinal, witness, value),
+                .flow => blk: {
+                    debug[7] = source.flow_count;
+                    break :blk api.preload_flow_request_read(&source, serial, ordinal, value);
+                },
+                .hub => blk: {
+                    if (source.serial < serial) break :blk 0;
+                    if (source.serial != serial or source.hub_count > source.hub_choices.len) break :blk -1;
+                    if (ordinal < source.hub_count) {
+                        const choice = source.hub_choices[ordinal];
+                        if (choice.owner == witness.?[0] and choice.ordinal == witness.?[1] and choice.character < 0x258) {
+                            value.* = choice.character;
+                            break :blk 1;
+                        }
+                    }
+                    // The Resolute ambient party owner can try to fill a vacant NPC slot.
+                    if (witness.?[0] != 0xa26339a4) break :blk -1;
+                    for (source.hub_choices[0..source.hub_count]) |choice| {
+                        if (choice.owner == witness.?[0] and choice.ordinal == witness.?[1]) break :blk -1;
+                    }
+                    value.* = 0xffffffff;
+                    break :blk 1;
+                },
             };
             if (result == 1) return true;
             if (result < 0) {
@@ -45,6 +66,30 @@ fn awaitReceipt(comptime kind: Kind, serial: u32, ordinal: u32, witness: ?*const
         platform.sleep(1);
         debug[5] +%= 1;
     }
+}
+pub export var clonewars_preload_hub_debug: [8]u32 = @splat(0);
+pub export fn game_sync_preload_hub_choice(owner: u32, record: u32, character: u32) u32 {
+    if (s.core.preload == 0 or s.preload.level != 3 or s.win.GetCurrentThreadId() != s.tick_thread) return character;
+    const ordinal = s.core.preload_flow.hub_count;
+    const serial = s.preload.input.serial;
+    const debug = &clonewars_preload_hub_debug;
+    debug[0..4].* = .{ serial, owner, record, character };
+    if (ordinal >= s.core.preload_flow.hub_choices.len or serial == 0 or owner == 0 or record & 0x7f > 126 or record > 0xff or character >= 0x258) {
+        authority.reject(31, 0);
+        return character;
+    }
+    var value = character;
+    const witness = [2]u32{ owner, record };
+    if (api.lan_is_host() == 0 and !awaitReceipt(.hub, serial, ordinal, &witness, &value, debug)) return character;
+    if (value == 0xffffffff) {
+        debug[7] +%= 1;
+        return value;
+    }
+    s.core.preload_flow.hub_choices[ordinal] = .{ .owner = owner, .ordinal = record, .character = value };
+    s.core.preload_flow.hub_count = ordinal + 1;
+    debug[4] = value;
+    debug[6] +%= 1;
+    return value;
 }
 pub export fn game_sync_preload_level() c_int {
     return if (s.core.preload != 0) s.preload.level else -1;
@@ -87,6 +132,8 @@ pub export fn game_sync_preload_flow_input(flow: usize, local: u32) u32 {
     s.core.preload_flow.flow_count = ordinal + 1;
     return value;
 }
+pub export var clonewars_resolute_initial_roster: [10]u32 = @splat(0);
+
 pub fn loadBarrier(phase: u32, level: i32, roster_matches: *bool) bool {
     var local = std.mem.zeroes(s.p.SyncWorldReady);
     local.epoch = s.interval.epoch;
@@ -111,6 +158,16 @@ pub fn loadBarrier(phase: u32, level: i32, roster_matches: *bool) bool {
     if (slots > s.p.SYNC_MAX_ACTORS or (slots != 0 and !s.valid(pool, slots * 0x1440))) {
         api.lan_invalidate_world_ready();
         return false;
+    }
+    if (level == 3 and phase == 0xe and authority.game_sync_sequence() == 0) {
+        clonewars_resolute_initial_roster[0..2].* = .{ s.interval.epoch, local.completed_serial };
+        for (0..8) |party| {
+            const actor = s.player(party);
+            clonewars_resolute_initial_roster[party + 2] = if (s.valid(actor, 0x1440))
+                @as(u32, load(u16, actor + 0xdc0)) + 1
+            else
+                0;
+        }
     }
     for (0..slots) |slot| {
         const actor = pool + slot * 0x1440;
@@ -203,7 +260,11 @@ pub fn prepare(receiver: usize, packet: usize, ready_snapshot: u32) u32 {
     source.level = level;
     source.root_phase = phase;
     if (api.lan_is_host() != 0) {
-        if (s.preload.input.serial != 0 and roster_matches and api.preload_initial_seal_ready(&s.preload, phase) != 0) {
+        const startup_settled = if (comptime @hasDecl(@import("root"), "native_title"))
+            level != 3 or @import("hub_assets.zig").startupSettled(load(u32, 0xfb4b6c))
+        else
+            true;
+        if (s.preload.input.serial != 0 and roster_matches and startup_settled and api.preload_initial_seal_ready(&s.preload, phase) != 0) {
             if (!ready) return 0;
             if (api.preload_state_seal(&s.preload, remote.serial) == 0 or api.lan_publish_preload_seal(s.interval.epoch, level, remote.serial) == 0) {
                 authority.reject(31, 0);
@@ -247,6 +308,13 @@ pub fn prepare(receiver: usize, packet: usize, ready_snapshot: u32) u32 {
         if (api.lan_receive_preload(s.interval.epoch, level, &source) == 0 or source.serial == s.preload.applied.serial) {
             s.clonewars_preload_debug[2] +%= 1;
             return 0;
+        }
+        if (comptime @hasDecl(@import("root"), "native_title")) {
+            if (level == 3) {
+                var receipt = std.mem.zeroes(s.p.SyncPreloadReceipt);
+                if (api.lan_remote_preload_receipt(s.interval.epoch, level, &receipt) == 0 or receipt.serial != source.serial or
+                    !@import("hub_assets.zig").ready(&receipt)) return 0;
+            }
         }
         if (api.game_native_loader_idle() == 0) {
             api.lan_invalidate_world_ready();

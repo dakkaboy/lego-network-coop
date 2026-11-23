@@ -48,6 +48,13 @@ fn close(mask: u32, exceptional: bool) void {
     check(@src(), profiling[0] == profiling[1] and profiling[2] == s.publish_count);
 }
 pub fn main() void {
+    var window: prepare.FrameWindow = .{};
+    check(@src(), window.update(1, 1, 0, 1000) == 3);
+    check(@src(), window.update(1, 1, 16, 1500) == 5);
+    check(@src(), window.update(1, 1, 46, 2000) == 8);
+    check(@src(), window.update(1, 1, 51, 2500) == 3);
+    check(@src(), window.update(1, 1, 81, 3000) == 8);
+    check(@src(), window.update(1, 2, 0, 3001) == 3);
     check(@src(), @intFromPtr(&owned_image) <= 0x887ac0 and @intFromPtr(&owned_image) + owned_image.len > 0xfbdd30);
     a.initialize();
     defer _ = s.win.VirtualFree(@intFromPtr(a.saved_frame.?), 0, 0x8000);

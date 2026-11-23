@@ -1,3 +1,42 @@
+pub fn action100() []const u8 {
+    return
+    \\.text
+    \\.globl _spellit_action100_thunk
+    \\_spellit_action100_thunk:
+    \\jnz 2f
+    \\pushfl
+    \\pushal
+    \\movl %esp,%edx
+    \\subl $544,%esp
+    \\andl $-16,%esp
+    \\movl %edx,512(%esp)
+    \\fxsave (%esp)
+    \\movl %fs:0x34,%eax
+    \\movl %eax,520(%esp)
+    \\fninit
+    \\movl $0x1f80,516(%esp)
+    \\ldmxcsr 516(%esp)
+    \\pushl (%edx)
+    \\cld
+    \\call _spellit_gungan_action100_admitted
+    \\addl $4,%esp
+    \\testl %eax,%eax
+    \\jz 1f
+    \\movl 512(%esp),%edx
+    \\andl $-65,32(%edx)
+    \\1:
+    \\fxrstor (%esp)
+    \\movl 520(%esp),%eax
+    \\movl %eax,%fs:0x34
+    \\movl 512(%esp),%esp
+    \\popal
+    \\popfl
+    \\jz 3f
+    \\2: jmp *_spellit_action100_continue
+    \\3: jmp *_spellit_action100_skip
+    ;
+}
+
 pub fn code(comptime stage: u1) []const u8 {
     return ".text\n.globl _spellit_admission_" ++ (if (stage == 0) "state" else "hint") ++ "_thunk\n_spellit_admission_" ++ (if (stage == 0) "state" else "hint") ++ "_thunk:\n" ++
         \\pushfl

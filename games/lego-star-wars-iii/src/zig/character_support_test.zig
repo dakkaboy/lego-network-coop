@@ -8,6 +8,7 @@ const win = @import("win32.zig");
 const check = @import("native_test_support.zig").check;
 export var effect_birth_resume: usize = 0;
 export var breakup_launch_native: usize = 0;
+export var breakup_launch_next_mesh: usize = 0;
 var calls: u32 = 0;
 pub const probe_registers =
     \\movl $0x87654321,0x204(%esp)
@@ -20,7 +21,7 @@ export fn physics_effect_birth(node: usize) void {
     asm volatile ("fninit; pcmpeqd %%xmm0,%%xmm0; pxor %%xmm7,%%xmm7" ::: .{ .xmm0 = true, .xmm7 = true });
     win.SetLastError(err);
 }
-export fn physics_apply_breakup_launch(_: usize, _: usize, _: usize, _: usize, _: usize, _: usize) void {
+export fn physics_apply_breakup_launch(_: usize, _: usize, _: usize, _: usize, _: usize, _: usize) c_int {
     unreachable;
 }
 fn live(_: *const binding.Binding, index: usize, flags: *const [4]bool) bool {

@@ -45,6 +45,7 @@ extern fn game_sync_status() c_int;
 extern fn game_sync_restart_required() c_int;
 var opened = false;
 var want_open = false;
+var saved_host_wait = false;
 var opening: f32 = 0;
 var previous_block: u8 = 0;
 var view: u32 = 0;
@@ -464,6 +465,14 @@ fn pollPads() void {
 pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
     pollPads();
     if (!opened) return;
+    if (saved_host_wait) {
+        const status = lan_status();
+        if (status == 0 or status == 4) saved_host_wait = false;
+        if (status == 3 and game_sync_status() == 2) {
+            saved_host_wait = false;
+            if (view == 2) want_open = false;
+        }
+    }
     if (view == 2 and lan_status() == 0) change(0);
     if (view == 2 and lan_status() == 4) change(1);
     advance();
@@ -565,7 +574,15 @@ pub export fn coop_draw(device: usize, _: *const [2]Hud) void {
     } else label(wide("Tab  Navigate     Enter  Select     Esc  Back"), textRect(layout.hints), opening, 0xffd3e3ef, false, 0);
     if (want_open) if (pointer_position) |position| scene.drawPointer(device, position, scale);
 }
+pub fn openHostedSession() void {
+    if (!opened) coop_toggle() else {
+        want_open = true;
+        change(2);
+    }
+    saved_host_wait = true;
+}
 pub export fn coop_toggle() void {
+    saved_host_wait = false;
     if (!opened) {
         opened = true;
         want_open = true;
@@ -600,6 +617,18 @@ pub export fn coop_fonts_reset() void {
 pub export fn coop_set_window(window: usize, capture: bool) void {
     game_window = window;
     background_capture = capture;
+}
+fn mousePoint(lp: isize) [2]f32 {
+    const bits: u32 = @truncate(@as(usize, @bitCast(lp)));
+    return .{
+        @floatFromInt(@as(i16, @bitCast(@as(u16, @truncate(bits))))),
+        @floatFromInt(@as(i16, @bitCast(@as(u16, @truncate(bits >> 16))))),
+    };
+}
+fn trackPointer(window: usize) void {
+    if (tracking_pointer or window == 0 or background_capture) return;
+    var request = MouseTracking{ .size = @sizeOf(MouseTracking), .flags = 2, .window = window, .hover_time = 0 };
+    tracking_pointer = api.TrackMouseEvent(&request) != 0;
 }
 pub export fn coop_input(window: usize, message: u32, wp: usize, lp: isize) c_int {
     if (message == 0x2a3) tracking_pointer = false;
@@ -652,17 +681,12 @@ pub export fn coop_input(window: usize, message: u32, wp: usize, lp: isize) c_in
         }
     }
     if (message >= 0x200 and message <= 0x202) {
-        const bits: u32 = @truncate(@as(usize, @bitCast(lp)));
-        const px: f32 = @floatFromInt(@as(i16, @bitCast(@as(u16, @truncate(bits)))));
-        const py: f32 = @floatFromInt(@as(i16, @bitCast(@as(u16, @truncate(bits >> 16)))));
-        pointer_position = .{ px, py };
+        const point = mousePoint(lp);
+        pointer_position = point;
         // The offscreen window receives test messages while the system pointer stays on the desktop.
-        if (!tracking_pointer and window != 0 and !background_capture) {
-            var request = MouseTracking{ .size = @sizeOf(MouseTracking), .flags = 2, .window = window, .hover_time = 0 };
-            tracking_pointer = api.TrackMouseEvent(&request) != 0;
-        }
-        const x = (px - ox) / scale;
-        const y = (py - oy) / scale;
+        trackPointer(window);
+        const x = (point[0] - ox) / scale;
+        const y = (point[1] - oy) / scale;
 
         const before_hover = hovered;
         hovered = hit(x, y);

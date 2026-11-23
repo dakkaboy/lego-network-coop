@@ -7,6 +7,7 @@ const read = s.read;
 pub export var clonewars_character_support_release_debug: [10]u32 = @splat(0);
 pub export var clonewars_character_support_unknown_count_debug: [1]u32 = @splat(0);
 pub export var clonewars_character_support_unknown_debug: [640]u32 = @splat(0);
+pub export var clonewars_character_support_failure_debug: [4]u32 = @splat(0);
 extern fn entities_allocation_live(usize, u32) c_int;
 extern fn physics_effect_body_source(usize, *[2]u32) c_int;
 extern fn physics_effect_body_resolve(u32, u32) usize;
@@ -57,6 +58,11 @@ pub export fn cadence_character_motion_input(actor: usize, body: usize, velocity
         const local = state;
         if (s.journal.host != 0 and state.support_frame != 0) s.clonewars_character_support_debug[0] +%= 1;
         _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&state), &s.clonewars_character_motion_debug);
+        const fault = &s.clonewars_character_motion_failure;
+        if (fault[0] == 6 and fault[1] == local.clock) {
+            const support_label = if (s.valid(support, 0x20)) read(usize, support + 0x1c) else 0;
+            clonewars_character_support_failure_debug = .{ @truncate(actor), @truncate(body), @truncate(support), @truncate(support_label) };
+        }
         if (!s.live(&op) or !s.active or s.journal.failed != 0 or s.journal.host != 0) return;
         reason = 7;
         if (entities_allocation_live(actor, allocation) == 0 or read(usize, actor + 8) != model or !s.valid(model, 0x3c) or read(usize, model + 0x38) != body or !s.valid(body, 0xca)) break :input;

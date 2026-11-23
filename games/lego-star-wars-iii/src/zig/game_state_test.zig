@@ -376,9 +376,17 @@ pub fn main() void {
     mock.scene_ready = 0;
     mock.scene_initialized = 0;
     mock.status = 3;
-    put(root + 0x1b78, 13);
-    put(0xfb4b6c, 3542);
+    const hub = mock.current;
+    put(catalog + @as(usize, @intCast(hub)) * 0x1b0 + 0x50, 0x1000000);
+    mock.current = 0;
+    win.store(i32, 0xe6e61c, hub);
     const profiles_before_opening = mock.profile_calls;
+    game.game_poll();
+    check(@src(), mock.epoch == 0 and mock.published_level == -1 and mock.published_ready == 0 and mock.profile_calls == profiles_before_opening);
+    mock.current = hub;
+    win.store(i32, 0xe6e61c, -1);
+    put(root + 0x1b78, 14);
+    put(0xfb4b6c, 0);
     game.game_poll();
     check(@src(), mock.epoch == 0 and mock.published_level == -1 and mock.profile_calls == profiles_before_opening);
     check(@src(), game.game_network_target_level() == -1 and game.game_target_level() == mock.current and mock.enter_calls == entries);
@@ -394,4 +402,13 @@ pub fn main() void {
     put(root + 0x1b78, 13);
     game.game_poll();
     check(@src(), mock.epoch == 1 and mock.published_level == mock.current);
+
+    mock.status = 1;
+    const entries_before_wait = mock.enter_calls;
+    game.holdLoadedCoop();
+    game.game_poll();
+    check(@src(), game.game_transition_waiting() != 0 and mock.enter_calls == entries_before_wait);
+    mock.status = 0;
+    game.game_poll();
+    check(@src(), game.game_transition_waiting() == 0 and mock.enter_calls == entries_before_wait);
 }

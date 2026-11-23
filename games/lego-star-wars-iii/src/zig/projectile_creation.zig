@@ -7,15 +7,16 @@ const tracking = @import("projectile_tracking.zig");
 const launch = @import("projectile_launch.zig");
 const shot_source = @import("shot_source.zig");
 const Machine = @import("machine_environment.zig").Environment;
-fn isGeonosisTurretWeapon(level: i32, weapon: i32, flags: u32, source: u8) bool {
-    return level == 79 and (weapon == 29 or weapon == 31) and flags == 0x800 and source == p.SYNC_SHOT_WEAPON;
+fn isDefenseTurretWeapon(level: i32, weapon: i32, flags: u32, source: u8) bool {
+    return (level == 79 and (weapon == 29 or weapon == 31) or level == 24 and weapon == 31) and
+        flags == 0x800 and source == p.SYNC_SHOT_WEAPON;
 }
 fn isDefenseTurret(actor: usize) bool {
     return s.valid(actor, 0x1440) and s.read(u16, actor + 0xdc0) == 466;
 }
 pub fn canReplayAfterTick(level: i32, shot: *const p.SyncShot) bool {
     if (shot_source.isGeonosisBarrage(level, shot.owner, shot.weapon, shot.flags, shot.source)) return true;
-    return isGeonosisTurretWeapon(level, shot.weapon, shot.flags, shot.source) and
+    return isDefenseTurretWeapon(level, shot.weapon, shot.flags, shot.source) and
         isDefenseTurret(tracking.actorAt(shot.owner, shot.owner_generation));
 }
 extern fn constructor_lexical_seh(usize, *const fn (usize) callconv(.c) usize, *const fn (usize) callconv(.c) void) usize;
@@ -229,7 +230,7 @@ fn invoke(context: usize) callconv(.c) usize {
         const weapon = s.read(i8, call.weapon);
         const level = s.current.?.level;
         const can_defer = (call.owner == 0 and call.target == 0 and shot_source.isGeonosisBarrage(level, slot, weapon, call.flags, call.source)) or
-            (slot >= 0 and isGeonosisTurretWeapon(level, weapon, call.flags, call.source) and isDefenseTurret(call.owner));
+            (slot >= 0 and isDefenseTurretWeapon(level, weapon, call.flags, call.source) and isDefenseTurret(call.owner));
         var i: u32 = 0;
         while (control.live(op) and i < s.current.?.shot_count) : (i += 1) {
             const shot = &s.current.?.shots[i];

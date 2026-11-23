@@ -114,6 +114,7 @@ pub export fn model_input_begin(frame: *p.SyncFrame, host: c_int) c_int {
         state.first_generation = 0;
     }
     model_input_journal_begin(&state.journal, frame, host);
+    state.early_entries = .empty;
     state.active_thread = win.GetCurrentThreadId();
     state.active = true;
     return @intFromBool(state.live(&op));

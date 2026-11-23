@@ -29,6 +29,8 @@ pub export var spellit_node_resume: usize = 0x7daa71;
 pub export var script_shoot_visible_resume: usize = 0x963cb4;
 pub export var script_shoot_hidden_resume: usize = 0x963cab;
 pub export var primary_perception_resume: usize = 0x9ddc1f;
+pub export var script_attack_target_resume: usize = 0x899b50;
+pub export var script_assigned_target_resume: usize = 0x9dde1e;
 pub export var spellit_admission_state_continue: usize = 0x857eca;
 pub export var spellit_admission_state_skip: usize = 0x857f84;
 pub export var spellit_admission_hint_continue: usize = 0x857ede;
@@ -46,6 +48,8 @@ extern fn aim_task_visibility_thunk() void;
 extern fn rts_competitor_input_thunk() void;
 extern fn force_target_visibility_thunk() void;
 extern fn primary_perception_thunk() void;
+extern fn script_attack_target_thunk() void;
+extern fn script_assigned_target_thunk() void;
 extern fn aim_base_input_thunk() void;
 extern fn script_shoot_visibility_thunk() void;
 extern fn spellit_prepare_thunk() void;
@@ -58,6 +62,9 @@ extern fn spellit_position_thunk() void;
 extern fn character_motion_thunk() void;
 extern fn spellit_actor_eligible(usize) u32;
 extern fn spellit_action_matches(usize, i32) u32;
+export var spellit_action100_continue: usize = 0x857cc8;
+export var spellit_action100_skip: usize = 0x858066;
+extern fn spellit_action100_thunk() void;
 pub export var spellit_manager_force_resume: usize = 0x857e16;
 pub export var spellit_manager_special_resume: usize = 0x857e29;
 extern fn spellit_manager_force_thunk() void;
@@ -70,7 +77,7 @@ pub export var rider_fire_hidden_resume: usize = 0x4397ef;
 extern fn rider_fire_visibility_thunk() void;
 extern fn arena_run_random_thunk() void;
 extern fn zillo_support_throw_thunk() void;
-pub fn patches() [52]hooks.Patch {
+pub fn patches() [56]hooks.Patch {
     return [_]hooks.Patch{
         .{ .address = 0x99a39b, .expected = "\x33\x8a\x68\x02\x00\x00", .target = @intFromPtr(&@import("barc_suspension.zig").barc_suspension_thunk) },
         .{ .address = 0x9977c9, .expected = "\xe8\xc2\x4a\xff\xff", .target = @intFromPtr(&@import("barc_alignment.zig").barc_alignment_thunk), .opcode = 0xe8 },
@@ -79,6 +86,7 @@ pub fn patches() [52]hooks.Patch {
         .{ .address = 0x449313, .expected = "\xe8\x58\x2d\x10\x00", .target = @intFromPtr(&zillo_support_throw_thunk), .opcode = 0xe8 },
         .{ .address = 0x670def, .expected = "\xe8\x5c\xf2\xff\xff", .target = @intFromPtr(&@import("zillo_support_hooks.zig").zillo_support_register_thunk), .opcode = 0xe8 },
         .{ .address = 0x4395f1, .expected = "\x80\x78\x42\x00\x0f\x84\xf4\x01\x00\x00", .target = @intFromPtr(&rider_fire_visibility_thunk) },
+        .{ .address = 0x857cc2, .expected = "\x0f\x84\x9e\x03\x00\x00", .target = @intFromPtr(&spellit_action100_thunk) },
         .{ .address = 0x857e10, .expected = "\x8b\x42\x64\x57\xff\xd0", .target = @intFromPtr(&spellit_manager_force_thunk) },
         .{ .address = 0x857e23, .expected = "\x57\x0f\x95\xc3\xff\xd0", .target = @intFromPtr(&spellit_manager_special_thunk) },
         .{ .address = 0x857e5a, .expected = "\xe8\xb1\xa7\x06\x00", .target = @intFromPtr(&spellit_actor_eligible), .opcode = 0xe8 },
@@ -99,6 +107,7 @@ pub fn patches() [52]hooks.Patch {
         .{ .address = 0x84bc7f, .expected = "\x80\x7e\x56\x00\x75\x18\x8b\x15\x20\x4a\xfb\x00\x56\x52\xe8\x5e\x2d\x08\x00\x83\xc4\x08\x84\xc0\x0f\x84\xd1\x01\x00\x00", .target = @intFromPtr(&@import("force_request.zig").force_request_eligible_thunk) },
         .{ .address = 0x84bc9d, .expected = "\x0f\xb7\x86\xf4\x02\x00\x00\x66\x83\xf8\xff\x74\x2f\x8b\x15\xf8\x5e\xe7\x00\x0f\xbf\xc8\x8b\xc1\xc1\xe0\x04\x8b\x44\x10\x08\x83\xe0\x04\x33\xd2\x0b\xc2\x75\x14\x3b\x0d\xcc\xae\xe6\x00\x74\x0c\x3b\x0d\xd0\xae\xe6\x00\x0f\x85\x95\x01\x00\x00", .target = @intFromPtr(&@import("force_request.zig").force_request_action_thunk) },
         .{ .address = 0x84bcfd, .expected = "\x85\xc0\x74\x30\x8b\x03", .target = @intFromPtr(&@import("force_request.zig").force_request_available_thunk) },
+        .{ .address = 0x84adc6, .expected = "\xf6\xc4\x01\x0f\x85\xc9\x04\x00\x00", .target = @intFromPtr(&@import("force_request.zig").force_release_expired_thunk) },
         .{ .address = 0x804aa5, .expected = "\x85\xc0\x0f\x85\x2d\x02\x00\x00", .target = @intFromPtr(&@import("tube_contact.zig").tube_hold_thunk) },
         .{ .address = 0x804b6a, .expected = "\x85\xc0\x75\x1c\x83\xbe\xd4\x02\x00\x00\x05\x75\x08\x39\x86\xdc\x02\x00\x00\x75\x0b", .target = @intFromPtr(&@import("tube_contact.zig").tube_entry_thunk) },
         .{ .address = 0x804b25, .expected = "\x84\xc0\x0f\x84\xac\x01\x00\x00", .target = @intFromPtr(&@import("tube_contact.zig").tube_search_thunk) },
@@ -110,6 +119,8 @@ pub fn patches() [52]hooks.Patch {
         .{ .address = 0x9b831c, .expected = "\xe8\xff\xc6\xe4\xff", .target = @intFromPtr(&@import("tube_contact.zig").tube_update_trace_thunk), .opcode = 0xe8 },
         .{ .address = 0x4518ba, .expected = "\xe8\x21\x68\x3a\x00", .target = @intFromPtr(&@import("force_query_observe.zig").force_query_observe_thunk), .opcode = 0xe8 },
         .{ .address = 0x9ddc19, .expected = "\x8b\x86\x64\x01\x00\x00", .target = @intFromPtr(&primary_perception_thunk) },
+        .{ .address = 0x899b48, .expected = "\x89\x86\xb8\x00\x00\x00\x85\xc0", .target = @intFromPtr(&script_attack_target_thunk) },
+        .{ .address = 0x9dde18, .expected = "\x8b\x86\x14\x0e\x00\x00", .target = @intFromPtr(&script_assigned_target_thunk) },
         .{ .address = 0x899ed0, .expected = "\xd9\x44\x24\x14\x8b\x44\x24\x0c", .target = @intFromPtr(&aim_base_input_thunk) },
         .{ .address = 0x963ca5, .expected = "\x80\x78\x42\x00\x75\x09", .target = @intFromPtr(&script_shoot_visibility_thunk) },
         .{ .address = 0x7da941, .expected = "\x8b\x46\x08\x85\xc0", .target = @intFromPtr(&spellit_prepare_thunk) },
@@ -144,4 +155,5 @@ comptime {
     asm (@import("spellit_admission_bridge.zig").code(1));
     asm (@import("spellit_admission_bridge.zig").managerCode(false));
     asm (@import("spellit_admission_bridge.zig").managerCode(true));
+    asm (@import("spellit_admission_bridge.zig").action100());
 }

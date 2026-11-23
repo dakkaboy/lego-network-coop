@@ -17,11 +17,13 @@ pub export var clonewars_physics_input_debug: [8]u32 = @splat(0);
 pub export var clonewars_physics_input_failure: [12]u32 = @splat(0);
 pub export var clonewars_physics_failure_local = std.mem.zeroes(p.SyncPhysicsChoice);
 pub export var clonewars_physics_failure_expected = std.mem.zeroes(p.SyncPhysicsChoice);
+pub export var clonewars_physics_failure_stack: [25]usize = @splat(0);
 pub export var clonewars_breakup_launch_correction: [8]u32 = @splat(0);
 extern fn geometry_frame_lease_get(*Lease) c_int;
 extern fn geometry_frame_cancelled(*const Lease) c_int;
 extern fn coherent_frame_valid(*const Token, u32) c_int;
 extern fn game_sync_native_fault(c_int) void;
+extern "kernel32" fn RtlCaptureStackBackTrace(u32, u32, [*]usize, ?*u32) callconv(.winapi) u16;
 extern fn entities_bind_native_reference(*const p.SyncActor, usize) c_int;
 extern fn entities_observed_identity(usize, *u32, *u32) c_int;
 pub fn live() bool {
@@ -50,6 +52,7 @@ pub fn fail(reason: u32, local: ?*const p.SyncPhysicsChoice, expected: ?*const p
         clonewars_physics_failure_expected = if (expected) |v| v.* else std.mem.zeroes(p.SyncPhysicsChoice);
         const values = [_]u32{ frame.?.epoch, frame.?.sequence, cursor, reason, if (local) |v| v.kind else 0, if (expected) |v| v.kind else 0, sourceWord(local), sourceWord(expected), clock(local), clock(expected), if (local) |v| v.site else 0, if (expected) |v| v.site else 0 };
         @memcpy(&clonewars_physics_input_failure, &values);
+        clonewars_physics_failure_stack[0] = RtlCaptureStackBackTrace(0, 24, @ptrCast(&clonewars_physics_failure_stack[1]), null);
     }
     clonewars_physics_input_debug[2] +%= 1;
     game_sync_native_fault(15);
@@ -106,6 +109,7 @@ pub export fn physics_input_begin(next: ?*p.SyncFrame, authority: c_int) c_int {
     if (host) f.physics_choice_count = 0;
     if (last_epoch != f.epoch) {
         @memset(&clonewars_physics_input_failure, 0);
+        @memset(&clonewars_physics_failure_stack, 0);
         @memset(&clonewars_breakup_launch_correction, 0);
         last_epoch = f.epoch;
     }
@@ -183,6 +187,15 @@ pub export fn physics_world_input(choice: ?*p.SyncPhysicsChoice, token: ?*const 
         return -1;
     }
     return sourceInput(choice, token);
+}
+
+pub fn skipResoluteHologramStep(choice: *const p.SyncPhysicsChoice, token: *const Token) bool {
+    if (host or failed or !live() or frame.?.level != 3 or !equal(token, &lease.cohort) or
+        choice.kind != p.SYNC_PHYSICS_SPELLIT_STEP or !validation.valid(choice)) return false;
+    for (frame.?.physics_choices[0..frame.?.physics_choice_count]) |entry| {
+        if (entry.kind == choice.kind and entry.payload.spellit_step.clock == choice.payload.spellit_step.clock) return false;
+    }
+    return true;
 }
 pub export fn physics_module_input(choice: ?*p.SyncPhysicsChoice, token: ?*const Token) c_int {
     if (!active) return 0;

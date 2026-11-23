@@ -297,7 +297,7 @@ fn perform(out: *Snapshot) void {
         14, 15 => {
             put(task + 4, component);
             if (mode == 15 and client) put(component, 0x880004);
-            ct.cadence_prepare_aim_base(task, wrapper, &out.delta);
+            _ = ct.cadence_prepare_aim_base(task, wrapper, &out.delta);
         },
         16, 17 => out.result = cf.cadence_force_target_visibility(actor, other, 3, @intFromBool(!client)),
         18, 19 => cf.cadence_force_geometry_input(actor, other, if (client and mode == 19) 4 else 3, &out.points),
@@ -409,7 +409,7 @@ fn jump(address: usize, target: usize) void {
 }
 fn installedHooks() void {
     const patches = @import("cadence_install.zig").patches();
-    check(@src(), patches.len == 52);
+    check(@src(), patches.len == 56);
     for (patches) |patch| {
         check(@src(), (patch.address & 0xffff) + patch.expected.len <= 0x10000);
         protect(patch.address & ~@as(usize, 0xffff), 0x10000, 0x40);
@@ -1248,6 +1248,34 @@ fn hiddenEnemyForceEligibility() void {
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
+fn ambushForceReleaseCountdown() void {
+    const expired = @import("force_request.zig").force_release_expired;
+    mode = 58;
+    setup();
+    frame.level = 7;
+    win.store(i16, actor + 0xdc0, 333);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    check(@src(), expired(actor, 0x100) == 0 and expired(actor, 0) == 1);
+    check(@src(), frame.fire_task_gate_count == 2);
+    for (frame.fire_task_gates[0..2]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), expired(actor, 0) == 0 and expired(actor, 0x100) == 1);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+}
+
 fn geonosisCompanionMotionOrder() void {
     mode = 58;
     setup();
@@ -1291,6 +1319,376 @@ fn geonosisCompanionMotionOrder() void {
     check(@src(), gate.apply(other, p.SYNC_ACTOR_RTS_COMPETITOR, 0, 0, 0, null, &debug) == 2 and s.fire_task_cursor == 0);
     check(@src(), gate.apply(actor, p.SYNC_ACTOR_RTS_COMPETITOR, 0, 0, 0, null, &debug) == 1);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+}
+
+fn blueShadowCloneMotionOrder(lab: bool) void {
+    mode = 58;
+    setup();
+    frame.level = if (lab) 73 else 70;
+    win.store(u16, other + 0xdc0, if (lab) 138 else 156);
+    if (lab) win.store(u16, actor + 0xdc0, 184);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    var debug: [4]u32 = @splat(0);
+    var query = std.mem.zeroes(p.SyncForceQueryState);
+    var geometry = std.mem.zeroes(p.SyncForceGeometryState);
+    var motion = std.mem.zeroes(p.SyncCharacterMotionState);
+    query.caster_slot = 7;
+    query.caster_generation = 1;
+    query.clock = 43;
+    geometry.caster_slot = query.caster_slot;
+    geometry.caster_generation = 1;
+    geometry.clock = query.clock;
+    motion.clock = query.clock;
+    var second_query = query;
+    second_query.mode = 2;
+    var admission = std.mem.zeroes(p.SyncFireTaskState);
+    admission.repeat = query.clock;
+    var spellit_query = std.mem.zeroes(p.SyncSpellItQueryState);
+    spellit_query.clock = query.clock;
+    motion.velocity[0] = 2;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    _ = gate.apply(other, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&query), &debug);
+    if (lab) {
+        _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 0, @ptrCast(&second_query), &debug);
+    } else {
+        _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_GEOMETRY, 0, 0, 0, @ptrCast(&geometry), &debug);
+    }
+    _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    if (lab) {
+        _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 1, @ptrCast(&admission), &debug);
+        _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 0, @ptrCast(&admission), &debug);
+        _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 1, @ptrCast(&spellit_query), &debug);
+    }
+    const gate_count: u32 = if (lab) 6 else 3;
+    check(@src(), frame.fire_task_gate_count == gate_count and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    motion.velocity[0] = 3;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), motion.velocity[0] == 2 and s.fire_task_cursor == 0);
+    if (lab) {
+        check(@src(), gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 0, @ptrCast(&admission), &debug) == 1);
+        check(@src(), gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 1, @ptrCast(&admission), &debug) == 0);
+        check(@src(), gate.apply(other, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&spellit_query), &debug) == 1 and s.fire_task_cursor == 0);
+    }
+    check(@src(), gate.apply(other, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 0, @ptrCast(&query), &debug) == 1);
+    if (lab) {
+        _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 0, @ptrCast(&second_query), &debug);
+    } else {
+        _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_GEOMETRY, 0, 0, 0, @ptrCast(&geometry), &debug);
+    }
+    check(@src(), s.fire_task_cursor == gate_count and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+
+    token.release += 1;
+    if (lab) {
+        frame.fire_task_gates[1].payload.force.clock += 1;
+    } else {
+        frame.fire_task_gates[1].payload.force_geometry.caster_generation = 2;
+    }
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
+    if (lab) {
+        fault = 0;
+        token.release += 1;
+        frame.fire_task_gates[1].payload.force.clock = query.clock;
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+        _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 0, @ptrCast(&admission), &debug);
+        check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
+    }
+}
+
+fn blueShadowDroidMotionOrder(character: u16, extra_motion: bool, scripted_target: bool) void {
+    mode = 58;
+    setup();
+    frame.level = 70;
+    win.store(u16, actor + 0xdc0, character);
+    win.store(u16, other + 0xdc0, 321);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    var debug: [4]u32 = @splat(0);
+    var motion = std.mem.zeroes(p.SyncCharacterMotionState);
+    motion.velocity[0] = 2;
+    const lead = if (scripted_target) p.SYNC_ACTOR_PRIMARY_PERCEPTION else p.SYNC_ACTOR_AIM_BASE;
+    const lead_flags = if (scripted_target) p.SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET else 0;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    _ = gate.apply(other, @intCast(lead), lead_flags, 0, 0, null, &debug);
+    _ = gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 1, null, &debug);
+    if (extra_motion) _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    const count: u32 = if (extra_motion) 4 else 3;
+    check(@src(), frame.fire_task_gate_count == count and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    motion.velocity[0] = 3;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), motion.velocity[0] == 2 and s.fire_task_cursor == 0);
+    _ = gate.apply(other, @intCast(lead), lead_flags, 0, 0, null, &debug);
+    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, null, &debug) == 1);
+    if (extra_motion) _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), s.fire_task_cursor == count);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+
+    token.release += 1;
+    if (scripted_target) {
+        frame.fire_task_gates[0].payload.perception.clock = 1;
+    } else if (character == 337) {
+        frame.fire_task_gates[0].payload.aim_base.clock = 1;
+    } else {
+        frame.fire_task_gates[1] = frame.fire_task_gates[count - 1];
+        frame.fire_task_gates[1].kind = p.SYNC_ACTOR_AIM_TASK;
+    }
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
+}
+
+fn blueShadowNativeOpponent(assigned: bool) void {
+    const select: *const fn (usize, usize) callconv(.c) usize = if (assigned) &cp.cadence_script_assigned_target else &cp.cadence_script_attack_target;
+    mode = 58;
+    setup();
+    frame.level = 70;
+    win.store(u16, actor + 0xdc0, 333);
+    win.store(u16, other + 0xdc0, 191);
+    win.store(u32, 0xfb4b6c, 102);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    check(@src(), select(actor, other) == other and select(actor, 0) == 0);
+    check(@src(), frame.fire_task_gate_count == 2 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+    const selected = &frame.fire_task_gates[0];
+    const flags = if (assigned) p.SYNC_PERCEPTION_SCRIPT_ASSIGNED_TARGET else p.SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET;
+    check(@src(), selected.kind == p.SYNC_ACTOR_PRIMARY_PERCEPTION and selected.flags == flags and selected.payload.perception.clock == 102);
+    check(@src(), selected.payload.perception.target_character == 191 and selected.payload.perception.target_generation == 19);
+
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), select(actor, 0) == other and select(actor, other) == 0);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+
+    token.release += 1;
+    win.store(u32, 0xfb4b6c, 103);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), select(actor, 0) == 0 and fault == 14);
+    check(@src(), ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = false;
+    token.release += 1;
+    put(0xfb4940, other);
+    put(0xfb4944, model);
+    win.store(u16, model + 0xdc0, 156);
+    win.store(u8, other + 0xdde, 0);
+    win.store(u8, model + 0xdde, 0);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    const before_revive: u32 = @intFromBool(assigned);
+    check(@src(), select(actor, other) == other and frame.fire_task_gate_count == before_revive);
+    win.store(u8, model + 0xdde, 1);
+    check(@src(), select(actor, model) == model and frame.fire_task_gate_count == before_revive + 1);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+}
+
+fn blueShadowReleasedAim() void {
+    mode = 59;
+    setup();
+    frame.level = 70;
+    win.store(u16, other + 0xdc0, 321);
+    put(other + 8, model);
+    put(other + 0x50, 0x18003);
+    put(task + 0x10, 0);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    ct.cadence_prepare_aim_task(other, task);
+    check(@src(), frame.fire_task_gate_count == 1 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    put(task + 0x10, actor);
+    put(other + 0xbdc, actor);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    ct.cadence_prepare_aim_task(other, task);
+    check(@src(), win.load(usize, task + 0x10) == 0 and win.load(usize, other + 0xbdc) == 0);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+
+    token.release += 1;
+    put(task + 0x10, actor);
+    put(other + 0xbdc, actor);
+    put(other + 0x50, 0x8003);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    ct.cadence_prepare_aim_task(other, task);
+    check(@src(), win.load(usize, task + 0x10) == actor and win.load(usize, other + 0xbdc) == actor);
+    check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
+}
+
+fn blueShadowRecordedAim() void {
+    mode = 59;
+    setup();
+    frame.level = 70;
+    win.store(u16, actor + 0xdc0, 191);
+    win.store(u8, actor + 0xdde, 4);
+    win.store(u16, other + 0xdc0, 321);
+    put(other + 8, model);
+    put(0xfb4940, actor);
+    put(task + 0x10, actor);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    ct.cadence_prepare_aim_task(other, task);
+    check(@src(), frame.fire_task_gate_count == 1 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    put(task + 0x10, 0);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    ct.cadence_prepare_aim_task(other, task);
+    check(@src(), win.load(usize, task + 0x10) == actor);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+
+    token.release += 1;
+    put(task + 0x10, 0);
+    frame.fire_task_gates[0].payload.aim.target_generation += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    ct.cadence_prepare_aim_task(other, task);
+    check(@src(), win.load(usize, task + 0x10) == 0 and fault == 14);
+    check(@src(), ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
+}
+
+fn blueShadowGuestOnlyAim(clone_dead: bool) void {
+    mode = 58;
+    setup();
+    frame.level = 70;
+    win.store(u16, actor + 0xdc0, 321);
+    win.store(u16, other + 0xdc0, 191);
+    win.store(u16, component + 0xdc0, 156);
+    win.store(u8, component + 0xdde, if (clone_dead) 0 else 4);
+    put(0xfb4940, other);
+    put(0xfb4944, component);
+    const last_target = if (clone_dead) 0 else component;
+    const target = if (clone_dead) other else component;
+    put(actor + 0xbdc, last_target);
+    put(task + 0x10, target);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    var debug: [4]u32 = @splat(0);
+    var delta: f32 = 0.015;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    if (clone_dead) _ = gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, null, &debug);
+    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, null, &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), ct.cadence_prepare_aim_base(task, wrapper, &delta) == 0 and s.fire_task_cursor == 0);
+    check(@src(), win.load(usize, task + 0x10) == target and win.load(usize, actor + 0xbdc) == last_target);
+    if (clone_dead) _ = gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, null, &debug);
+    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, null, &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+
+    token.release += 1;
+    win.store(u8, other + 0xdde, 4);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), ct.cadence_prepare_aim_base(task, wrapper, &delta) == 1 and fault == 14);
+    check(@src(), ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = false;
+    fault = 0;
+    token.release += 1;
+    win.store(u8, other + 0xdde, 0);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    check(@src(), ct.cadence_prepare_aim_base(task, wrapper, &delta) == 1 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), ct.cadence_prepare_aim_base(task, wrapper, &delta) == 1 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+}
+
+fn droidAimOrder(level: i32) void {
+    mode = 58;
+    setup();
+    frame.level = level;
+    win.store(i16, actor + 0xdc0, 333);
+    win.store(i16, other + 0xdc0, 321);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    var debug: [4]u32 = @splat(0);
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    _ = gate.apply(actor, p.SYNC_ACTOR_AIM_BASE, 0, 0, 3, null, &debug);
+    _ = gate.apply(actor, p.SYNC_ACTOR_AIM_TASK, 0, 0, 4, null, &debug);
+    _ = gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 5, null, &debug);
+    _ = gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 6, null, &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, null, &debug) == 5);
+    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, null, &debug) == 6 and s.fire_task_cursor == 0);
+    check(@src(), gate.apply(actor, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, null, &debug) == 3);
+    check(@src(), gate.apply(actor, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, null, &debug) == 4 and s.fire_task_cursor == 4);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, null, &debug) == 0 and fault == 14);
+    check(@src(), ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 }
 
 fn geonosisGuestForceScan() void {
@@ -1387,6 +1785,7 @@ pub fn main() void {
     rylothFighterDeath();
     geonosisVehicleDeath();
     hiddenEnemyForceEligibility();
+    ambushForceReleaseCountdown();
     geonosisGuestForceScan();
 }
 fn arenaRunRandomAbi() void {
@@ -1524,4 +1923,18 @@ fn arenaRunRandomChecks() void {
         check(@src(), ci.cadence_abort_frame(&lease) != 0);
     }
     geonosisCompanionMotionOrder();
+    blueShadowCloneMotionOrder(false);
+    blueShadowCloneMotionOrder(true);
+    blueShadowNativeOpponent(false);
+    blueShadowNativeOpponent(true);
+    blueShadowDroidMotionOrder(321, false, false);
+    blueShadowDroidMotionOrder(333, true, false);
+    blueShadowDroidMotionOrder(337, true, false);
+    blueShadowDroidMotionOrder(333, false, true);
+    blueShadowReleasedAim();
+    blueShadowRecordedAim();
+    blueShadowGuestOnlyAim(false);
+    blueShadowGuestOnlyAim(true);
+    droidAimOrder(29);
+    droidAimOrder(70);
 }

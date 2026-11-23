@@ -173,7 +173,7 @@ fn primaryCall() usize {
     return @as(Primary, @ptrFromInt(0x44e4a8))(manager_root, 0, actor, @intFromPtr(origin), @intFromPtr(transform), @intFromPtr(weapon), 0, 0);
 }
 fn nativeCreation(manager: usize, owner: usize, o: usize, tr: usize, w: usize, flags: u32, x: usize) usize {
-    const turret = frame.level == 79;
+    const turret = frame.level == 79 or frame.level == 24;
     const expected_weapon = if (turret) frame.shots[0].weapon else 7;
     check(@src(), manager == manager_root and owner == actor and w != 0 and win.load(i8, w) == expected_weapon and flags == (if (turret) @as(u32, 0x800) else 0) and x == 0 and win.load(f32, o) == 1 and win.load(f32, tr) == 1);
     native_calls += 1;
@@ -431,7 +431,7 @@ fn run(host: bool) Snapshot {
         frame.projectile_retire_count = 1;
         frame.projectile_retires[0] = .{ .id = 1, .flags = 0, .effects = 0, .caller = 0x85ba24 };
     }
-    if (mode >= 26 and mode <= 33) {
+    if ((mode >= 26 and mode <= 33) or mode == 36) {
         for (0..2) |i| {
             win.store(f32, object(i) + 0xa4, @floatFromInt(1 + i));
             win.store(f32, object(i) + 0x13c, 0.5);
@@ -443,11 +443,13 @@ fn run(host: bool) Snapshot {
         }
         if (mode == 28) put(object(0) + 8, 1001);
         if (mode == 29) put(object(0) + 0x14, resource(1));
+        if (mode == 36) put(object(0) + 8, 0);
         if (!host) {
             frame.combat_ready = 1;
-            frame.projectile_count = if (mode == 30 or mode == 33) 1 else 2;
+            const first_retired = mode == 30 or mode == 33 or mode == 36;
+            frame.projectile_count = if (first_retired) 1 else 2;
             for (frame.projectiles[0..frame.projectile_count], 0..) |*state, i| {
-                state.id = @intCast(if (mode == 30 or mode == 33) 2 else i + 1);
+                state.id = @intCast(if (first_retired) 2 else i + 1);
                 state.position = .{ @floatFromInt(11 + i), 12, 13 };
                 state.transform[0] = 9;
                 state.flight[8] = 0.5;
@@ -496,7 +498,7 @@ fn run(host: bool) Snapshot {
         begin();
         out.dispatch_pending = lifecycle.projectiles_dispatch_pending();
         out.dispatch_complete = lifecycle.projectiles_dispatch_complete();
-    } else if (mode >= 26 and mode <= 33) {
+    } else if ((mode >= 26 and mode <= 33) or mode == 36) {
         out.dispatch_pending = lifecycle.projectiles_dispatch_pending();
         out.dispatch_complete = lifecycle.projectiles_dispatch_complete();
         if (mode == 33) out.dispatch_pending = lifecycle.projectiles_dispatch_pending();
@@ -611,12 +613,12 @@ fn installedHooks() void {
     check(@src(), lifecycle.projectiles_finish() != 0 and control.projectiles_frame_lease_get(&captured) != 0 and control.projectiles_abort_frame(&captured) != 0);
     use_launch_bridges = false;
 }
-fn replayMissingTurretShot(weapon_id: i32, retired_locally: bool) void {
+fn replayMissingTurretShot(level: i32, weapon_id: i32, retired_locally: bool) void {
     mode = 10;
     setup(false);
-    session.level = 79;
-    lease.level = 79;
-    frame.level = 79;
+    session.level = level;
+    lease.level = level;
+    frame.level = level;
     win.store(u16, actor + 0xdc0, 466);
     frame.combat_ready = 1;
     frame.shot_count = 1;
@@ -633,7 +635,7 @@ fn replayMissingTurretShot(weapon_id: i32, retired_locally: bool) void {
     begin();
     if (retired_locally) s.tracked[0] = .{ .birth = frame.shots[0], .object = 0, .resource = resource(0), .native_stamp = 1000 };
     weapon.* = if (weapon_id == 31) 29 else 31;
-    _ = @as(Primary, @ptrFromInt(0x44e4a8))(manager_root, 0, actor, @intFromPtr(origin), @intFromPtr(transform), @intFromPtr(weapon), 0x800, 0);
+    if (level == 79) _ = @as(Primary, @ptrFromInt(0x44e4a8))(manager_root, 0, actor, @intFromPtr(origin), @intFromPtr(transform), @intFromPtr(weapon), 0x800, 0);
     check(@src(), native_calls == 0 and lifecycle.projectiles_dispatch_pending() == 1);
     check(@src(), lifecycle.projectiles_dispatch_complete() != 0 and native_calls == 1);
     check(@src(), tracking.find(9) != null and win.load(u32, 0xe637b4) == 234 and win.load(u32, 0xea178c) == 123);
@@ -677,8 +679,16 @@ pub fn main() void {
         if (mode == 33 and !host) check(@src(), out.dispatch_pending == 1 and out.finish == 0);
         if (mode == 34 or mode == 35) check(@src(), out.rejections != 0 and out.remove_calls == 0);
     }
-    replayMissingTurretShot(31, false);
-    replayMissingTurretShot(29, false);
-    replayMissingTurretShot(29, true);
+    mode = 36;
+    for ([_]bool{ true, false }) |host| {
+        const out = run(host);
+        check(@src(), out.finish != 0 and out.failure_committed == 0);
+        check(@src(), out.projectile_count == 1 and out.projectiles[0].id == 2);
+        check(@src(), out.tracked[0].birth.id == 0 and out.tracked[1].birth.id == 2 and out.remove_calls == 0);
+    }
+    replayMissingTurretShot(79, 31, false);
+    replayMissingTurretShot(79, 29, false);
+    replayMissingTurretShot(79, 29, true);
+    replayMissingTurretShot(24, 31, false);
     installedHooks();
 }

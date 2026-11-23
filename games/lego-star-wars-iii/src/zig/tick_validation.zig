@@ -132,6 +132,10 @@ pub fn gateValid(gate: p.SyncTickGate) bool {
         s.ZILLO_GROUND_RENDER + 4 => value >= 1 and value <= 3,
         s.ZILLO_GROUND_RENDER + 5 => value <= 1,
         s.PACK_BEHAVIOR_TARGET...s.PACK_BEHAVIOR_TARGET + 3 => finite(value),
+        s.PACK_BEHAVIOR_FORMATION, s.PACK_BEHAVIOR_TURN => value <= 0xffff,
+        s.PACK_BEHAVIOR_TURN + 1 => value <= 1,
+        s.PACK_BEHAVIOR_MARCH...s.PACK_BEHAVIOR_MARCH + 4 => finite(value),
+        s.PACK_BEHAVIOR_MARCH + 5 => value <= 1,
         s.PACK_BEHAVIOR => value < 65535,
         s.PACK_BEHAVIOR + 1 => true,
         s.PACK_BEHAVIOR + 2 => value == 0 or (value >= 0x400000 and value < 0x1200000 and value & 3 == 0),
@@ -206,6 +210,18 @@ pub fn streamValid(gates: []const p.SyncTickGate) bool {
                 if (!matches(gates[i + count ..], &s.pack_behavior_target_sites) or gates[i + count].clock != gate.clock) return false;
                 count += s.pack_behavior_target_sites.len;
             }
+            if (gate.site == s.PACK_BEHAVIOR and gates[i + 2].value == s.pack_behavior_formation_class) {
+                if (!matches(gates[i + count ..], &.{s.PACK_BEHAVIOR_FORMATION}) or gates[i + count].clock != gate.clock) return false;
+                count += 1;
+            }
+            if (gate.site == s.PACK_BEHAVIOR and gates[i + 2].value == s.pack_behavior_turn_class) {
+                if (!matches(gates[i + count ..], &s.pack_behavior_turn_sites) or gates[i + count].clock != gate.clock) return false;
+                count += s.pack_behavior_turn_sites.len;
+            }
+            if (gate.site == s.PACK_BEHAVIOR and gates[i + 2].value == s.pack_behavior_march_class) {
+                if (!matches(gates[i + count ..], &s.pack_behavior_march_sites) or gates[i + count].clock != gate.clock) return false;
+                count += s.pack_behavior_march_sites.len;
+            }
             if (gate.site == s.PACK_MODE_MEMBER and gates[i + 2].value & 0xff == 9) {
                 if (!matches(gates[i + count ..], &death_sites) or gates[i + count].clock != gate.clock) return false;
                 count += death_sites.len;
@@ -220,7 +236,7 @@ pub fn streamValid(gates: []const p.SyncTickGate) bool {
             continue :next;
         };
         if ((gate.site >= s.PACK_FIRE_TARGET and gate.site < s.PACK_FIRE_TARGET + s.PACK_FIRE_FIELDS) or contains(&coefficients, gate.site) or contains(&death_sites, gate.site) or contains(&hit_sites, gate.site -% 5)) return false;
-        if (contains(&s.pack_behavior_target_sites, gate.site)) return false;
+        if (contains(&s.pack_behavior_target_sites, gate.site) or contains(&s.pack_behavior_turn_sites, gate.site) or contains(&s.pack_behavior_march_sites, gate.site) or gate.site == s.PACK_BEHAVIOR_FORMATION) return false;
         for (groups) |group| if (contains(group[1..], gate.site)) return false;
         i += 1;
     }

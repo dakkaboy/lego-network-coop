@@ -1,5 +1,5 @@
 const std = @import("std");
-pub const names = [_][]const u8{ "cadence_period_thunk", "fire_task_gate_thunk", "attack_support_thunk", "breakup_visibility_thunk", "death_breakup_thunk", "fall_visibility_thunk", "aim_task_input_thunk", "aim_task_visibility_thunk", "script_shoot_visibility_thunk", "rts_competitor_input_thunk", "aim_base_input_thunk", "force_target_visibility_thunk", "force_geometry_input_thunk", "spellit_node_thunk", "spellit_prepare_thunk", "spellit_first_heading_thunk", "spellit_second_heading_thunk", "spellit_height_thunk", "spellit_position_thunk", "character_motion_thunk", "primary_perception_thunk" };
+pub const names = [_][]const u8{ "cadence_period_thunk", "fire_task_gate_thunk", "attack_support_thunk", "breakup_visibility_thunk", "death_breakup_thunk", "fall_visibility_thunk", "aim_task_input_thunk", "aim_task_visibility_thunk", "script_shoot_visibility_thunk", "rts_competitor_input_thunk", "aim_base_input_thunk", "force_target_visibility_thunk", "force_geometry_input_thunk", "spellit_node_thunk", "spellit_prepare_thunk", "spellit_first_heading_thunk", "spellit_second_heading_thunk", "spellit_height_thunk", "spellit_position_thunk", "character_motion_thunk", "primary_perception_thunk", "script_attack_target_thunk", "script_assigned_target_thunk" };
 pub fn code(comptime name: []const u8) []const u8 {
     if (std.mem.eql(u8, name, "cadence_period_thunk")) return
     \\.text
@@ -356,12 +356,18 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\    call _cadence_prepare_aim_base
     \\    addl $16,%esp
     \\    fxrstor (%esp)
+    \\    testl %eax,%eax
     \\    movl 512(%esp),%esp
+    \\    jz 1f
     \\    popal
     \\    popfl
     \\    flds 0x14(%esp)
     \\    movl 0xc(%esp),%eax
     \\    jmp *_aim_base_input_resume
+    \\1:
+    \\    popal
+    \\    popfl
+    \\    ret $0x14
     ;
     if (std.mem.eql(u8, name, "force_target_visibility_thunk")) return
     \\.text
@@ -720,6 +726,69 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\    popfl
     \\    movl 0x164(%esi),%eax
     \\    jmp *_primary_perception_resume
+    ;
+    if (std.mem.eql(u8, name, "script_attack_target_thunk")) return
+    \\.text
+    \\.globl _script_attack_target_thunk
+    \\_script_attack_target_thunk:
+    \\    pushfl
+    \\    pushal
+    \\    movl %esp,%edx
+    \\    subl $544,%esp
+    \\    andl $-16,%esp
+    \\    movl %edx,512(%esp)
+    \\    fxsave (%esp)
+    \\    fninit
+    \\    movl $0x1f80,516(%esp)
+    \\    ldmxcsr 516(%esp)
+    \\    subl $8,%esp
+    \\    pushl 28(%edx)
+    \\    pushl 44(%edx)
+    \\    cld
+    \\    call _cadence_script_attack_target
+    \\    addl $16,%esp
+    \\    movl 512(%esp),%edx
+    \\    movl %eax,28(%edx)
+    \\    fxrstor (%esp)
+    \\    movl %edx,%esp
+    \\    popal
+    \\    popfl
+    \\    movl %eax,0xb8(%esi)
+    \\    testl %eax,%eax
+    \\    jmp *_script_attack_target_resume
+    ;
+    if (std.mem.eql(u8, name, "script_assigned_target_thunk")) return
+    \\.text
+    \\.globl _script_assigned_target_thunk
+    \\_script_assigned_target_thunk:
+    \\    movl 0xe14(%esi),%eax
+    \\    pushfl
+    \\    pushal
+    \\    movl %esp,%edx
+    \\    subl $544,%esp
+    \\    andl $-16,%esp
+    \\    movl %edx,512(%esp)
+    \\    fxsave (%esp)
+    \\    fninit
+    \\    movl $0x1f80,516(%esp)
+    \\    ldmxcsr 516(%esp)
+    \\    subl $8,%esp
+    \\    pushl 28(%edx)
+    \\    pushl 4(%edx)
+    \\    cld
+    \\    call _cadence_script_assigned_target
+    \\    addl $16,%esp
+    \\    movl 512(%esp),%edx
+    \\    movl %eax,28(%edx)
+    \\    fxrstor (%esp)
+    \\    movl %edx,%esp
+    \\    popal
+    \\    popfl
+    \\    cmpl %eax,0xe14(%esi)
+    \\    je 1f
+    \\    movl %eax,0xe14(%esi)
+    \\1:
+    \\    jmp *_script_assigned_target_resume
     ;
     @compileError("Unknown cadence bridge");
 }

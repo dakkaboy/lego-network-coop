@@ -16,6 +16,19 @@ extern fn model_input_journal_validate(*t.Journal, ?*const p.SyncModelInput, c_i
 fn hiddenEnemyMotionAction(action: u32) bool {
     return action == 0xffff or action == 1 or action == 10;
 }
+fn resolveInput(entry: *const p.SyncModelInput) usize {
+    var reference = std.mem.zeroes(p.SyncActor);
+    reference.slot = entry.slot;
+    reference.generation = entry.generation;
+    reference.spawn_tag = entry.spawn_tag;
+    reference.spawn_source = entry.spawn_source;
+    reference.character = entry.character;
+    reference.spawn_position = entry.origin;
+    return entities_resolve_reference(&reference);
+}
+fn combatDroid(level: i32, character: i32) bool {
+    return character == 321 or character == 333 or (level == 70 and character == 337);
+}
 pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) void {
     var op: t.Lease = undefined;
     const s = state.qualified(&op) orelse return;
@@ -72,17 +85,29 @@ pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) voi
         state.clonewars_model_input_debug[0] +%= 1;
     } else {
         entry = state.journal.peek();
-        var reference = std.mem.zeroes(p.SyncActor);
-        if (entry) |e| {
-            reference.slot = e.slot;
-            reference.generation = e.generation;
-            reference.spawn_tag = e.spawn_tag;
-            reference.spawn_source = e.spawn_source;
-            reference.character = e.character;
-            reference.spawn_position = e.origin;
-        }
-        const resolved = if (entry != null) entities_resolve_reference(&reference) else 0;
+        var resolved = if (entry) |e| resolveInput(e) else 0;
         if (!state.live(&op) or state.scope != s) return;
+        var replay = state.journal;
+        const frame = replay.frame.?;
+        if (entry) |head| {
+            if ((frame.level == 29 or frame.level == 70) and resolved != actor and combatDroid(frame.level, local.character) and
+                combatDroid(frame.level, head.character) and head.native_clock == local.native_clock)
+            {
+                var i = replay.cursor + 1;
+                while (i < frame.model_input_count) : (i += 1) {
+                    const candidate = &frame.model_inputs[i];
+                    if (!combatDroid(frame.level, candidate.character) or candidate.native_clock != local.native_clock) break;
+                    if (state.early_entries.isSet(i)) continue;
+                    const owner = resolveInput(candidate);
+                    if (!state.live(&op) or state.scope != s) return;
+                    if (owner != actor) continue;
+                    replay.cursor = i;
+                    entry = candidate;
+                    resolved = owner;
+                    break;
+                }
+            }
+        }
         local.slot = if (entry) |e| e.slot else std.math.maxInt(u32);
         local.generation = entities_observed_generation(actor);
         raw = local;
@@ -107,11 +132,17 @@ pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) voi
                 local.context.model_42 = e.context.model_42;
             }
         }
-        if (model_input_journal_validate(&state.journal, entry, @intFromBool(entry != null and resolved == actor), &local) == 0) {
-            state.failed(&op, actor, entry, &raw, @bitCast(state.journal.failed));
+        if (model_input_journal_validate(&replay, entry, @intFromBool(entry != null and resolved == actor), &local) == 0) {
+            state.failed(&op, actor, entry, &raw, @bitCast(replay.failed));
             return;
         }
-        s.ordinal = state.journal.cursor - 1;
+        s.ordinal = replay.cursor - 1;
+        if (s.ordinal == state.journal.cursor) {
+            state.journal.cursor = replay.cursor;
+            while (state.journal.cursor < frame.model_input_count and state.early_entries.isSet(state.journal.cursor)) state.journal.cursor += 1;
+        } else {
+            state.early_entries.set(s.ordinal);
+        }
         state.clonewars_model_input_debug[1] +%= 1;
     }
     if (!state.live(&op) or state.scope != s) return;

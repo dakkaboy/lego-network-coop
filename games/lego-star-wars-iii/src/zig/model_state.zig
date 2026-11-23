@@ -4,6 +4,7 @@ const win = @import("win32.zig");
 const t = @import("model_types.zig");
 const Token = @import("cohort_types.zig").Token;
 pub var journal = std.mem.zeroes(t.Journal);
+pub var early_entries: std.StaticBitSet(@typeInfo(@FieldType(p.SyncFrame, "model_inputs")).array.len) = .empty;
 pub var binding: @import("cohort_binding.zig").Binding = .{};
 pub var active = false;
 pub var initialized_serial: u32 = 0;

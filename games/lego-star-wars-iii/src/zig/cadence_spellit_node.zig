@@ -5,12 +5,14 @@ const gate = @import("cadence_gate.zig");
 const equal = @import("validation.zig").equal;
 const read = s.read;
 const Poi = @import("identity_types.zig").AuthoredPoi;
+const Reader = @import("memory_reader.zig").Reader;
 const Resource = @import("identity_types.zig").ResourceIdentity;
 const Witness = extern struct { epoch: u32, source: Resource };
 extern fn native_authored_poi_resolve(usize, *Poi) c_int;
 extern fn native_authored_poi_revalidate(*const Poi) c_int;
 extern fn native_resource_identity_resolve(usize, usize, *Resource) c_int;
 extern fn entities_allocation_live(usize, u32) c_int;
+const name_seed = [4]u32{ 2166136261, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35 };
 fn nameKey(name: usize, key: *[4]u32) bool {
     if (name == 0) return false;
     var length: usize = 0;
@@ -26,6 +28,21 @@ fn nameKey(name: usize, key: *[4]u32) bool {
         }
     }
     return false;
+}
+fn uniqueAuthoredName(witness: *const Poi, selected: usize, name: *const [4]u32) bool {
+    var reader = Reader.init();
+    if (!reader.readable(witness.array, @as(usize, witness.poi_count) * 0xe0) or !reader.readable(selected, 4)) return false;
+    const prefix = read(u32, selected);
+    for (0..witness.poi_count) |ordinal| {
+        if (ordinal == witness.poi_ordinal) continue;
+        const other = read(usize, witness.array + ordinal * 0xe0 + 0xb4);
+        if (other == 0) continue;
+        if (!reader.readable(other, 4)) return false;
+        if (read(u32, other) != prefix) continue;
+        var key = name_seed;
+        if (nameKey(other, &key) and equal(name, &key)) return false;
+    }
+    return true;
 }
 fn resourceKey(op: *const s.Lease, resource: usize, key: *[4]u32, witness: *Witness) bool {
     var source: Resource = undefined;
@@ -58,6 +75,14 @@ pub export fn cadence_spellit_node(frame: usize, gizmo: usize, node: usize, posi
         poi = read(usize, receiver + 0x30);
         reason = 4;
         if (native_authored_poi_resolve(entity, &witness) == 0 or witness.receiver != receiver or !s.live(&op)) break :input;
+        // The native SpellIt query rejects nodes more than one unit above or below the actor.
+        // Resolute contains extra off-floor nodes whose registration order depends on the local load.
+        if (s.journal.frame.?.level == 3 and std.math.isFinite(position[1]) and
+            @abs(position[1] - scope.input.position[1]) > 1.001)
+        {
+            scope.node_visit +%= 1;
+            return;
+        }
         resource = witness.resource;
         poi = witness.poi;
         runtime = witness.runtime;
@@ -77,9 +102,16 @@ pub export fn cadence_spellit_node(frame: usize, gizmo: usize, node: usize, posi
         state.component_class = s.imageClass(read(usize, component), true) orelse break :input;
         if (!resourceKey(&op, resource, &state.resource_name, &resource_witness)) break :input;
         reason = 6;
-        var name: [4]u32 = .{ 2166136261, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35 };
-        if (!nameKey(read(usize, poi + 0xb4), &name) or name[0] == 0) break :input;
+        var name = name_seed;
+        const poi_name = read(usize, poi + 0xb4);
+        if (!nameKey(poi_name, &name) or name[0] == 0) break :input;
         state.poi_name = name[0];
+        // Resolute adds character archives to its local POI table in load order.
+        const stable_name = s.journal.frame.?.level == 3 and uniqueAuthoredName(&witness, poi_name, &name);
+        if (stable_name) {
+            state.poi_ordinal = 0;
+            state.poi_count = 1;
+        }
         var current = read(usize, scope.manager + 0x24);
         reason = 7;
         while (current != gizmo and state.gizmo_ordinal < 65536) {
@@ -88,11 +120,28 @@ pub export fn cadence_spellit_node(frame: usize, gizmo: usize, node: usize, posi
             state.gizmo_ordinal += 1;
         }
         if (current != gizmo or state.gizmo_ordinal >= 65536 or state.node_ordinal >= 65536 or !s.live(&op) or native_authored_poi_revalidate(&witness) == 0) break :input;
+        if (stable_name) {
+            state.node_ordinal = 0;
+            state.gizmo_ordinal = 0;
+        }
         state.position = position.*;
         reason = 8;
         if (!@import("validation.zig").finite(state.position)) break :input;
         const local = state;
-        _ = gate.apply(scope.actor, p.SYNC_ACTOR_SPELLIT_NODE, 0, 0, 0, @ptrCast(&state), &s.clonewars_spellit_node_debug);
+        const replay = if (stable_name and s.journal.host == 0)
+            gate.replayResoluteSpellItNode(scope, &state, &s.clonewars_spellit_node_debug)
+        else
+            .mismatch;
+        switch (replay) {
+            .matched => {},
+            .absent => {
+                // Exclude a guest-only query candidate through the native height check.
+                position[1] = scope.input.position[1] + 2;
+                scope.node_visit +%= 1;
+                return;
+            },
+            .mismatch => _ = gate.apply(scope.actor, p.SYNC_ACTOR_SPELLIT_NODE, 0, 0, 0, @ptrCast(&state), &s.clonewars_spellit_node_debug),
+        }
         if (!s.live(&op) or !s.active or s.journal.failed != 0) return;
         scope.node_visit +%= 1;
         if (s.journal.host == 0) {

@@ -265,13 +265,14 @@ pub export fn projectiles_dispatch_complete() c_int {
             const instance = s.instance_serial[index];
             const object = entry.object;
             const resource = entry.resource;
+            const stamp = entry.native_stamp;
             var call = std.mem.zeroes(removal.Call);
             call.op = op;
             call.manager = s.read(usize, manager + 0x38);
             call.object = object;
             if (s.valid(object, 0x210)) {
                 if (!control.live(&op)) return 0;
-                if (s.read(usize, object + 0x14) == resource) _ = removal.observed(&call, 1);
+                if (s.read(usize, object + 0x14) == resource and s.read(u32, object + 8) == stamp) _ = removal.observed(&call, 1);
             }
             if (!control.live(&op)) return 0;
             if (entry.birth.id == id and s.instance_serial[index] == instance) entry.* = std.mem.zeroes(t.Tracked);
@@ -299,7 +300,8 @@ pub export fn projectiles_finish() c_int {
                 continue;
             }
             if (!control.live(&op)) return 0;
-            if (s.read(usize, entry.object + 0x14) != entry.resource) {
+            // A native world transition can clear the stamp while the resource pointer remains.
+            if (s.read(usize, entry.object + 0x14) != entry.resource or (entry.native_stamp != 0 and s.read(u32, entry.object + 8) == 0)) {
                 entry.* = std.mem.zeroes(t.Tracked);
                 continue;
             }

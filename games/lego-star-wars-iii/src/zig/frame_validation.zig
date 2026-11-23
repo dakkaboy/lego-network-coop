@@ -60,7 +60,9 @@ pub fn valid(f: *const p.SyncFrame, bytes: u32) bool {
     const timers = f.spawn_timers[0..f.spawn_timer_count];
     if (!ordered(timers, "id")) return false;
     for (timers) |timer| if (timer.id == 0 or timer.type == 0 or !v.finite(timer.remaining)) return false;
-    for (f.fire_task_gates[0..f.fire_task_gate_count]) |*gate| if (!fire.valid(gate)) return false;
+    for (f.fire_task_gates[0..f.fire_task_gate_count]) |*gate| {
+        if (!fire.valid(gate) or (gate.kind == p.SYNC_ACTOR_PRIMARY_PERCEPTION and gate.flags != 0 and f.level != 70)) return false;
+    }
     var party: u32 = 0;
     for (f.dormant_party, 0..) |member, i| {
         if (member > 4096) return false;

@@ -334,7 +334,7 @@ fn run() Snapshot {
             out.result = s.physics_world_input(&input, &current.cohort);
         }
     } else if (mode < 18) {
-        e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, 0);
+        _ = e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, 0);
         if (mode != 10) {
             client();
             put(0xe637b4, 999);
@@ -347,7 +347,7 @@ fn run() Snapshot {
             if (mode == 15) frame.physics_choices[1].payload.breakup_basis.matrix[0] = std.math.nan(f32);
             if (mode == 16) win.store(u8, descriptor + 0x2c, 0);
             if (mode == 17) cancelled = true;
-            e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, 0);
+            _ = e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, 0);
         }
     } else if (mode < 23) {
         input = std.mem.zeroes(p.SyncPhysicsChoice);
@@ -589,11 +589,11 @@ pub fn main() void {
     const native_frame = [4]usize{ 0, 0x54ef4d, 0, descriptor };
     put(descriptor + 4, 0x1d76ce00);
     check(@src(), s.physics_input_begin(frame, 1) != 0);
-    e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, @intFromPtr(&native_frame));
+    _ = e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, @intFromPtr(&native_frame));
     check(@src(), frame.physics_choice_count == 3 and frame.physics_choices[0].site == 0x54ef4d);
     client();
     put(descriptor + 4, 0x1da3ee00);
-    e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, @intFromPtr(&native_frame));
+    _ = e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, @intFromPtr(&native_frame));
     check(@src(), s.physics_input_finish() != 0 and win.load(u32, descriptor + 4) == 0x1da3ee00);
     s.physics_input_cancel();
     setup();
@@ -618,6 +618,66 @@ pub fn main() void {
     check(@src(), evictionCandidate(pool) == 0);
     s.physics_input_cancel();
     effectRestTests();
+    geonosisBreakupTests();
+}
+
+fn geonosisBreakup() c_int {
+    const native_frame = [5]usize{ 0, 0x54ef4d, 0, descriptor, 0 };
+    return e.physics_apply_breakup_launch(descriptor, handle, @intFromPtr(matrix), @intFromPtr(scale), 0, @intFromPtr(&native_frame));
+}
+fn prepareGeonosisDebris(index: usize, mesh_name: *const [8]u8) void {
+    const runtime = resource + 0x780;
+    const mesh = body + index * 0xe0;
+    @memcpy(bytes(name, mesh_name.len), mesh_name);
+    put(handle, resource);
+    put(handle + 4, mesh);
+    put(resource + 0x6f8, runtime);
+    put(runtime + 0x68, 17);
+    put(runtime + 0x6c, body);
+    put(mesh + 0xb4, name);
+    put(descriptor, 1);
+    win.store(u8, descriptor + 0x2d, 1);
+}
+fn geonosisBreakupTests() void {
+    mode = 313;
+    setup();
+    frame.level = 79;
+    prepareGeonosisDebris(12, "tt41_31\x00");
+    e.clonewars_geonosis_breakup_suppressed = @splat(0);
+    check(@src(), s.physics_input_begin(frame, 1) != 0);
+    client();
+    win.SetLastError(1234);
+    check(@src(), geonosisBreakup() == 1);
+    prepareGeonosisDebris(11, "tt41_32\x00");
+    check(@src(), geonosisBreakup() == 1 and fault == 0 and s.cursor == 0 and s.physics_input_finish() != 0);
+    check(@src(), win.GetLastError() == 1234 and e.clonewars_geonosis_breakup_suppressed[3] == 2);
+    s.physics_input_cancel();
+
+    check(@src(), s.physics_input_begin(frame, 1) != 0);
+    check(@src(), geonosisBreakup() == 0 and frame.physics_choice_count == 3);
+    client();
+    check(@src(), geonosisBreakup() == 0 and fault == 0 and s.physics_input_finish() != 0);
+    s.physics_input_cancel();
+
+    for (0..4) |variant| {
+        setup();
+        frame.level = if (variant == 1) 78 else 79;
+        prepareGeonosisDebris(if (variant == 3) 10 else 11, if (variant == 2) "fixture\x00" else "tt41_32\x00");
+        check(@src(), s.physics_input_begin(frame, 1) != 0);
+        if (variant == 0) {
+            win.SetLastError(1234);
+            check(@src(), geonosisBreakup() == 0 and frame.physics_choice_count == 3);
+            const choices = frame.physics_choices[0..3].*;
+            frame.physics_choices[1..4].* = choices;
+            frame.physics_choices[0] = sourceChoice(0);
+            frame.physics_choice_count = 4;
+        }
+        client();
+        win.SetLastError(1234);
+        check(@src(), geonosisBreakup() == 0 and fault == 15 and s.physics_input_finish() == 0);
+        check(@src(), e.clonewars_geonosis_breakup_suppressed[3] == 2);
+        s.physics_input_cancel();
+    }
 }
 
 fn effectRestTests() void {

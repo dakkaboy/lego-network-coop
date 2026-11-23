@@ -8,6 +8,32 @@ fn reject(op: *const s.Lease, actor: usize, reason: u32) void {
     s.journal.failed = @bitCast(reason);
     s.failed(op, actor, null, reason);
 }
+fn blueShadowAimTarget(actor: usize, target: usize, input: *p.SyncAimTaskState) ?usize {
+    const frame = s.journal.frame.?;
+    if (frame.level != 70 or read(u16, actor + 0xdc0) != 321 or s.fire_task_cursor >= frame.fire_task_gate_count) return null;
+    const expected = &frame.fire_task_gates[s.fire_task_cursor];
+    const aim = &expected.payload.aim;
+    if (expected.kind != p.SYNC_ACTOR_AIM_TASK or expected.character != 321 or aim.target_slot != 0 or
+        (input.target_slot == aim.target_slot and input.target_generation == aim.target_generation)) return null;
+    var reconciled = input.*;
+    reconciled.target_slot = aim.target_slot;
+    reconciled.target_generation = aim.target_generation;
+    if (!@import("cadence_context.zig").aim(aim, &reconciled)) return null;
+    const last_target = read(usize, actor + 0xbdc);
+    if (aim.target_generation == 0) {
+        if (input.target_slot != 0 or input.target_generation == 0 or read(u32, actor + 0x50) & 0x10000 == 0 or last_target != target) return null;
+        input.* = reconciled;
+        return 0;
+    }
+    const ahsoka = read(usize, 0xfb4940);
+    if (last_target != 0 or target == ahsoka or (target != 0 and target != read(usize, 0xfb4944)) or
+        !s.valid(ahsoka, 0x1440) or read(u16, ahsoka + 0xdc0) != 191 or read(u8, ahsoka + 0xdde) == 0) return null;
+    var slot: u32 = 0;
+    var generation: u32 = 0;
+    if (s.entities_observed_identity(ahsoka, &slot, &generation) == 0 or slot != aim.target_slot or generation != aim.target_generation) return null;
+    input.* = reconciled;
+    return ahsoka;
+}
 pub export fn cadence_prepare_aim_task(actor: usize, task: usize) void {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
@@ -43,13 +69,23 @@ pub export fn cadence_prepare_aim_task(actor: usize, task: usize) void {
     }
     if (!s.live(&op)) return;
     const local = input;
+    const target_correction = if (s.journal.host == 0) blueShadowAimTarget(actor, target, &input) else null;
     const visible: c_int = @intFromBool(read(u8, model + 0x42) != 0);
     const effective = gate.apply(actor, p.SYNC_ACTOR_AIM_TASK, 0, 0, visible, @ptrCast(&input), &s.clonewars_aim_task_debug);
     if (!s.live(&op) or !s.active or s.journal.failed != 0) return;
     if (s.journal.host == 0) {
+        if (target_correction) |canonical_target| {
+            const saved_target = if (canonical_target == 0) target else 0;
+            if (read(usize, task + 0x10) != target or read(usize, actor + 0xbdc) != saved_target) {
+                reject(&op, actor, 8);
+                return;
+            }
+            s.win.store(usize, task + 0x10, canonical_target);
+            if (canonical_target == 0) s.win.store(usize, actor + 0xbdc, 0);
+        }
         s.win.store(f32, task + 0x1c, input.remaining);
         s.win.store(u32, 0xea178c, input.rng_engine);
-        if (s.clonewars_aim_task_correction[0] == 0 and (local.rng_engine != input.rng_engine or s.bits(local.remaining) != s.bits(input.remaining) or visible != effective)) {
+        if (s.clonewars_aim_task_correction[0] == 0 and (target_correction != null or local.rng_engine != input.rng_engine or s.bits(local.remaining) != s.bits(input.remaining) or visible != effective)) {
             var slot: u32 = std.math.maxInt(u32);
             var generation: u32 = 0;
             _ = s.entities_observed_identity(actor, &slot, &generation);
@@ -130,25 +166,53 @@ pub export fn cadence_prepare_rts_competitor(competitor: usize, delta: *f32) voi
         s.win.store(u32, 0xea178c, input.rng_engine);
     }
 }
-pub export fn cadence_prepare_aim_base(task: usize, wrapper: usize, delta: *f32) void {
+fn blueShadowGuestOnlyAim(actor: usize, task: usize) bool {
+    const frame = s.journal.frame.?;
+    if (frame.level != 70 or read(u16, actor + 0xdc0) != 321) return false;
+    const ahsoka = read(usize, 0xfb4940);
+    const clone = read(usize, 0xfb4944);
+    if (!s.valid(ahsoka, 0x1440) or !s.valid(clone, 0x1440) or
+        read(u16, ahsoka + 0xdc0) != 191 or read(u8, ahsoka + 0xdde) != 0 or
+        read(u16, clone + 0xdc0) != 156) return false;
+    const last_target = read(usize, actor + 0xbdc);
+    const target = read(usize, task + 0x10);
+    if (read(u8, clone + 0xdde) == 0) {
+        if (last_target != 0 or (target != 0 and target != ahsoka and target != clone)) return false;
+    } else if (last_target != clone or (target != 0 and target != clone)) return false;
+    var slot: u32 = 0;
+    var generation: u32 = 0;
+    if (s.entities_observed_identity(actor, &slot, &generation) == 0) return false;
+    var host_motion = false;
+    for (frame.fire_task_gates[0..frame.fire_task_gate_count]) |entry| {
+        if (entry.slot != slot or entry.generation != generation) continue;
+        if (entry.kind == p.SYNC_ACTOR_AIM_BASE or entry.kind == p.SYNC_ACTOR_AIM_TASK) return false;
+        if (entry.kind == p.SYNC_ACTOR_CHARACTER_MOTION) host_motion = true;
+    }
+    return host_motion;
+}
+pub export fn cadence_prepare_aim_base(task: usize, wrapper: usize, delta: *f32) c_int {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
     var op: s.Lease = undefined;
-    if (!s.ready(&op) or !s.valid(wrapper, 8)) return;
+    if (!s.ready(&op) or !s.valid(wrapper, 8)) return 1;
     const actor = read(usize, wrapper + 4);
-    if (!s.valid(actor, 0x1440)) return;
+    if (!s.valid(actor, 0x1440)) return 1;
     const model = read(usize, actor + 8);
-    if (!s.valid(model, 0x38)) return;
+    if (!s.valid(model, 0x38)) return 1;
     const brain = read(usize, model + 0x34);
-    if (!s.valid(brain, 0x19c) or read(u32, brain + 0x198) == 0) return;
+    if (!s.valid(brain, 0x19c) or read(u32, brain + 0x198) == 0) return 1;
     if (!s.valid(task, 0x2c) or !s.valid(@intFromPtr(delta), 4)) {
         reject(&op, actor, 12);
-        return;
+        return 1;
     }
     const class = s.imageClass(read(usize, task), false) orelse {
         reject(&op, actor, 12);
-        return;
+        return 1;
     };
+    if (s.journal.host == 0 and blueShadowGuestOnlyAim(actor, task)) {
+        s.clonewars_aim_base_debug[2] +%= 1;
+        return 0;
+    }
     var input = std.mem.zeroes(p.SyncAimBaseState);
     input.rng_engine = read(u32, 0xea178c);
     input.rng_game = read(u32, 0xe637b4);
@@ -159,18 +223,18 @@ pub export fn cadence_prepare_aim_base(task: usize, wrapper: usize, delta: *f32)
     if (callback != 0) {
         if (!s.valid(callback, 4)) {
             reject(&op, actor, 12);
-            return;
+            return 1;
         }
         input.callback_class = s.imageClass(read(usize, callback), false) orelse {
             reject(&op, actor, 12);
-            return;
+            return 1;
         };
     }
     input.elapsed = read(f32, task + 8);
     input.remaining = read(f32, task + 0x1c);
     const local = input;
     _ = gate.apply(actor, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, @ptrCast(&input), &s.clonewars_aim_base_debug);
-    if (!s.live(&op) or !s.active or s.journal.failed != 0) return;
+    if (!s.live(&op) or !s.active or s.journal.failed != 0) return 1;
     if (s.journal.host == 0) {
         s.win.store(f32, task + 8, input.elapsed);
         s.win.store(f32, task + 0x1c, input.remaining);
@@ -187,4 +251,5 @@ pub export fn cadence_prepare_aim_base(task: usize, wrapper: usize, delta: *f32)
             }
         }
     }
+    return 1;
 }

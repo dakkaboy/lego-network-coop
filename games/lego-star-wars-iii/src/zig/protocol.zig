@@ -35,6 +35,12 @@ pub const SyncPreloadTrack = extern struct {
     time: u32,
 };
 
+pub const SyncPreloadHubChoice = extern struct {
+    owner: u32,
+    ordinal: u32,
+    character: u32,
+};
+
 pub const SyncPreloadReceipt = extern struct {
     serial: u32,
     world_calls: u32,
@@ -43,6 +49,8 @@ pub const SyncPreloadReceipt = extern struct {
     flow_requests: [64]u32,
     track_count: u32,
     tracks: [64]SyncPreloadTrack,
+    hub_count: u32 = 0,
+    hub_choices: [8]SyncPreloadHubChoice = @splat(.{ .owner = 0, .ordinal = 0, .character = 0 }),
 };
 
 pub const SyncWorldReady = extern struct {
@@ -820,6 +828,8 @@ pub const SYNC_ACTOR_SPELLIT_NODE: c_int = 12;
 pub const SYNC_ACTOR_SCRIPT_SHOOT_VISIBILITY: c_int = 13;
 
 pub const SYNC_ACTOR_PRIMARY_PERCEPTION: c_int = 14;
+pub const SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET: u16 = 1;
+pub const SYNC_PERCEPTION_SCRIPT_ASSIGNED_TARGET: u16 = 2;
 pub const SYNC_ACTOR_SPELLIT_ADMISSION: c_int = 15;
 pub const SYNC_ACTOR_HAZARD_DEATH: c_int = 16;
 pub const SYNC_ACTOR_RIDER_FIRE: c_int = 17;
@@ -920,7 +930,7 @@ pub const SYNC_PROFILE_BYTES = @as(c_int, 0xb5c0);
 
 pub const SYNC_LAYOUT_VERSION = @as(c_int, 55);
 
-pub const SYNC_WIRE_VERSION = @as(c_int, 217);
+pub const SYNC_WIRE_VERSION = @as(c_int, 222);
 
 pub const SYNC_NATIVE_SPAN_PLAN_MASK = @as(c_uint, 7);
 

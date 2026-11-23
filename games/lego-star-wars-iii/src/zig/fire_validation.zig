@@ -52,7 +52,7 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
         p.SYNC_ACTOR_RIDER_FIRE => return g.flags <= 1 and g.action == 0 and boolean and data.rider_fire.behavior_class == 0x6d83dc and data.rider_fire.mount_slot < p.SYNC_MAX_ACTORS and data.rider_fire.mount_generation != 0 and v.finite(data.rider_fire.cooldown),
         p.SYNC_ACTOR_RYLOTH_FIGHTER_DEATH => return clean and boolean and g.character == 381 and zeros(&data.storage),
         p.SYNC_ACTOR_GEONOSIS_VEHICLE_DEATH => return clean and boolean and g.character == 417 and zeros(&data.storage),
-        p.SYNC_ACTOR_FORCE_ELIGIBILITY => return g.flags <= 2 and g.action == 0 and boolean and zeros(&data.storage),
+        p.SYNC_ACTOR_FORCE_ELIGIBILITY => return (g.flags <= 2 or (g.flags == 3 and (g.character == 321 or g.character == 333))) and g.action == 0 and boolean and zeros(&data.storage),
         p.SYNC_ACTOR_TUBE_CONTACT => return g.flags <= 3 and g.action == 0 and boolean and
             (if (g.flags == 2) zeros(&data.storage) else v.finite(data.tube_position)),
         p.SYNC_ACTOR_MELEE_CONTACT => return g.action == 0 and data.melee_contact.attacker_slot < p.SYNC_MAX_ACTORS and data.melee_contact.attacker_generation != 0 and switch (g.flags) {
@@ -85,7 +85,8 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
         },
         p.SYNC_ACTOR_PRIMARY_PERCEPTION => {
             const s = &data.perception;
-            if (!clean or g.value != 0 or s.target_visible > 1 or !v.finite(s.*) or s.distance < 0 or !sourceValid(s.target_source)) return false;
+            const scripted_target = (g.flags == p.SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET or g.flags == p.SYNC_PERCEPTION_SCRIPT_ASSIGNED_TARGET) and g.action == 0 and (g.character == 321 or g.character == 333) and s.target_visible == 0 and s.distance == 0;
+            if ((!clean and !scripted_target) or g.value != 0 or s.target_visible > 1 or !v.finite(s.*) or s.distance < 0 or !sourceValid(s.target_source)) return false;
             if (s.target_slot != 0xffffffff) return s.target_slot < p.SYNC_MAX_ACTORS and s.target_generation != 0 and abi.validLevel(s.target_character);
             var empty = std.mem.zeroes(p.SyncPrimaryPerceptionState);
             empty.clock = s.clock;

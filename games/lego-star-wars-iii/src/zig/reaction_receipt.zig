@@ -3,6 +3,11 @@ const p = @import("protocol.zig");
 const s = @import("reaction_state.zig");
 const validation = @import("reaction_validation.zig");
 const read = s.read;
+fn blockedByCooldown(hit: *const p.SyncReactionHitOutcome) bool {
+    return hit.timer_before > 0 and hit.timer_before == hit.timer_after and
+        hit.health_before > 0 and hit.health_before == hit.health_after and
+        hit.life_before == hit.life_after and hit.action_before == hit.action_after;
+}
 pub export fn reaction_damage_begin(receipt: *s.Receipt, actor: usize, source: u32) void {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
@@ -19,17 +24,20 @@ pub export fn reaction_damage_begin(receipt: *s.Receipt, actor: usize, source: u
             receipt.hit.life_before = (read(u32, actor + 0x50) & 3) | (@as(u32, read(u8, actor + 0x54)) << 8);
             receipt.hit.action_before = read(i16, actor + 0x2f4);
             receipt.hit.timer_before = read(f32, actor + 0xd3c);
-            if (s.journal.host == 0 and s.journal.frame.?.level == 79 and receipt.hit.timer_before > 0) {
+            if (s.journal.host == 0 and s.journal.frame.?.level == 79 and std.math.isFinite(receipt.hit.timer_before)) {
                 if (s.journal.peek()) |entry| {
+                    if (entry.kind != p.SYNC_REACTION_CLIP or entry.slot != receipt.slot or entry.generation != receipt.generation) return;
                     const clip = &entry.payload.clip;
-                    if (entry.kind == p.SYNC_REACTION_CLIP and entry.slot == receipt.slot and entry.generation == receipt.generation and
-                        clip.selection.clip == -1 and clip.source_id == source and clip.arena_attacker_generation == 0 and
-                        validation.hitValid(&clip.hit) and clip.hit.timer_before <= 0 and clip.hit.health_after < clip.hit.health_before and
-                        clip.hit.health_before == receipt.hit.health_before and clip.hit.life_before == receipt.hit.life_before and
-                        clip.hit.action_before == receipt.hit.action_before and s.live(&receipt.lease))
+                    const hit = &clip.hit;
+                    const expired = receipt.hit.timer_before > 0 and hit.timer_before <= 0 and hit.health_after < hit.health_before;
+                    const blocked = s.combat_damage_native_caller() == 0x81f27f and blockedByCooldown(hit);
+                    if (clip.selection.clip == -1 and clip.source_id == source and clip.arena_attacker_generation == 0 and
+                        (expired or blocked) and validation.valid(entry) and
+                        hit.health_before == receipt.hit.health_before and hit.life_before == receipt.hit.life_before and
+                        hit.action_before == receipt.hit.action_before and s.live(&receipt.lease))
                     {
-                        receipt.hit.timer_before = clip.hit.timer_before;
-                        s.win.store(f32, actor + 0xd3c, clip.hit.timer_before);
+                        receipt.hit.timer_before = hit.timer_before;
+                        s.win.store(f32, actor + 0xd3c, hit.timer_before);
                     }
                 }
             }
@@ -50,8 +58,9 @@ pub export fn reaction_projectile_damage_amount(actor: usize, amount: c_int) c_i
     if (clip.selection.clip != -1 or clip.arena_attacker_generation != 0 or clip.source_id == 0 or clip.source_id != s.combat_damage_source_id() or
         !validation.hitValid(hit) or hit.health_after <= 0 or
         hit.life_before != hit.life_after or hit.action_before != hit.action_after) return amount;
-    const corrected: c_int = if (amount == 0 and hit.health_before - hit.health_after == 1 and hit.timer_before <= 0 and hit.timer_after > 0)
-        1
+    const damage = hit.health_before - hit.health_after;
+    const corrected: c_int = if (amount == 0 and damage >= 1 and damage <= 2 and hit.timer_before <= 0 and hit.timer_after > 0)
+        damage
     else if (amount > 0 and hit.health_before == 1 and hit.health_after == 1 and hit.timer_before == hit.timer_after)
         0
     else
@@ -86,10 +95,11 @@ pub export fn reaction_damage_complete(receipt: *const s.Receipt) void {
                 const clip = &e.payload.clip;
                 if (e.kind == p.SYNC_REACTION_CLIP and clip.selection.clip == -1 and clip.arena_attacker_generation == 0 and e.slot == receipt.slot and e.generation == receipt.generation and clip.source_id == receipt.source_id) clip.hit = actual;
             }
-            // A projectile that leaves the last point of health intact can have no clip.
+            const last_health_point = actual.health_before == 1 and actual.health_after == 1 and
+                actual.life_before == actual.life_after and actual.action_before == actual.action_after and actual.timer_before == actual.timer_after;
+            // The native hit can finish without selecting a clip when damage is blocked.
             if (i == receipt.cursor and s.journal.frame.?.level == 79 and s.combat_damage_native_caller() == 0x81f27f and
-                actual.health_before == 1 and actual.health_after == 1 and actual.life_before == actual.life_after and
-                actual.action_before == actual.action_after and actual.timer_before == actual.timer_after)
+                (last_health_point or blockedByCooldown(&actual)))
             {
                 var identity = std.mem.zeroes(p.SyncActor);
                 s.entities_describe(&identity, actor);

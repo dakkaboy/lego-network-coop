@@ -118,6 +118,29 @@ pub export fn tags_dispatch_pending() c_int {
     for (s.consumed[0..frame.tag_count]) |consumed| if (consumed == 0) return 1;
     return 0;
 }
+
+fn gunganVehicle(character: i32) bool {
+    return character == 124 or character == 395 or character == 418;
+}
+
+pub fn replayGunganVehicleHandoff(clock: u32) bool {
+    var authority: s.Guard = undefined;
+    if (!guard.frame(&authority) or s.coherent_frame_valid(&authority.frame, 4) == 0 or s.failed != 0) return false;
+    const frame = s.current.?;
+    if (s.host or frame.level != 24 or s.active_event != 0) return true;
+    var machine: s.Machine = undefined;
+    machine.capture();
+    defer machine.restore();
+    for (frame.tags[0..frame.tag_count], 0..) |tag, i| {
+        if (s.consumed[i] != 0) continue;
+        // The previous tick's unscoped boarding can change this tick's weapon actor list.
+        if (tag.phase != 0 or tag.source != p.SYNC_TAG_UNSCOPED or tag.parent != 0 or tag.clock != clock -% 1 or
+            !(gunganVehicle(tag.from_identity.character) or gunganVehicle(tag.to_identity.character))) break;
+        if (events.replay(i, true, null) == 0 or !guard.valid(&authority)) return false;
+    }
+    return true;
+}
+
 pub export fn tags_dispatch_complete() c_int {
     var authority: s.Guard = undefined;
     if (!guard.frame(&authority) or s.coherent_frame_valid(&authority.frame, 4) == 0 or s.failed != 0) return -1;

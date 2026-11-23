@@ -84,8 +84,14 @@ pub export fn reaction_apply_choice(actor: usize, output: *u32) void {
             return;
         }
         const journal_action = if (entry) |e| matched: {
-            // Hidden Enemy melee damage has already selected the same victim. Replay the clip when only idle/walk differs.
-            if (source == 0 and s.journal.frame.?.level == 64 and s.combat_damage_native_caller() == 0x871848 and
+            const level = s.journal.frame.?.level;
+            const caller = s.combat_damage_native_caller();
+            const hidden_enemy_melee = level == 64 and caller == 0x871848 and source == 0;
+            const ambush_projectile = level == 6 and caller == 0x81f27f and source != 0 and
+                e.kind == p.SYNC_REACTION_CLIP and e.payload.clip.selection.clip >= 0 and
+                @as(u32, @bitCast(e.payload.clip.selection.clip)) == local_clip;
+            // The same hit can select the same clip from either idle or walk.
+            if ((hidden_enemy_melee or ambush_projectile) and
                 ((action == -1 and e.old_action == 1) or (action == 1 and e.old_action == -1))) break :matched e.old_action;
             break :matched action;
         } else action;

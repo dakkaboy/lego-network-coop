@@ -4,6 +4,7 @@ const s = @import("cadence_state.zig");
 const equal = @import("validation.zig").equal;
 extern fn physics_effect_body_resolve(u32, u32) usize;
 extern fn physics_effect_body_source(usize, *[2]u32) c_int;
+pub export var clonewars_aim_task_context_failure: [22]u32 = @splat(0);
 fn supportAcquisition(local: *const p.SyncCharacterMotionState, expected: *const p.SyncCharacterMotionState) bool {
     if (!@import("character_support.zig").canAcquire(local, expected)) return false;
     if (local.support_frame == 0) return true;
@@ -56,7 +57,15 @@ fn contextFailure(gate: *const p.SyncFireTaskGate, state: [*]const u8) u32 {
         p.SYNC_ACTOR_AIM_TASK => {
             const a = &data.aim;
             const b = s.read(p.SyncAimTaskState, @intFromPtr(state));
-            if (!@import("cadence_context.zig").aim(a, &b)) return 7;
+            if (!@import("cadence_context.zig").aim(a, &b)) {
+                const frame = s.journal.frame.?;
+                if (clonewars_aim_task_context_failure[0] != frame.epoch) {
+                    clonewars_aim_task_context_failure[0..4].* = .{ frame.epoch, frame.sequence, s.fire_task_cursor, gate.slot };
+                    @memcpy(std.mem.sliceAsBytes(clonewars_aim_task_context_failure[4..13]), std.mem.asBytes(a));
+                    @memcpy(std.mem.sliceAsBytes(clonewars_aim_task_context_failure[13..22]), std.mem.asBytes(&b));
+                }
+                return 7;
+            }
         },
         p.SYNC_ACTOR_AIM_BASE => {
             const a = &data.aim_base;
@@ -115,22 +124,114 @@ fn contextFailure(gate: *const p.SyncFireTaskGate, state: [*]const u8) u32 {
     }
     return 0;
 }
+fn combatDroid(character: i32) bool {
+    return character == 321 or character == 333;
+}
+fn blueShadowDroidMotion(character: i32) bool {
+    return combatDroid(character) or character == 337;
+}
+fn droidAim(kind: u32, character: i32) bool {
+    return (kind == p.SYNC_ACTOR_AIM_BASE or kind == p.SYNC_ACTOR_AIM_TASK) and combatDroid(character);
+}
+fn blueShadowDroidDecision(entry: *const p.SyncFireTaskGate) bool {
+    return droidAim(entry.kind, entry.character) or (entry.kind == p.SYNC_ACTOR_PRIMARY_PERCEPTION and
+        (entry.flags == p.SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET or entry.flags == p.SYNC_PERCEPTION_SCRIPT_ASSIGNED_TARGET) and combatDroid(entry.character));
+}
+fn droidDecisionClock(entry: *const p.SyncFireTaskGate) u32 {
+    return switch (entry.kind) {
+        p.SYNC_ACTOR_AIM_BASE => entry.payload.aim_base.clock,
+        p.SYNC_ACTOR_AIM_TASK => entry.payload.aim.clock,
+        else => entry.payload.perception.clock,
+    };
+}
+fn forceScan(kind: u32) bool {
+    return kind == p.SYNC_ACTOR_FORCE_VISIBILITY or kind == p.SYNC_ACTOR_FORCE_GEOMETRY;
+}
 fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16, action: u16, local: c_int, state: ?[*]u8, debug: *[4]u32) ?c_int {
     const frame = s.journal.frame.?;
-    if (frame.level != 79) return null;
-    const competitor = kind == p.SYNC_ACTOR_RTS_COMPETITOR and frame.fire_task_gates[s.fire_task_cursor].kind == kind;
-    const companion = kind == p.SYNC_ACTOR_CHARACTER_MOTION and state != null and s.valid(actor, 0x1440) and s.read(u16, actor + 0xdc0) == 259;
-    if (!competitor and !companion) return null;
-    // Competitor iteration can differ within a block. The companion can precede Force queries.
+    const head = &frame.fire_task_gates[s.fire_task_cursor];
+    const competitor = frame.level == 79 and kind == p.SYNC_ACTOR_RTS_COMPETITOR and head.kind == kind;
+    const lab_spellit = frame.level == 73 and (kind == p.SYNC_ACTOR_SPELLIT_ADMISSION or kind == p.SYNC_ACTOR_SPELLIT_QUERY);
+    const motion_character = if ((kind == p.SYNC_ACTOR_CHARACTER_MOTION or lab_spellit) and state != null and s.valid(actor, 0x1440)) s.read(u16, actor + 0xdc0) else 0;
+    const companion = frame.level == 79 and motion_character == 259;
+    const lab_clone = frame.level == 73 and motion_character == 138 and head.kind == p.SYNC_ACTOR_FORCE_VISIBILITY;
+    const blue_shadow_clone = (frame.level == 70 and motion_character == 156 and forceScan(head.kind)) or lab_clone;
+    const blue_shadow_droid = frame.level == 70 and blueShadowDroidMotion(motion_character) and blueShadowDroidDecision(head);
+    const blue_shadow_motion = blue_shadow_clone or blue_shadow_droid;
+    const droid_aim = (frame.level == 29 or frame.level == 70) and droidAim(head.kind, head.character) and s.valid(actor, 0x1440) and
+        droidAim(kind, s.read(i16, actor + 0xdc0));
+    if (!competitor and !companion and !blue_shadow_motion and !droid_aim) return null;
+    if (lab_clone) {
+        const force = &head.payload.force;
+        const caster = s.entities_actor(force.caster_slot, force.caster_generation);
+        if (!s.live(op) or !s.valid(caster, 0x1440) or s.read(u16, caster + 0xdc0) != 184 or force.clock != s.read(u32, @intFromPtr(state.?))) return null;
+    }
+    const motion_clock = if (blue_shadow_droid) s.read(u32, @intFromPtr(state.?)) else 0;
+    if (blue_shadow_droid and droidDecisionClock(head) != motion_clock) return null;
+    if (droid_aim or blue_shadow_droid) {
+        const identity = s.reference(head);
+        const owner = s.entities_resolve_reference(&identity);
+        if (owner == actor or (blue_shadow_droid and owner == 0) or !s.live(op)) return null;
+    }
+    // Actor updates and targeting checks can run in different orders within a tick.
     var i = s.fire_task_cursor + 1;
+    var droid_motion_block = false;
+    var lab_motion: ?*const p.SyncFireTaskGate = null;
     while (i < frame.fire_task_gate_count) : (i += 1) {
         const entry = &frame.fire_task_gates[i];
         if (competitor and entry.kind != kind) break;
-        if (s.early_actor_gates.isSet(i) or entry.kind != kind or entry.flags != flags or entry.action != action) continue;
+        if (droid_aim and !droidAim(entry.kind, entry.character)) break;
+        if (blue_shadow_clone and lab_motion == null and forceScan(entry.kind)) {
+            const caster = &head.payload.force;
+            const query = &entry.payload.force;
+            if (query.caster_slot != caster.caster_slot or query.caster_generation != caster.caster_generation or query.clock != caster.clock) return null;
+            continue;
+        }
+        if (lab_spellit) {
+            const clock = head.payload.force.clock;
+            if (lab_motion) |motion| {
+                if ((entry.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION and entry.kind != p.SYNC_ACTOR_SPELLIT_QUERY) or
+                    entry.slot != motion.slot or entry.generation != motion.generation or entry.payload.state.repeat != clock) return null;
+                if (s.early_actor_gates.isSet(i)) continue;
+            } else {
+                if (entry.kind != p.SYNC_ACTOR_CHARACTER_MOTION or entry.payload.character_motion.clock != clock or !s.early_actor_gates.isSet(i)) return null;
+                const identity = s.reference(entry);
+                if (s.entities_resolve_reference(&identity) != actor or !s.live(op)) return null;
+                lab_motion = entry;
+                continue;
+            }
+        }
+        if (blue_shadow_droid) {
+            if (blueShadowDroidDecision(entry)) {
+                if (droidDecisionClock(entry) != motion_clock) return null;
+                const identity = s.reference(entry);
+                const owner = s.entities_resolve_reference(&identity);
+                if (droid_motion_block or owner == 0 or owner == actor or !s.live(op)) return null;
+                continue;
+            }
+            if (entry.kind != kind or !blueShadowDroidMotion(entry.character) or entry.payload.character_motion.clock != motion_clock) return null;
+            droid_motion_block = true;
+        }
+        if (s.early_actor_gates.isSet(i)) {
+            if (blue_shadow_clone) return null;
+            if (blue_shadow_droid) {
+                const identity = s.reference(entry);
+                if (s.entities_resolve_reference(&identity) == actor or !s.live(op)) return null;
+            }
+            continue;
+        }
+        if (!droid_aim and (entry.kind != kind or entry.flags != flags or entry.action != action)) {
+            if (blue_shadow_motion) return null;
+            continue;
+        }
         var identity = s.reference(entry);
         const resolved = s.entities_resolve_reference(&identity);
         if (!s.live(op)) return null;
-        if (resolved != actor) continue;
+        if (resolved != actor) {
+            if (blue_shadow_clone or (blue_shadow_droid and resolved == 0)) return null;
+            continue;
+        }
+        if (entry.kind != kind or entry.flags != flags or entry.action != action) return null;
         if (state) |pointer| {
             if (contextFailure(entry, pointer) != 0) return null;
             const bytes = length(kind);
@@ -143,6 +244,66 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
     }
     return null;
 }
+fn skipGunganSpellItNoOp(op: *const s.Lease, actor: usize, kind: u32, state: [*]const u8) void {
+    const frame = s.journal.frame.?;
+    const cursor = s.fire_task_cursor;
+    const stages = [_]u16{ 4, 5, 2, 3 };
+    const outcomes = [_]c_int{ 0, 1, 0, 0 };
+    if (frame.level != 24 or s.read(usize, 0xfb3088) != 0 or cursor == 0 or cursor + stages.len >= frame.fire_task_gate_count or !s.valid(actor, 0x1440)) return;
+    const previous = &frame.fire_task_gates[cursor - 1];
+    const next = &frame.fire_task_gates[cursor + stages.len];
+    if (previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or next.kind != kind or next.slot == previous.slot or next.flags != 0 or next.action != 0 or
+        next.character != s.read(i16, actor + 0xdc0)) return;
+    const clock = previous.payload.character_motion.clock;
+    switch (kind) {
+        p.SYNC_ACTOR_CHARACTER_MOTION => {
+            if (previous.character != 176 or next.character != 138 or next.payload.character_motion.clock != clock or
+                s.read(p.SyncCharacterMotionState, @intFromPtr(state)).clock != clock) return;
+        },
+        p.SYNC_ACTOR_RTS_COMPETITOR => {
+            if (previous.character != 138 or next.character != 199 or next.payload.competitor.clock != clock +% 1 or
+                s.read(p.SyncRtsCompetitorState, @intFromPtr(state)).clock != clock +% 1) return;
+        },
+        else => return,
+    }
+    const prior_identity = s.reference(previous);
+    for (stages, outcomes, cursor..) |stage, outcome, index| {
+        const entry = &frame.fire_task_gates[index];
+        if (s.early_actor_gates.isSet(index) or entry.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.flags != stage or entry.action != 0 or
+            entry.value != outcome or entry.payload.state.repeat != clock or !equal(&prior_identity, &s.reference(entry))) return;
+    }
+    const player = s.read(usize, 0xfb4944);
+    if (s.early_actor_gates.isSet(cursor + stages.len) or player == 0 or s.entities_resolve_reference(&prior_identity) != player or !s.live(op)) return;
+    const next_identity = s.reference(next);
+    if (s.entities_resolve_reference(&next_identity) != actor or !s.live(op)) return;
+    // Native SpellIt exits after both eligibility queries fail, before selecting a gizmo.
+    s.fire_task_cursor += stages.len;
+}
+
+pub fn replayResoluteSpellItNode(scope: *const s.SpellItScope, state: *p.SyncSpellItNodeState, debug: *[4]u32) enum { matched, absent, mismatch } {
+    const frame = s.journal.frame.?;
+    const start = scope.node_gate_start;
+    if (start == 0 or start > frame.fire_task_gate_count) return .mismatch;
+    const query = &frame.fire_task_gates[start - 1];
+    if (query.kind != p.SYNC_ACTOR_SPELLIT_QUERY or s.read(u32, @intFromPtr(&query.payload.storage)) != state.clock) return .mismatch;
+    const source = s.reference(query);
+    if (s.entities_resolve_reference(&source) != scope.actor or !s.live(&scope.lease)) return .mismatch;
+    const size = @offsetOf(p.SyncSpellItNodeState, "position");
+    for (frame.fire_task_gates[start..frame.fire_task_gate_count], start..) |*entry, index| {
+        if (entry.kind != p.SYNC_ACTOR_SPELLIT_NODE or entry.payload.spellit_node.clock != state.clock or
+            !equal(&source, &s.reference(entry))) break;
+        if (entry.payload.spellit_node.poi_name != state.poi_name or !equal(&entry.payload.spellit_node.resource_name, &state.resource_name)) continue;
+        if (index < s.fire_task_cursor or s.early_actor_gates.isSet(index) or
+            !std.mem.eql(u8, entry.payload.storage[0..size], std.mem.asBytes(state)[0..size])) return .mismatch;
+        state.* = entry.payload.spellit_node;
+        s.early_actor_gates.set(index);
+        while (s.fire_task_cursor < frame.fire_task_gate_count and s.early_actor_gates.isSet(s.fire_task_cursor)) s.fire_task_cursor += 1;
+        debug[1] +%= 1;
+        return .matched;
+    }
+    return .absent;
+}
+
 pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, state: ?[*]u8, debug: *[4]u32) c_int {
     var op: s.Lease = undefined;
     if (!s.get(&op) or !s.active) return value;
@@ -153,6 +314,9 @@ pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, sta
         else => value,
     };
     if (s.journal.failed != 0) return failure;
+    if (s.journal.host == 0 and (kind == p.SYNC_ACTOR_CHARACTER_MOTION or kind == p.SYNC_ACTOR_RTS_COMPETITOR) and flags == 0 and action == 0) {
+        if (state) |pointer| skipGunganSpellItNoOp(&op, actor, kind, pointer);
+    }
     if (s.journal.host != 0) {
         s.entities_update();
         if (!s.live(&op)) return failure;

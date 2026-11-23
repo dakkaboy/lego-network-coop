@@ -6,6 +6,7 @@ pub const constructor_query_enabled = options.constructor_query;
 pub const tracy_enabled = options.tracy;
 pub const lan_port: u16 = 32510;
 pub const background_loopback = @import("background_loopback.zig");
+pub const native_title = @import("native_title.zig");
 comptime {
     _ = @import("dll_root.zig");
     _ = @import("engine_root.zig");

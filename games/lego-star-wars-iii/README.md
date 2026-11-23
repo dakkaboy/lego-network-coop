@@ -25,7 +25,7 @@ The x86 build writes `d3d9.dll` and `clonewars-camera.dll` to `build/`. The prox
 
 ## Run
 
-Close the game and copy both DLLs next to `LEGOCloneWars.exe`. Back up any existing `d3d9.dll` before replacing it. Open F12, select Create game on one PC, then enter the host IP and select Connect on the other. Close the menu and start a mission on the host. The mod uses TCP port 32510.
+Close the game and copy both DLLs next to `LEGOCloneWars.exe`. Back up any existing `d3d9.dll` before replacing it. On the host, select **Co-op** in the main menu and load a save to start hosting. You can also press F10 or F12 and select **Create game**. On the guest, press F10 or F12, enter the host IP and select **Connect**. Close the menu and start a mission on the host. The mod uses TCP port 32510.
 
 ## Source layout
 

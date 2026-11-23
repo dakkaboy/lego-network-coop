@@ -41,7 +41,13 @@ export fn preload_input_valid(input: ?*const Input) c_int {
 export fn preload_receipt_valid(receipt: ?*const Receipt) c_int {
     const r = receipt orelse return 0;
     if (r.flow_count > capacity or r.track_count > capacity or r.world_calls > 64 or r.end_phase > 20) return 0;
-    if (r.serial == 0 and (r.world_calls != 0 or r.end_phase != 0 or r.flow_count != 0 or r.track_count != 0)) return 0;
+    if (r.hub_count > r.hub_choices.len) return 0;
+    if (r.serial == 0 and (r.world_calls != 0 or r.end_phase != 0 or r.flow_count != 0 or r.track_count != 0 or r.hub_count != 0)) return 0;
+    for (r.hub_choices, 0..) |choice, index| {
+        if (index < r.hub_count) {
+            if (choice.owner == 0 or choice.ordinal & 0x7f > 126 or choice.ordinal > 0xff or choice.character >= 0x258) return 0;
+        } else if (choice.owner != 0 or choice.ordinal != 0 or choice.character != 0) return 0;
+    }
     for (r.flow_requests, r.tracks, 0..) |request, track, i| {
         if (i < r.flow_count) {
             if (request != std.math.maxInt(u32) and request > 20) return 0;

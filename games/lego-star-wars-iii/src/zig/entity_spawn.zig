@@ -6,6 +6,37 @@ const Machine = @import("machine_environment.zig").Environment;
 extern fn constructor_lexical_seh(usize, *const fn (usize) callconv(.c) usize, *const fn (usize) callconv(.c) void) usize;
 extern fn native_roster_source_resolve(usize, *const [12]u32, *s.Roster) c_int;
 extern fn native_hub_source_resolve(usize, usize, *const [12]u32, *s.Hub, *u32) c_int;
+extern fn game_sync_preload_hub_choice(u32, u32, u32) u32;
+extern fn game_sync_preload_level() c_int;
+
+pub fn hubResourceCharacter(record: usize, manager: usize) callconv(.{ .x86_thiscall = .{} }) i16 {
+    const Select = *const fn (usize, usize) callconv(.{ .x86_thiscall = .{} }) i16;
+    const select: Select = @ptrFromInt(0x492c90);
+    const local = select(record, manager);
+    if (game_sync_preload_level() != 3 or local < 0 or local >= 0x258 or
+        !s.valid(manager, 0x9c) or !s.win.accessible(record + 0x38, 4, true) or read(i16, record + 0x38) != -1) return local;
+    var owner = read(usize, manager + 0x98);
+    for (0..4096) |_| {
+        if (!s.valid(owner, 0x214)) break;
+        const id = read(u32, owner + 0xb8);
+        if (id == 0x54f79325 or id == 0x54f79374) {
+            const records = read(usize, owner + 0xcc);
+            const count = read(i8, owner + 0x1b4);
+            if (records != 0 and count > 0 and record >= records) {
+                const offset = record - records;
+                if (offset % 100 == 0 and offset / 100 < @as(usize, @intCast(count))) {
+                    const ordinal: u32 = @intCast(offset / 100);
+                    const character = game_sync_preload_hub_choice(id, ordinal | 0x80, @intCast(local));
+                    if (character >= 0x258) return local;
+                    if (character != local) s.win.store(i16, record + 0x3a, @intCast(character));
+                    return @intCast(character);
+                }
+            }
+        }
+        owner = read(usize, owner + 0x9c);
+    }
+    return local;
+}
 fn create(site: u32, source: p.SyncSpawnSource) usize {
     const original: *const fn () callconv(.c) usize = @ptrFromInt(s.original_create);
     const actor = original();
@@ -113,6 +144,16 @@ fn construct(saved: [*]const u32, hub: bool) usize {
         s.clonewars_hub_source_debug[0] +%= 1;
         s.clonewars_hub_source_debug[6..16].* = .{ reason, call.scope.hub.owner_id, @bitCast(call.scope.hub.level), call.scope.hub.ordinal, call.scope.hub.manager_id, call.scope.hub.manager_generation, saved[1], if (s.valid(saved[2], 0x18)) read(u32, saved[2] + 8) else 0, saved[2], call.arguments[0] };
         if (call.scope.qualified == 0) s.clonewars_hub_source_debug[3] +%= 1;
+        if (comptime @hasDecl(@import("root"), "native_title")) {
+            if (call.scope.qualified != 0 and call.scope.hub.level == 3) {
+                const character = game_sync_preload_hub_choice(call.scope.hub.owner_id, call.scope.hub.ordinal, call.arguments[0]);
+                if (character == 0xffffffff) {
+                    incoming.restore();
+                    return 0;
+                }
+                call.arguments[0] = character;
+            }
+        }
     } else {
         call.scope.qualified = native_roster_source_resolve(saved[1], &call.arguments, &call.scope.source);
         s.clonewars_roster_source_debug[0] +%= 1;

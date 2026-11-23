@@ -31,9 +31,16 @@ comptime {
         \\    addl $32,%esp
         \\    fxrstor (%esp)
         \\    movl 512(%esp),%esp
+        \\    testl %eax,%eax
+        \\    jnz 2f
         \\    popal
         \\    popfl
         \\    jmp *_breakup_launch_native
+        \\2:
+        \\    popal
+        \\    popfl
+        \\    leal 8(%esp),%esp
+        \\    jmp *_breakup_launch_next_mesh
         \\    
         \\.text
         \\.globl _physics_effect_birth_thunk

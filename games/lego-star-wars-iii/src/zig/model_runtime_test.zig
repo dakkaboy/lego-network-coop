@@ -70,8 +70,9 @@ export fn entities_observed_identity(_: usize, slot: *u32, gen: *u32) c_int {
     gen.* = generation;
     return 1;
 }
-export fn entities_resolve_reference(_: *const p.SyncActor) usize {
+export fn entities_resolve_reference(reference: *const p.SyncActor) usize {
     resolves += 1;
+    if ((mode == 22 and reference.slot == 8) or (mode == 23 and reference.slot == 7)) return actor + 1;
     return if (mode == 13) 0 else actor;
 }
 fn put(address: usize, value: u32) void {
@@ -282,6 +283,46 @@ fn run() Snapshot {
     }
     return out;
 }
+fn droidModelInputOrder(level: i32, first_character: i16) void {
+    mode = 22;
+    setup();
+    frame.level = level;
+    win.store(i16, actor + 0xdc0, 321);
+    var token = tokenFor();
+    var lease: t.Lease = undefined;
+    var bridge: t.Bridge = undefined;
+    var output = std.mem.zeroes(Snapshot);
+    check(@src(), input.model_input_bind_cohort(&token) != 0 and input.model_input_frame_lease_get(&lease) != 0 and input.model_input_begin(frame, 1) != 0);
+    enter(&bridge);
+    source();
+    consumers(&output);
+    input.model_producer_leave(&bridge, 0);
+    check(@src(), input.model_input_finish() != 0 and input.model_input_abort_frame(&lease) != 0);
+    frame.model_inputs[1] = frame.model_inputs[0];
+    frame.model_inputs[0].slot = 8;
+    frame.model_inputs[0].character = first_character;
+    frame.model_input_count = 2;
+
+    token.release += 1;
+    check(@src(), input.model_input_bind_cohort(&token) != 0 and input.model_input_frame_lease_get(&lease) != 0 and input.model_input_begin(frame, 0) != 0);
+    saved[7] = provider;
+    enter(&bridge);
+    source();
+    check(@src(), s.scope.?.ordinal == 1 and s.scope.?.request.slot == 7 and s.journal.cursor == 0);
+    consumers(&output);
+    input.model_producer_leave(&bridge, 0);
+
+    mode = 23;
+    win.store(i16, actor + 0xdc0, first_character);
+    saved[7] = provider;
+    enter(&bridge);
+    source();
+    check(@src(), s.scope.?.ordinal == 0 and s.scope.?.request.slot == 8 and s.journal.cursor == 2);
+    consumers(&output);
+    input.model_producer_leave(&bridge, 0);
+    check(@src(), input.model_input_finish() != 0 and input.model_input_abort_frame(&lease) != 0 and fault == 0);
+}
+
 fn nativeMotion(target: usize) callconv(.c) void {
     check(@src(), target == actor and win.GetLastError() == 1234);
     native_calls += 1;
@@ -374,5 +415,8 @@ pub fn main() void {
             check(@src(), win.load(u16, actor + 0x2f4) == if (mode == 18) @as(u16, 1) else 10);
         } else check(@src(), out.finish == 0 and out.fault == 20 and out.failure[7] == 9);
     }
+    droidModelInputOrder(29, 333);
+    droidModelInputOrder(70, 333);
+    droidModelInputOrder(70, 337);
     installedBridge();
 }

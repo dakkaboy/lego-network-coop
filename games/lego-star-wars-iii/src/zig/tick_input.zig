@@ -20,6 +20,7 @@ pub export fn native_tick_begin(next: ?*s.p.SyncFrame, authority: c_int, origina
     s.frame = frame;
     s.token = token.*;
     s.cursor = 0;
+    s.early_rts_wait = null;
     s.host = authority != 0;
     s.failed = false;
     s.active = true;

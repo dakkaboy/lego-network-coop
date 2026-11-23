@@ -205,6 +205,123 @@ pub fn main() void {
         }
         check(@src(), !@import("fire_validation.zig").valid(&bad));
     }
+    gunganManagerOmission(frame, actor);
+    gunganHostManagerNoOp(frame, actor);
+    gunganAction100Admission(frame, actor);
+}
+
+fn gunganAction100Admission(frame: *p.SyncFrame, player: usize) void {
+    const gate = @import("cadence_gate.zig");
+    win.store(usize, 0xfb4944, player);
+    win.store(i32, 0xe6afb8, 100);
+    win.store(i16, player + 0xdc0, 176);
+    defer {
+        win.store(usize, 0xfb4944, 0);
+        win.store(i32, 0xe6afb8, 0);
+    }
+    var motion = std.mem.zeroes(p.SyncCharacterMotionState);
+    motion.clock = 51;
+    motion.support_material_flags = p.SYNC_SUPPORT_ABSENT;
+    var debug: [4]u32 = @splat(0);
+    for (0..5) |scenario| {
+        frame.level = if (scenario == 1) 79 else 24;
+        begin(frame, true);
+        _ = gate.apply(player, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        managerFlow(player, 6);
+        check(@src(), frame.fire_task_gate_count == 6);
+        check(@src(), admission.spellit_gungan_action100_admitted(player) == 0);
+        finish();
+        if (scenario == 2) frame.fire_task_gates[3].value = 0;
+        if (scenario == 3) frame.fire_task_gates[3].spawn_tag += 1;
+        win.store(i16, player + 0x2f4, if (scenario == 4) 99 else 100);
+        begin(frame, false);
+        _ = gate.apply(player, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        check(@src(), admission.spellit_gungan_action100_admitted(player) == @intFromBool(scenario == 0));
+        check(@src(), s.fire_task_cursor == 1 and fault == 0 and s.journal.failed == 0);
+        finish();
+    }
+}
+
+fn gunganHostManagerNoOp(frame: *p.SyncFrame, player: usize) void {
+    const gate = @import("cadence_gate.zig");
+    const companion = @intFromPtr(&actors[1]);
+    win.store(usize, 0xfb4944, player);
+    defer win.store(usize, 0xfb4944, 0);
+    var motion = std.mem.zeroes(p.SyncCharacterMotionState);
+    motion.clock = 51;
+    motion.support_material_flags = p.SYNC_SUPPORT_ABSENT;
+    var competitor = std.mem.zeroes(p.SyncRtsCompetitorState);
+    competitor.clock = 52;
+    var debug: [4]u32 = @splat(0);
+    for ([_]bool{ false, true }) |competitor_next| {
+        win.store(i16, player + 0xdc0, if (competitor_next) 138 else 176);
+        win.store(i16, companion + 0xdc0, if (competitor_next) 199 else 138);
+        const kind: u32 = if (competitor_next) p.SYNC_ACTOR_RTS_COMPETITOR else p.SYNC_ACTOR_CHARACTER_MOTION;
+        const next: [*]u8 = if (competitor_next) @ptrCast(&competitor) else @ptrCast(&motion);
+        for (0..6) |scenario| {
+            frame.level = if (scenario == 1) 79 else 24;
+            begin(frame, true);
+            _ = gate.apply(player, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+            managerFlow(player, 2);
+            _ = gate.apply(companion, kind, 0, 0, 0, next, &debug);
+            check(@src(), frame.fire_task_gate_count == 6 and fault == 0);
+            finish();
+            if (scenario == 2) frame.fire_task_gates[3].value = 1;
+            if (scenario == 3) frame.fire_task_gates[3].spawn_source.producer = 123;
+            if (scenario == 4) frame.fire_task_gates[4].payload.state.repeat += 1;
+            win.store(usize, 0xfb3088, if (scenario == 5) 1 else 0);
+            begin(frame, false);
+            _ = gate.apply(player, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+            check(@src(), s.fire_task_cursor == 1 and fault == 0);
+            _ = gate.apply(companion, kind, 0, 0, 0, next, &debug);
+            if (scenario == 0) {
+                check(@src(), s.fire_task_cursor == 6 and s.journal.failed == 0 and fault == 0);
+            } else {
+                check(@src(), s.fire_task_cursor == 1 and s.journal.failed != 0 and fault == 14);
+            }
+            finish();
+        }
+    }
+    win.store(usize, 0xfb3088, 0);
+}
+
+fn gunganManagerOmission(frame: *p.SyncFrame, actor: usize) void {
+    for (0..6) |scenario| {
+        win.store(i16, actor + 0xdc0, if (scenario >= 4) 138 else 176);
+        frame.level = if (scenario == 1) 79 else 24;
+        frame.fire_task_gate_count = if (scenario == 3) 3 else 2;
+        frame.fire_task_gates[0..3].* = @splat(std.mem.zeroes(p.SyncFireTaskGate));
+        for (frame.fire_task_gates[0..2], 7..) |*motion, slot| {
+            motion.slot = @intCast(slot);
+            motion.generation = 19;
+            motion.kind = p.SYNC_ACTOR_CHARACTER_MOTION;
+            motion.payload.character_motion.clock = if (scenario == 2 and slot == 8) 52 else 51;
+        }
+        if (scenario >= 4) {
+            const next = &frame.fire_task_gates[1];
+            next.kind = p.SYNC_ACTOR_RTS_COMPETITOR;
+            next.payload.competitor.clock = if (scenario == 4) 52 else 51;
+        }
+        if (scenario == 3) {
+            const manager = &frame.fire_task_gates[2];
+            manager.slot = 7;
+            manager.generation = 19;
+            manager.kind = p.SYNC_ACTOR_SPELLIT_ADMISSION;
+            manager.flags = 4;
+            manager.payload.state.repeat = 51;
+        }
+        begin(frame, false);
+        s.fire_task_cursor = 1;
+        const result = call(actor, 0, 4, 1);
+        check(@src(), s.fire_task_cursor == 1);
+        if (scenario == 0 or scenario == 4) {
+            check(@src(), result == 0 and call(actor, 0, 5, 1) == 0);
+            check(@src(), s.fire_task_cursor == 1 and s.journal.failed == 0 and fault == 0);
+        } else {
+            check(@src(), fault == 14 and s.journal.failed != 0);
+        }
+        finish();
+    }
 }
 fn managerFlow(actor: usize, bits: u32) void {
     const force = call(actor, 0, 4, bits & 1);

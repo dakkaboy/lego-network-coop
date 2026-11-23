@@ -389,6 +389,21 @@ pub fn main() void {
     put(scene + 0x44, 1);
     check(@src(), level.resolve(plate_key[0], plate_key[1]) == second_body);
 
+    bytes(filename, "GunganGeneral_A_temp.led\x00");
+    var gungan_plate = plate;
+    gungan_plate[12..15].* = .{ 20, -0.01889521, 4.17 };
+    win.store([16]f32, second_body + 0x40, gungan_plate);
+    check(@src(), support.native_scene_support_source(second_body, &support_key) == 1);
+    const gungan_key = support_key;
+    check(@src(), support.native_scene_support_resolve(gungan_key[0], gungan_key[1]) == second_body);
+    bytes(counted + 32, &.{ 6, '#', '6', '9', '1', 0 });
+    check(@src(), level.source(second_body, &support_key) and std.mem.eql(u32, &gungan_key, &support_key));
+    win.store(f32, second_body + 0x78, -15.83);
+    check(@src(), level.source(second_body, &support_key) and !std.mem.eql(u32, &gungan_key, &support_key));
+    check(@src(), level.resolve(gungan_key[0], gungan_key[1]) == 0);
+    bytes(filename, "ZilloBeast_B_temp.led\x00");
+    win.store([16]f32, second_body + 0x40, plate);
+
     bytes(body_name, "Rock1P1\x00");
     put(scene + 0x34, receiver);
     put(scene + 0x30, receiver);

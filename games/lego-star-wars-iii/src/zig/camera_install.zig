@@ -9,6 +9,37 @@ extern fn camera_target_end() void;
 extern fn background_device_guard() void;
 export const background_device_continue: usize = 0x63b307;
 export const background_device_skip: usize = 0x63b310;
+const ReadKeyboard = *const fn (usize) callconv(.{ .x86_thiscall = .{} }) usize;
+var original_read_keyboard: ?ReadKeyboard = null;
+var background_key: u8 = 0;
+var background_sampled: u8 = 0;
+
+pub fn queueBackgroundKey(scan: u8) bool {
+    if (original_read_keyboard == null) return false;
+    background_key = scan;
+    return true;
+}
+
+fn readBackgroundKeyboard(keyboard: usize) callconv(.{ .x86_thiscall = .{} }) usize {
+    const index: usize = 0xf91ef8;
+    const buffers: usize = 0xf91098;
+    const previous = s.load(u8, index);
+    const result = original_read_keyboard.?(keyboard);
+    if (background_key == 0 and background_sampled == 0) return result;
+    // The native inactive path clears the buffer without advancing its index.
+    const current = previous ^ 1;
+    const buffer = buffers + @as(usize, current) * 256;
+    if (s.load(u8, index) == previous) {
+        s.store(u8, index, current);
+        s.store([256]u8, buffer, s.load([256]u8, result));
+        if (background_sampled != 0) s.store(u8, result + background_sampled, 0x80);
+    }
+    if (background_sampled != 0) s.store(u8, buffer + background_sampled, 0);
+    if (background_key != 0) s.store(u8, buffer + background_key, 0x80);
+    background_sampled = background_key;
+    background_key = 0;
+    return buffer;
+}
 pub fn callAt(site: usize, native: usize, target: usize, allowed: bool, prefix: []const u8) c_int {
     if (!allowed or site == 0 or native == 0 or target == 0 or !s.readable(native, prefix.len) or !s.readable(site, 5) or !std.mem.eql(u8, @as([*]const u8, @ptrFromInt(native))[0..prefix.len], prefix) or s.load(u8, site) != 0xe8) return 0;
     const destination = site +% 5 +% s.load(u32, site + 1);
@@ -29,7 +60,7 @@ fn replace(comptime Function: type, at: usize, expected: usize, replacement: usi
     var unused: u32 = 0;
     _ = s.win.VirtualProtect(at, 4, protection, &unused);
 }
-fn trampoline(comptime Function: type, at: usize, prefix: []const u8, target: usize, original: *?Function) bool {
+pub fn trampoline(comptime Function: type, at: usize, prefix: []const u8, target: usize, original: *?Function) bool {
     if (!s.readable(at, prefix.len) or !std.mem.eql(u8, @as([*]const u8, @ptrFromInt(at))[0..prefix.len], prefix)) return false;
     const bridge = s.win.VirtualAlloc(0, prefix.len + 5, 0x3000, 0x40);
     if (bridge == 0) return false;
@@ -53,10 +84,12 @@ fn trampoline(comptime Function: type, at: usize, prefix: []const u8, target: us
 }
 pub fn mainInstall(module: usize) bool {
     s.diagnostics_install(module);
+    if (comptime @hasDecl(@import("root"), "native_title")) @import("root").native_title.install();
     if (s.background_capture) {
         // A background device reset can leave a surface without its native interface.
         const patches = [_]hooks.Patch{.{ .address = 0x63b302, .expected = "\x8b\x08\x8d\x56\x10", .target = @intFromPtr(&background_device_guard) }};
         if (hooks.apply(&patches)) log("background device reset guard installed");
+        if (trampoline(ReadKeyboard, 0x6348a0, "\x56\x8b\xf1\x8b\x46\x24", @intFromPtr(&readBackgroundKeyboard), &original_read_keyboard)) log("background keyboard hook installed");
     }
     for (s.tables, &s.originals) |table, *original| {
         const target = table + 8;
@@ -74,7 +107,7 @@ pub fn mainInstall(module: usize) bool {
     s.win.SetLastError(0);
     const replaced = s.platform.SetWindowLongW(s.game_window, -4, @bitCast(@as(usize, @intFromPtr(&window.procedure))));
     if (replaced == 0 and s.win.GetLastError() != 0) s.previous_proc = 0;
-    log(if (s.previous_proc != 0) "F12 menu installed; camera override off" else "window hook failed");
+    log(if (s.previous_proc != 0) "F10/F12 menu installed; camera override off" else "window hook failed");
     if (s.previous_proc == 0) return false;
     s.network_window_configure(s.game_window);
     const loading = s.loading_install() != 0;

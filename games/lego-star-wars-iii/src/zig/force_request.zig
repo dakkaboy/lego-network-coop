@@ -4,14 +4,17 @@ const s = @import("cadence_state.zig");
 pub extern fn force_request_eligible_thunk() void;
 pub extern fn force_request_action_thunk() void;
 pub extern fn force_request_available_thunk() void;
+pub extern fn force_release_expired_thunk() void;
+export var force_release_expired_continue: usize = 0x84adcf;
+export var force_release_wait: usize = 0x84b298;
 export var force_request_eligible_continue: usize = 0x84bc9d;
 export var force_request_action_continue: usize = 0x84bcd9;
 export var force_request_available_continue: usize = 0x84bd03;
 export var force_request_eligible_skip: usize = 0x84be6e;
 export var force_request_available_skip: usize = 0x84bd31;
-pub export var clonewars_force_eligibility_debug: [3][4]u32 = @splat(@splat(0));
+pub export var clonewars_force_eligibility_debug: [4][4]u32 = @splat(@splat(0));
 
-const Stage = enum(u16) { area, action, available };
+const Stage = enum(u16) { area, action, available, release_expired };
 pub fn eligible(actor: usize, stage: Stage, local: bool) bool {
     var lease: s.Lease = undefined;
     if (!s.ready(&lease) or s.journal.frame.?.level != 64 or s.read(u32, actor + 0x50) & 0x200 == 0) return local;
@@ -42,6 +45,18 @@ export fn force_request_available(actor: usize, local: u32) c_int {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
     return @intFromBool(eligible(actor, .available, local != 0));
+}
+
+pub export fn force_release_expired(actor: usize, status: u32) c_int {
+    const saved = s.win.GetLastError();
+    defer s.win.SetLastError(saved);
+    const expired: c_int = @intFromBool(status & 0x100 == 0);
+    var lease: s.Lease = undefined;
+    if (!s.ready(&lease) or s.journal.frame.?.level != 7 or !s.valid(actor, 0x1440)) return expired;
+    const character = s.read(u16, actor + 0xdc0);
+    if (character != 321 and character != 333) return expired;
+    const stage = @backingInt(Stage.release_expired);
+    return @import("cadence_gate.zig").apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, stage, 0, expired, null, &clonewars_force_eligibility_debug[stage]);
 }
 
 fn bridge(comptime label: []const u8, comptime skip: []const u8, comptime replay: []const u8) []const u8 {
@@ -78,4 +93,5 @@ comptime {
     asm (bridge("force_request_eligible", "force_request_eligible_skip", ""));
     asm (bridge("force_request_action", "force_request_eligible_skip", ""));
     asm (bridge("force_request_available", "force_request_available_skip", "movl (%ebx),%eax"));
+    asm (bridge("force_release_expired", "force_release_wait", ""));
 }

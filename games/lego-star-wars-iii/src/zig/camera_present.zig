@@ -10,6 +10,7 @@ fn addedWork(device: usize) void {
     if (device != s.game_device) return;
     s.clonewars_camera_threads[0] = s.win.GetCurrentThreadId();
     s.network_window_update();
+    if (comptime @hasDecl(@import("root"), "native_title")) @import("root").native_title.update();
     s.trace_frame +%= 1;
     if (comptime @hasDecl(@import("root"), "background_loopback")) {
         if (s.background_capture) @import("root").background_loopback.update();

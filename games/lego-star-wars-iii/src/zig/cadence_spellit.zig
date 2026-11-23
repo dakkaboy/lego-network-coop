@@ -52,7 +52,7 @@ pub export fn cadence_spellit_prepare(actor: usize, manager: usize, frame: usize
             if (index == s.spellit_scopes.len) break :input;
             s.spellit_scope_count += 1;
         }
-        s.spellit_scopes[index] = .{ .lease = op, .actor = actor, .manager = manager, .native_frame = frame, .generation = generation, .node_visit = 0, .input = query };
+        s.spellit_scopes[index] = .{ .lease = op, .actor = actor, .manager = manager, .native_frame = frame, .generation = generation, .node_visit = 0, .node_gate_start = s.fire_task_cursor, .input = query };
         if (s.journal.host == 0) {
             limit.* = query.limit;
             if (!equal(&local, &query)) {

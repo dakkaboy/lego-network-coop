@@ -53,7 +53,7 @@ fn initialize(module: usize) callconv(.winapi) u32 {
         }
         var foreground_pid: u32 = 0;
         _ = api.GetWindowThreadProcessId(api.GetForegroundWindow(), &foreground_pid);
-        const down = @as(u16, @bitCast(api.GetAsyncKeyState(0x7b))) & 0x8000 != 0;
+        const down = (api.GetAsyncKeyState(0x79) | api.GetAsyncKeyState(0x7b)) < 0;
         if (down and !was_down and foreground_pid == s.win.GetCurrentProcessId()) _ = api.PostMessageW(s.game_window, s.menu_message, 0, 0);
         was_down = down;
         api.Sleep(12);

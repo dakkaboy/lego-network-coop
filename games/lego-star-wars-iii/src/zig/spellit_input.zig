@@ -12,6 +12,7 @@ const physics = @import("physics_validation.zig");
 const Query = *const fn (usize) callconv(.{ .x86_thiscall = .{} }) u32;
 var installed = false;
 var trace_native = false;
+pub export var clonewars_resolute_hologram_skips: u32 = 0;
 export var spellit_target_resume: usize = 0x8406b8;
 export var spellit_timeout_flags_resume: usize = 0x812d81;
 export var spellit_finish_flags_resume: usize = 0x812df7;
@@ -92,6 +93,14 @@ fn invokeHop(address: usize) callconv(.c) usize {
         v.source_name = s.source.key.name;
         v.gizmo_class = s.source.key.gizmo_class;
         v.gizmo_ordinal = s.source.key.gizmo_ordinal;
+        if (comptime @hasDecl(@import("root"), "native_title")) {
+            if (s.source.counted_name == 0 and std.mem.eql(u8, &win.load([5]u8, s.gizmo + 0x30), "HOLO\x00") and
+                @import("physics_state.zig").skipResoluteHologramStep(&input, &s.token))
+            {
+                clonewars_resolute_hologram_skips +%= 1;
+                return 0;
+            }
+        }
         const before = input;
         if (physics_world_input(&input, &s.token) != 1) {
             state.reject(s, 4, input.kind);

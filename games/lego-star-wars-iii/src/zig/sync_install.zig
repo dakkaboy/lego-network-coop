@@ -53,6 +53,7 @@ pub fn safe(_: usize, _: *const s.owner.Input, _: usize) callconv(.c) c_int {
         if (api.entities_install() == 0) return 0;
         s.module_install_mask |= (1 << 5) | (1 << 7);
         if (api.tags_install() == 0) return 0;
+        @import("tick_actor.zig").gungan_vehicle_handoff = @import("tag_frame.zig").replayGunganVehicleHandoff;
         s.module_install_mask |= 1;
         if (api.projectiles_install() == 0) return 0;
         s.module_install_mask |= 2;

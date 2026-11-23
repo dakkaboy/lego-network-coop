@@ -121,9 +121,10 @@ pub fn procedure(window: usize, message: u32, wp: usize, lp: isize) callconv(.wi
         requestWindowed(window);
         return 0;
     }
-    if ((message == 0x101 or message == 0x105) and wp == 0x7b) return 0;
+    const menu_key = wp == 0x79 or wp == 0x7b;
+    if ((message == 0x101 or message == 0x105) and menu_key) return 0;
     if (message == 0x112 and wp & 0xfff0 == 0xf100) return 0;
-    if (((message == 0x100 or message == 0x104) and wp == 0x7b and @as(usize, @bitCast(lp)) & (@as(usize, 1) << 30) == 0) or message == s.menu_message) {
+    if (((message == 0x100 or message == 0x104) and menu_key and @as(usize, @bitCast(lp)) & (@as(usize, 1) << 30) == 0) or message == s.menu_message) {
         if (message != s.menu_message) _ = s.coop_input(window, message, wp, lp);
         if (s.menu_closed_at != 0 and api.GetTickCount() -% s.menu_closed_at < 350) return 0;
         s.coop_toggle();
@@ -134,6 +135,10 @@ pub fn procedure(window: usize, message: u32, wp: usize, lp: isize) callconv(.wi
     const handled = s.coop_input(window, message, wp, lp);
     s.network_window_update();
     if (handled != 0) return @intFromBool(message == 0x20);
+    if (s.background_capture and message == 0x100 and @as(usize, @bitCast(lp)) & (@as(usize, 1) << 30) == 0) {
+        const scan: u8 = switch (wp) { 0x08 => 0x0e, 0x0d => 0x1c, 0x26 => 0xc8, 0x28 => 0xd0, else => 0 };
+        if (scan != 0 and @import("camera_install.zig").queueBackgroundKey(scan)) return 0;
+    }
     return api.CallWindowProcW(s.previous_proc, window, message, wp, lp);
 }
 pub fn find(window: usize, _: isize) callconv(.winapi) i32 {

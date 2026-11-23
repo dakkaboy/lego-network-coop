@@ -35,15 +35,18 @@ fn named(read: *Reader, address: usize, expected: []const u8) bool {
     const actual: [*]const u8 = @ptrFromInt(address);
     return std.ascii.eqlIgnoreCase(actual[0..expected.len], expected);
 }
-fn zilloStatic(read: *Reader, hash: *Hash, body: usize, owner: usize, owner_name: usize, name_length: usize, filename: usize, classes: [3]u32) bool {
+fn staticLevelSupport(read: *Reader, hash: *Hash, body: usize, owner: usize, owner_name: usize, name_length: usize, filename: usize, classes: [3]u32) bool {
     if (classes[0] != 0x869eac or classes[2] != 0x820f64 or
         win.load(usize, body + 0x14) != 0 or win.load(usize, body + 0x98) != 0) return false;
-    if (!named(read, filename, "ZilloBeast_B_temp.led") or name_length < 3 or win.load(u8, owner_name) != '#') return false;
+    if (name_length < 3 or win.load(u8, owner_name) != '#') return false;
     for (1..name_length - 1) |i| if (!std.ascii.isDigit(win.load(u8, owner_name + i))) return false;
     const label = win.load(usize, body + 0x1c);
+    const zillo = named(read, filename, "ZilloBeast_B_temp.led");
+    const gungan = named(read, filename, "GunganGeneral_A_temp.led");
     if (classes[1] == 0x869b0c and named(read, label, "plate_grey_solid")) {
-        hash.bytes("zillo-static-build-plate");
-    } else if (classes[1] == 0x869b7c) {
+        if (!zillo and !gungan) return false;
+        hash.bytes(if (zillo) "zillo-static-build-plate" else "gungan-static-build-plate");
+    } else if (zillo and classes[1] == 0x869b7c) {
         const rock1 = named(read, label, "Rock1P1") or named(read, label, "Rock1P2");
         const rock = rock1 or named(read, label, "Rock2P1") or named(read, label, "Rock2P2");
         if (!rock and !named(read, label, "TNTSwitch_Base")) return false;
@@ -92,7 +95,7 @@ fn key(read: *Reader, ctx: Context, body: usize, output: *Identity) bool {
     const stored = win.load(u8, name);
     if (stored < 3 or !read.readable(name, stored) or win.load(u8, name + stored - 1) != 0) return false;
     var hash: Hash = .{};
-    if (kind == 0x20 and !zilloStatic(read, &hash, body, owner, name + 1, stored - 1, filename, .{ body_class, shape_class, owner_class })) return false;
+    if (kind == 0x20 and !staticLevelSupport(read, &hash, body, owner, name + 1, stored - 1, filename, .{ body_class, shape_class, owner_class })) return false;
     hash.bytes("level-scene-character-support");
     hash.number(body_class);
     hash.number(shape_class);

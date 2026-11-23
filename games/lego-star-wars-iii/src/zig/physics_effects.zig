@@ -23,6 +23,7 @@ export const effect_eviction_active = &state.active;
 export const effect_eviction_skip: usize = 0x742064;
 export const effect_eviction_candidate: usize = 0x74205d;
 pub export var clonewars_breakup_launch_debug: [4]u32 = @splat(0);
+pub export var clonewars_geonosis_breakup_suppressed: [4]u32 = @splat(0);
 pub export var clonewars_breakup_source_failure: [8]u32 = @splat(0);
 pub export var clonewars_breakup_launch_motion_debug: [14]u32 = @splat(0);
 pub export var clonewars_breakup_geometry_debug: [8]u32 = @splat(0);
@@ -31,6 +32,7 @@ pub export var clonewars_breakup_geometry_host: [19]u32 = @splat(0);
 pub export var clonewars_effect_birth_debug: [8]u32 = @splat(0);
 pub export var clonewars_effect_lifetime_debug: [10]u32 = @splat(0);
 export var breakup_launch_native: usize = 0x966af0;
+export const breakup_launch_next_mesh: usize = 0x9063a4;
 export var effect_birth_resume: usize = 0x7427df;
 extern fn constructor_lexical_seh(usize, *const fn (usize) callconv(.c) usize, *const fn (usize) callconv(.c) void) usize;
 extern fn spellit_input_install() c_int;
@@ -91,6 +93,36 @@ fn launchSource(descriptor: usize, handle: usize, native_frame: usize) LaunchSou
         ) orelse @splat(0);
     }
     return source;
+}
+fn extraGeonosisDebris(source: LaunchSource, handle: usize, descriptor: usize, native_frame: usize) bool {
+    if (source.site != breakup.rts_breakup_site or state.host or !readable(native_frame, 20) or
+        read(usize, native_frame + 16) != 0 or source.name[0] == 0 or source.name[1] == 0) return false;
+    const frame = state.frame.?;
+    if (frame.level != 79 or frame.physics_choice_count > p.SYNC_MAX_PHYSICS_CHOICES) return false;
+
+    if (read(u32, descriptor) != 1 or read(u8, descriptor + 0x2c) != 1 or
+        read(u8, descriptor + 0x2d) != 1 or !readable(handle, 8)) return false;
+    const resource = read(usize, handle);
+    const mesh = read(usize, handle + 4);
+    if (!readable(resource, 0x6fc) or !readable(mesh, 0xb8)) return false;
+    const runtime = read(usize, resource + 0x6f8);
+    if (!readable(runtime, 0x70) or read(u32, runtime + 0x68) != 17) return false;
+    const name = read(usize, mesh + 0xb4);
+    if (!readable(name, 8)) return false;
+    const text = read([8]u8, name);
+    if (!std.mem.eql(u8, text[0..6], "tt41_3") or text[6] < '0' or text[6] > '5' or text[7] != 0) return false;
+    // The asset lists mesh 30 first, followed by 35 through 31.
+    const index: usize = if (text[6] == '0') 7 else 13 - @as(usize, text[6] - '0');
+    const meshes = read(usize, runtime + 0x6c);
+    if (meshes == 0 or mesh -% meshes != index * 0xe0 or !state.live()) return false;
+
+    // Skip this mesh in the debris loop. The caller still runs its destruction state update.
+    // Preserve the strict launch check whenever the host recorded an RTS breakup in this frame.
+    for (frame.physics_choices[0..frame.physics_choice_count]) |*entry| {
+        if (entry.kind == p.SYNC_PHYSICS_BREAKUP_LAUNCH and entry.site == breakup.rts_breakup_site) return false;
+    }
+    clonewars_geonosis_breakup_suppressed = .{ frame.epoch, frame.sequence, read(u32, 0xfb4b6c), clonewars_geonosis_breakup_suppressed[3] +% 1 };
+    return true;
 }
 fn applyLaunch(descriptor: usize, source: LaunchSource) void {
     var local = std.mem.zeroes(Choice);
@@ -213,12 +245,13 @@ fn applyGeometry(descriptor: usize, source: LaunchSource, matrix: usize, scale: 
     state.consume(2);
     clonewars_breakup_geometry_debug[1] +%= 1;
 }
-pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, matrix: usize, scale: usize, model: usize, native_frame: usize) void {
+pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, matrix: usize, scale: usize, model: usize, native_frame: usize) c_int {
     const saved = win.GetLastError();
     defer win.SetLastError(saved);
-    if (!state.active or state.failed or !state.live() or !readable(descriptor, 0x30) or read(u8, descriptor + 0x2c) == 0) return;
+    if (!state.active or state.failed or !state.live() or !readable(descriptor, 0x30) or read(u8, descriptor + 0x2c) == 0) return 0;
     _ = breakup.register(handle, model, state.frame.?.epoch);
     const source = launchSource(descriptor, handle, native_frame);
+    if (extraGeonosisDebris(source, handle, descriptor, native_frame)) return 1;
     applyLaunch(descriptor, source);
     if (!state.failed and state.live()) applyGeometry(descriptor, source, matrix, scale);
     if (state.failed and clonewars_breakup_source_failure[0] == 0) {
@@ -233,6 +266,7 @@ pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, mat
             }
         }
     }
+    return 0;
 }
 pub export fn physics_effect_birth(node: usize) void {
     const saved = win.GetLastError();
@@ -360,7 +394,10 @@ fn effectInput(local: *const Choice) ?u32 {
         return local.payload.basic.recipe[0];
     }
     if (local.kind == p.SYNC_PHYSICS_EFFECT_REST) {
-        return state.rest(local) orelse { _ = state.fail(3, local, state.expectedEntry()); return null; };
+        return state.rest(local) orelse {
+            _ = state.fail(3, local, state.expectedEntry());
+            return null;
+        };
     }
     const expected = state.expectedEntry();
     if (expected == null or !validation.sameSource(local, expected.?)) {

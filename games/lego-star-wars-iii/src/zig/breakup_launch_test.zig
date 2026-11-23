@@ -2,18 +2,21 @@ const f = @import("native_probe_fixture.zig");
 const win = @import("win32.zig");
 const check = @import("native_test_support.zig").check;
 export var breakup_launch_native: usize = 0;
+export var breakup_launch_next_mesh: usize = 0;
 export var effect_birth_resume: usize = 0;
 var projections: u32 = 0;
 pub export fn physics_effect_birth(_: usize) void {}
-pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, matrix: usize, scale: usize, model: usize, native_frame: usize) void {
+pub export fn physics_apply_breakup_launch(descriptor: usize, handle: usize, matrix: usize, scale: usize, model: usize, native_frame: usize) c_int {
     const err = win.GetLastError();
     check(@src(), model == 0x77777777 and native_frame == 0x55555555 and descriptor == 0x66666666 and handle == (if (f.iterator < 40) @as(usize, 0x11223344) else 0) and matrix == 0x8899aabb and scale == 0x99aabbcc);
     projections += 1;
     f.projected = 1;
     asm volatile ("fninit; pcmpeqd %%xmm0,%%xmm0; pxor %%xmm7,%%xmm7" ::: .{ .xmm0 = true, .xmm7 = true });
     win.SetLastError(err);
+    return @intCast(f.test_mode);
 }
 extern fn native_launch() void;
+extern fn next_mesh() void;
 extern fn physics_breakup_launch_thunk() void;
 comptime {
     _ = @import("physics_bridges.zig");
@@ -28,6 +31,10 @@ comptime {
         \\movl %eax,_argument
         \\popl %eax
         \\ret
+        \\_next_mesh:
+        \\movl $1,_branch
+        \\leal -4(%esp),%esp
+        \\jmp *-4(%esp)
     );
 }
 pub fn main() void {
@@ -47,4 +54,15 @@ pub fn main() void {
         f.expectSame(@src(), &fx, &regs);
     };
     check(@src(), projections == 3000);
+    breakup_launch_next_mesh = @intFromPtr(&next_mesh);
+    f.entry = @intFromPtr(&native_launch);
+    f.invoke_thunk();
+    const fx = f.observed_fx;
+    const regs = f.observed_regs;
+    const before = f.native_calls;
+    f.test_mode = 1;
+    f.entry = @intFromPtr(&physics_breakup_launch_thunk);
+    f.invoke_thunk();
+    check(@src(), f.branch == 1 and f.native_calls == before);
+    f.expectSame(@src(), &fx, &regs);
 }

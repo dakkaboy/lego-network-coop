@@ -452,14 +452,15 @@ fn unchangedNativeChoice() void {
         check(@src(), r.reaction_abort_frame(&lease) != 0);
     }
 }
-fn hiddenEnemyMeleeClip() void {
-    for (0..3) |variant| {
+fn idleWalkReactionClip() void {
+    for (0..5) |variant| {
         mode = 60 + @as(u32, @intCast(variant));
         setup();
         clearDebug();
-        source = 0;
-        frame.level = if (variant == 2) 63 else 64;
-        damage_caller = if (variant == 1) 0 else 0x871848;
+        const projectile = variant >= 3;
+        source = if (projectile) 3063 else 0;
+        frame.level = if (projectile) 6 else if (variant == 2) 63 else 64;
+        damage_caller = if (projectile) 0x81f27f else if (variant == 1) 0 else 0x871848;
         win.store(i16, actor + 0x2f4, -1);
         var token = tokenFor();
         var lease: s.Lease = undefined;
@@ -474,46 +475,52 @@ fn hiddenEnemyMeleeClip() void {
         token.release += 1;
         begin(&token, &lease, 0);
         win.store(i16, actor + 0x2f4, 1);
-        reaction_fixture_clip = 73;
+        const selected: u32 = if (variant == 3) 522 else 73;
+        reaction_fixture_clip = selected;
         invoke_choice();
         check(@src(), win.load(i16, actor + 0x2f4) == 1);
-        if (variant == 0) {
+        if (variant == 0 or variant == 3) {
             check(@src(), reaction_fixture_clip == 522 and fault == 0 and r.reaction_finish() != 0);
         } else {
-            check(@src(), reaction_fixture_clip == 73 and fault == 17 and r.reaction_finish() == 0);
+            check(@src(), reaction_fixture_clip == selected and fault == 17 and r.reaction_finish() == 0);
         }
         check(@src(), r.reaction_abort_frame(&lease) != 0);
     }
 }
-fn geonosisProjectileCooldown() void {
+fn geonosisProjectileCooldown(damage: i8, local_timer: f32) void {
     mode = 20;
     setup();
     clearDebug();
     frame.level = 79;
     var token = tokenFor();
     var lease: s.Lease = undefined;
-    var outcome = std.mem.zeroes(Snapshot);
+    var hit: s.Receipt = undefined;
     begin(&token, &lease, 1);
     win.store(f32, actor + 0xd3c, -0.01);
-    hitReceipt(&outcome, false);
+    receipt.reaction_damage_begin(&hit, actor, source);
+    selected_clip = 0xffffffff;
+    choice.reaction_apply_choice(actor, &selected_clip);
+    win.store(i8, actor + 0xdde, 5 - damage);
+    win.store(f32, actor + 0xd3c, 2.5);
+    receipt.reaction_damage_complete(&hit);
     check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
 
     client = true;
     token.release += 1;
     begin(&token, &lease, 0);
     win.store(i8, actor + 0xdde, 5);
-    win.store(f32, actor + 0xd3c, 0.75);
-    receipt.reaction_damage_begin(&outcome.receipt, actor, source);
-    check(@src(), win.load(f32, actor + 0xd3c) == -0.01 and outcome.receipt.hit.timer_before == -0.01);
+    win.store(f32, actor + 0xd3c, local_timer);
+    receipt.reaction_damage_begin(&hit, actor, source);
+    check(@src(), win.load(f32, actor + 0xd3c) == -0.01 and hit.hit.timer_before == -0.01);
     damage_caller = 0x81f27f;
-    check(@src(), receipt.reaction_projectile_damage_amount(actor, 0) == 1);
+    check(@src(), receipt.reaction_projectile_damage_amount(actor, 0) == damage);
     check(@src(), receipt.reaction_projectile_damage_amount(actor, 2) == 2 and s.journal.cursor == 0);
-    win.store(i8, actor + 0xdde, 4);
+    win.store(i8, actor + 0xdde, 5 - damage);
     win.store(f32, actor + 0xd3c, 2.5);
-    receipt.reaction_damage_complete(&outcome.receipt);
+    receipt.reaction_damage_complete(&hit);
     check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0 and fault == 0);
 }
-fn geonosisLastHealthPoint() void {
+fn geonosisBlockedProjectile(health: i8, host_timer: f32, client_timer: f32) void {
     mode = 20;
     setup();
     clearDebug();
@@ -523,18 +530,22 @@ fn geonosisLastHealthPoint() void {
     var lease: s.Lease = undefined;
     var hit: s.Receipt = undefined;
     begin(&token, &lease, 1);
-    win.store(i8, actor + 0xdde, 1);
-    win.store(f32, actor + 0xd3c, -0.01);
+    win.store(i8, actor + 0xdde, health);
+    win.store(f32, actor + 0xd3c, host_timer);
     receipt.reaction_damage_begin(&hit, actor, source);
     receipt.reaction_damage_complete(&hit);
-    check(@src(), frame.reaction_count == 1 and frame.reactions[0].payload.clip.hit.health_after == 1);
+    check(@src(), frame.reaction_count == 1 and frame.reactions[0].payload.clip.hit.health_after == health);
     check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
 
     client = true;
     token.release += 1;
     begin(&token, &lease, 0);
+    win.store(f32, actor + 0xd3c, client_timer);
+    receipt.reaction_damage_begin(&hit, actor, source + 1);
+    check(@src(), hit.hit.timer_before == client_timer and win.load(f32, actor + 0xd3c) == client_timer and s.journal.cursor == 0);
     receipt.reaction_damage_begin(&hit, actor, source);
-    check(@src(), receipt.reaction_projectile_damage_amount(actor, 2) == 0);
+    check(@src(), hit.hit.timer_before == host_timer and win.load(f32, actor + 0xd3c) == host_timer);
+    if (health == 1) check(@src(), receipt.reaction_projectile_damage_amount(actor, 2) == 0);
     receipt.reaction_damage_complete(&hit);
     check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0 and fault == 0);
 }
@@ -572,7 +583,7 @@ pub fn main() void {
     }
     installedHooks();
     unchangedNativeChoice();
-    hiddenEnemyMeleeClip();
+    idleWalkReactionClip();
     arenaBeforeHit();
     actionTraceChecks();
 }
@@ -665,6 +676,9 @@ fn arenaBeforeHit() void {
         }
         check(@src(), r.reaction_abort_frame(&lease) != 0);
     }
-    geonosisProjectileCooldown();
-    geonosisLastHealthPoint();
+    geonosisProjectileCooldown(1, 0.75);
+    geonosisProjectileCooldown(2, -0.01);
+    geonosisBlockedProjectile(1, -0.01, -0.01);
+    geonosisBlockedProjectile(1, 0.9, 0.4984956);
+    geonosisBlockedProjectile(2, 0.95, -0.09);
 }

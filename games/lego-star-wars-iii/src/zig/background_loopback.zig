@@ -15,6 +15,11 @@ fn setting(name: [:0]const u8, buffer: []u8) []const u8 {
     const size = camera.platform.GetEnvironmentVariableA(name, buffer.ptr, @intCast(buffer.len));
     return if (size < buffer.len) buffer[0..size] else "";
 }
+pub fn testPort() ?u16 {
+    var buffer: [32]u8 = undefined;
+    const port = std.fmt.parseInt(u16, setting("CLONEWARS_LOOPBACK_PORT", &buffer), 10) catch return null;
+    return if (port != 0) port else null;
+}
 
 pub fn skipIntro() bool {
     return (role == .host or role == .client) and session.lan_status() == 3;
@@ -28,7 +33,9 @@ pub fn update() void {
         if (role == .host) {
             requested_level = std.fmt.parseInt(i32, setting("CLONEWARS_LOOPBACK_LEVEL", &buffer), 10) catch null;
         }
-        if (role != .disabled) lan.startLoopback(role == .host);
+        if (role != .disabled) {
+            lan.startLoopback(role == .host, testPort());
+        }
     }
     if (role == .disabled) return;
 

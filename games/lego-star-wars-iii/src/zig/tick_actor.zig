@@ -3,12 +3,21 @@ const load = s.load;
 const store = s.store;
 const v = s.site;
 const win = s.win;
+pub var gungan_vehicle_handoff: ?*const fn (u32) bool = null;
 pub export fn native_weapon_commands(actor: usize) void {
     if (!s.ready()) return;
     const error_code = win.GetLastError();
     defer win.SetLastError(error_code);
     const time = s.clock();
     const at = v.WEAPON_COMMAND_ACTOR;
+    if (!s.host and s.frame.?.level == 24 and s.cursor != 0 and s.frame.?.tick_gates[s.cursor - 1].clock == time -% 1) {
+        if (gungan_vehicle_handoff) |handoff| {
+            if (!handoff(time) or !s.ready()) {
+                s.fail(4, at, time, s.firstExpected());
+                return;
+            }
+        }
+    }
     var slot = s.entities_slot(actor);
     var generation = s.entities_generation(actor);
     if (!s.host and (slot < 0 or generation == 0) and s.entities_bind_native_actor(s.frame.?, actor) != 0) {
@@ -133,6 +142,11 @@ pub export fn native_rts_turn_input(turret: usize, local: u32, look: usize) u32 
     const before = load(u32, look);
     var ignored: [4]u32 = undefined;
     s.run(&source, &sites, &ignored);
+    if (!s.host and s.ready() and s.early_rts_wait == s.cursor) {
+        s.early_rts_wait = null;
+        _ = s.decision(v.RTS_WAIT_SAMPLE, 0);
+        if (s.ready()) s.clonewars_native_rts_wait_reorders +%= 1;
+    }
     if (!s.ready()) return local;
     s.clonewars_native_rts_turn_debug[@intFromBool(!s.host)] +%= 1;
     if (source[2] != local) s.clonewars_native_rts_turn_debug[2] +%= 1;

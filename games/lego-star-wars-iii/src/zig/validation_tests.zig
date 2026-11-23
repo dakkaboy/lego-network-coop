@@ -23,7 +23,7 @@ fn sameStream(oracle: *Cursor, gates: []const p.SyncTickGate) !void {
     try std.testing.expectEqual(oracle.tickStream(gates.ptr, @intCast(gates.len)) != 0, tick.streamValid(gates));
 }
 test "wire validation: all tick sites and boundary values match the original" {
-    @setEvalBranchQuota(2000);
+    @setEvalBranchQuota(4000);
     var oracle = Cursor.init(0);
     defer oracle.finish();
     inline for (@typeInfo(s).@"struct".decl_names) |name| {

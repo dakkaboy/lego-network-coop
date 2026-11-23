@@ -98,7 +98,7 @@ fn preload_state_seal(state: ?*a.NativePreloadState, serial: u32) bool {
 }
 pub fn main() void {
     check(@src(), @sizeOf(a.SyncPreloadInput) == 48);
-    check(@src(), @sizeOf(a.SyncPreloadReceipt) == 1044);
+    check(@src(), @sizeOf(a.SyncPreloadReceipt) == 1144);
     check(@src(), @sizeOf(a.SyncWorldReady) == 24);
     check(@src(), native_jobs_idle(0, 0, 0, 0));
     check(@src(), !native_jobs_idle(1, 0, 0, 0));

@@ -120,6 +120,20 @@ pub export fn native_rts_producer_rng(battlefield: usize) void {
 pub export fn native_rts_wait_sample(local: u32) u32 {
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
+    // Geonosis can sample an inactive wait just before the turret turns.
+    if (local == 0 and s.ready() and !s.host and s.frame.?.level == 79 and s.early_rts_wait == null) {
+        if (s.expected(5)) |gates| {
+            const clock = s.clock();
+            for (gates[0..4], s.consecutive(4, v.RTS_TURN_INPUT, 1)) |gate, site| {
+                if (gate.site != site or gate.clock != clock or !s.valid.gateValid(gate)) break;
+            } else {
+                if (gates[4].site == v.RTS_WAIT_SAMPLE and gates[4].clock == clock and gates[4].value == 0) {
+                    s.early_rts_wait = s.cursor + 4;
+                    return 0;
+                }
+            }
+        }
+    }
     return s.decision(v.RTS_WAIT_SAMPLE, @intFromBool(local != 0));
 }
 pub export fn native_rts_wait_seed(object: usize) void {

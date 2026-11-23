@@ -8,6 +8,8 @@ const root = @import("root");
 const testing = if (@hasDecl(root, "world_vars_test_api")) root.world_vars_test_api else false;
 var binding = std.mem.zeroes(Token);
 var bound = false;
+pub export var clonewars_world_variable_failure: [8]u32 = @splat(0);
+pub export var clonewars_world_variable_failure_name: [32]u8 = @splat(0);
 var retired = std.mem.zeroes(Token);
 var retired_valid = false;
 extern fn coherent_frame_valid(*const Token, u32) c_int;
@@ -79,7 +81,11 @@ fn collectRegistry(token: *const Token, frame: *p.SyncFrame, registry: usize, ar
         const name = @as([*]const u8, @ptrFromInt(node + 0x14))[0..32];
         const length = std.mem.indexOfScalar(u8, name, 0) orelse name.len;
         @memcpy(variable.name[0..length], name[0..length]);
-        if (!validation.worldVariable(frame.level, variable)) return false;
+        if (!validation.worldVariable(frame.level, variable)) {
+            clonewars_world_variable_failure = .{ frame.epoch, frame.sequence, @bitCast(frame.level), frame.variable_count, scope, @bitCast(variable.value), @truncate(node), @truncate(registry) };
+            clonewars_world_variable_failure_name = variable.name;
+            return false;
+        }
         frame.variables[frame.variable_count] = variable;
         frame.variable_count += 1;
         node = ptr(node + 8);

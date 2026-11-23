@@ -26,6 +26,8 @@ var initial_request_completed = false;
 var request_serial: u32 = 1;
 var accepted_serial: u32 = 0;
 var last_gameplay_session: u32 = 0;
+var saved_hub_entry: i32 = -1;
+var loaded_coop_wait = false;
 var committed_level: i32 = -1;
 var transition_waiting = false;
 var hub_return: struct { session: u32 = 0, epoch: u32 = 0, level: i32 = 0 } = .{};
@@ -147,6 +149,7 @@ pub export fn game_network_world_targeted(level: i32) c_int {
     const desired = desiredLevel();
     return @intFromBool(desired < 0 or desired == level);
 }
+
 pub export fn game_native_loader_idle() c_int {
     const queued = read(u32, 0xeb0d18);
     const active = ptr(0xeb0d20);
@@ -519,8 +522,13 @@ fn pollClientTransition(current: i32, world_active: bool) void {
     }
     game_cancel_level_request();
 }
+pub fn holdLoadedCoop() void {
+    loaded_coop_wait = true;
+}
+
 pub export fn game_poll() void {
     transition_waiting = false;
+    if (comptime @hasDecl(root_options, "native_title")) root_options.native_title.update();
     const current = api.game_current_level();
     const flow_state = ptr(0xfb2e60);
     const playing = accessible(flow_state, 0x1b7c) and read(i32, flow_state + 0x1b78) == 0xe;
@@ -530,12 +538,36 @@ pub export fn game_poll() void {
         if (device >= 0 and device < 14 and read(u8, 0xead928 + @as(usize, @intCast(device)) * 144) != 0) @as(*const fn (i32, i32) callconv(.c) void, @ptrFromInt(0x582da0))(0, device);
     }
     const pending = read(i32, 0xe6e61c);
-    if (api.lan_status() == 3) {
+    const status = api.lan_status();
+    if (loaded_coop_wait) {
+        if (status == 1 and api.lan_is_host() != 0) {
+            transition_waiting = true;
+            return;
+        }
+        loaded_coop_wait = false;
+        if (status == 3 and api.lan_is_host() != 0) {
+            if ((playing or starting) and pending < 0 and game_network_level_valid(current) != 0) {
+                game_request_reload(current);
+            }
+        }
+    }
+    if (status == 3) {
         const session = api.lan_session_serial();
         const published_epoch = api.lan_epoch();
         if (published_epoch != 0 and published_epoch == api.game_sync_epoch() and api.game_sync_status() == 2) last_gameplay_session = session;
         if (api.lan_is_host() != 0) {
             const reconnecting = last_gameplay_session != 0 and last_gameplay_session != session;
+            // A local save restore can retain a party that native mission entry does not recreate.
+            // Finish the restore, then use the same native entry path on both peers.
+            if (published_epoch == 0 and isNativeTitles(current) and game_network_level_valid(pending) != 0 and read(u32, nativeDefinition(pending) + 0x50) & 0x1000000 != 0) {
+                saved_hub_entry = pending;
+                api.lan_publish_ready(0);
+                return;
+            }
+            if (saved_hub_entry == current and pending < 0 and (playing or starting) and desiredLevel() < 0) {
+                saved_hub_entry = -1;
+                game_request_reload(current);
+            }
             // The peer's fresh loader cannot replay an opening track the host has already consumed.
             const opening_in_progress = starting and read(u32, 0xfb4b6c) != 0;
             if (session != 0 and published_epoch == 0 and (reconnecting or opening_in_progress) and (playing or starting) and pending < 0 and game_network_level_valid(current) != 0 and desiredLevel() < 0) game_request_reload(current);
@@ -545,6 +577,7 @@ pub export fn game_poll() void {
             if (game_network_level_valid(pending) != 0 and api.game_sync_epoch_level() == current and api.game_sync_sequence() != 0) transition_waiting = true;
         }
     } else {
+        saved_hub_entry = -1;
         _ = api.game_sync_poll_epoch(-1, 0);
         committed_level = -1;
         accepted_serial = 0;

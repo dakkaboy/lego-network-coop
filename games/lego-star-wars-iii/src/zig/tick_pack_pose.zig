@@ -45,6 +45,14 @@ pub export fn native_pack_pose(member: usize, at: u32) void {
         s.fail(1, at, s.clock(), s.firstExpected());
         return;
     }
+    if (!s.host and s.firstExpected() != null and s.firstExpected().?.site == at and s.firstExpected().?.value != local[0] and s.clonewars_native_tick_failure[0] == 0) {
+        const pack = load(usize, member + 0x68);
+        s.clonewars_native_tick_failure[8..16].* = .{
+            id.index, id.witness, local[0], s.firstExpected().?.value, member, pack,
+            if (s.readable(pack, 0xb0)) load(u32, pack + 0xac) else 0,
+            if (s.readable(pack, 0x144)) load(u32, pack + 0x13c) else 0,
+        };
+    }
     if (!canonical(&local, &sites, &source) or !validate(&source, &sites)) return;
     var ignored: [5]u32 = undefined;
     s.run(&local, &sites, &ignored);
