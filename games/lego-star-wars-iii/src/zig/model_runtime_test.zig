@@ -213,9 +213,14 @@ fn run() Snapshot {
     if (mode == 4) put(actor + 0x50, 0x203);
     if (mode == 5) win.store(u8, actor + 0x138e, 0);
     if (mode >= 18) {
-        frame.level = if (mode == 20) 63 else 64;
+        frame.level = if (mode >= 24) 73 else if (mode == 20) 63 else 64;
         put(actor + 0x4c, 0x400);
-        win.store(u16, actor + 0x2f4, 0xffff);
+        if (mode >= 24) win.store(i16, actor + 0xdc0, 201);
+        win.store(u16, actor + 0x2f4, switch (mode) {
+            24 => 29,
+            25 => 92,
+            else => 0xffff,
+        });
     }
     enter(&b);
     source();
@@ -244,6 +249,7 @@ fn run() Snapshot {
         if (mode >= 18) win.store(u16, actor + 0x2f4, switch (mode) {
             18 => 1,
             19, 20 => 10,
+            24, 25 => 0xffff,
             else => 0x29,
         });
         enter(&b);
@@ -413,6 +419,14 @@ pub fn main() void {
         if (mode <= 19) {
             check(@src(), out.finish != 0 and out.fault == 0);
             check(@src(), win.load(u16, actor + 0x2f4) == if (mode == 18) @as(u16, 1) else 10);
+        } else check(@src(), out.finish == 0 and out.fault == 20 and out.failure[7] == 9);
+    }
+    for (24..27) |variant| {
+        mode = @intCast(variant);
+        const out = run();
+        if (mode < 26) {
+            check(@src(), out.finish != 0 and out.fault == 0);
+            check(@src(), win.load(u16, actor + 0x2f4) == 0xffff);
         } else check(@src(), out.finish == 0 and out.fault == 20 and out.failure[7] == 9);
     }
     droidModelInputOrder(29, 333);

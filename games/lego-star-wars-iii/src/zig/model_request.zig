@@ -16,6 +16,9 @@ extern fn model_input_journal_validate(*t.Journal, ?*const p.SyncModelInput, c_i
 fn hiddenEnemyMotionAction(action: u32) bool {
     return action == 0xffff or action == 1 or action == 10;
 }
+fn vindiHiddenMotionAction(action: u32) bool {
+    return action == 0xffff or action == 29 or action == 92;
+}
 fn resolveInput(entry: *const p.SyncModelInput) usize {
     var reference = std.mem.zeroes(p.SyncActor);
     reference.slot = entry.slot;
@@ -122,8 +125,10 @@ pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) voi
             }
             local.context.actor_76 = e.context.actor_76;
             // These actions take the same path through the model producer. Keep the native action intact.
-            if (state.journal.frame.?.level == 64 and local.context.actor_4c_mask == 1 and
-                hiddenEnemyMotionAction(e.context.action) and hiddenEnemyMotionAction(raw.context.action))
+            if (local.context.actor_4c_mask == 1 and
+                ((frame.level == 64 and hiddenEnemyMotionAction(e.context.action) and hiddenEnemyMotionAction(raw.context.action)) or
+                    (frame.level == 73 and e.character == 201 and raw.character == 201 and
+                        vindiHiddenMotionAction(e.context.action) and vindiHiddenMotionAction(raw.context.action))))
             {
                 local.context.action = e.context.action;
             }
