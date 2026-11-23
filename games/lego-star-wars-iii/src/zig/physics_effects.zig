@@ -583,6 +583,7 @@ pub export fn physics_input_install() c_int {
     }
     if (!patch(0x905f33, 5, @intFromPtr(&physics_breakup_launch_thunk), true)) return 0;
     if (!patch(0x742051, eviction_prefix.len, @intFromPtr(&physics_effect_eviction_thunk), false)) return 0;
+    if (!@import("blue_shadow_blast.zig").install()) return 0;
     state.clonewars_physics_input_debug[4] = 3;
     return 1;
 }

@@ -57,6 +57,18 @@ pub fn vehicleSite(site: u32) bool {
 pub fn valid(choice: *const p.SyncPhysicsChoice) bool {
     const u = &choice.payload;
     switch (choice.kind) {
+        p.SYNC_PHYSICS_BLUE_SHADOW_BLAST => {
+            const blast = &u.blast;
+            const w = &blast.words;
+            const position: [3]f32 = @bitCast(w[4..7].*);
+            const elapsed: f32 = @bitCast(w[8]);
+            // The laboratory constructor uses a null owner and extra value. The native owner lookup also yields zero.
+            return choice.site == 0x8860ce and blast.slot < 8 and blast.update > 0 and blast.update <= 8 and
+                v.finite(position) and @abs(position[0]) < 64 and @abs(position[1]) < 16 and position[2] >= 30 and position[2] < 60 and
+                v.finite(elapsed) and elapsed >= 0 and elapsed < 0.5 and w[7] == 0x3ecccccc and w[9] == 0x3f000000 and
+                w[2] == 0 and w[3] == 0 and w[10] == 0x4025 and w[11] == 0 and w[12] >> 16 == 0xfffe and
+                w[13] >> 16 == 0xff01 and w[14] == 0xff and w[15] == 0 and emptyTail(choice, 84);
+        },
         p.SYNC_PHYSICS_EFFECT_STEP => {
             const s = &u.basic;
             const delta: f32 = @bitCast(s.recipe[0]);

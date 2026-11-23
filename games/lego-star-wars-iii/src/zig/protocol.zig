@@ -672,6 +672,12 @@ const PhysicsBasic = extern struct {
     recipe: [6]u32,
     rng: u32,
 };
+const PhysicsBlast = extern struct {
+    clock: u32,
+    update: u32,
+    slot: u32,
+    words: [16]u32,
+};
 
 const PhysicsPayload = extern union {
     basic: PhysicsBasic,
@@ -686,6 +692,7 @@ const PhysicsPayload = extern union {
     breakup_basis: SyncPhysicsBreakupBasisInput,
     rts_order: SyncPhysicsRtsOrderInput,
     rts_generator: SyncPhysicsRtsGeneratorInput,
+    blast: PhysicsBlast,
 };
 
 pub const SyncPhysicsChoice = extern struct {
@@ -901,6 +908,7 @@ pub const SYNC_PHYSICS_RTS_VISIBILITY: c_int = 23;
 
 pub const SYNC_PHYSICS_EFFECT_STEP: c_int = 24;
 pub const SYNC_PHYSICS_EFFECT_REST: c_int = 25;
+pub const SYNC_PHYSICS_BLUE_SHADOW_BLAST: c_int = 26;
 
 pub const enum_SyncPhysicsChoiceKind = c_int;
 
@@ -930,7 +938,7 @@ pub const SYNC_PROFILE_BYTES = @as(c_int, 0xb5c0);
 
 pub const SYNC_LAYOUT_VERSION = @as(c_int, 55);
 
-pub const SYNC_WIRE_VERSION = @as(c_int, 222);
+pub const SYNC_WIRE_VERSION = @as(c_int, 223);
 
 pub const SYNC_NATIVE_SPAN_PLAN_MASK = @as(c_uint, 7);
 

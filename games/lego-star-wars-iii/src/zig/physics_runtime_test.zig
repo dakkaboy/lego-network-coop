@@ -85,6 +85,9 @@ export fn entities_observed_identity(_: usize, slot: *u32, generation: *u32) c_i
     generation.* = 7;
     return 1;
 }
+export fn entities_actor(slot: u32, generation: u32) usize {
+    return if (mode == 405 and slot == 22 and generation == 45) 0xfb2000 else 0;
+}
 export fn spellit_input_install() c_int {
     return 1;
 }
@@ -459,7 +462,10 @@ fn install() void {
     @memcpy(bytes(0x743bb6, 13), &[_]u8{ 0xff, 0x75, 8, 0xe8, 0, 0, 0, 0, 0x83, 0xc4, 4, 0xc9, 0xc3 });
     put(0x743bba, @intFromPtr(&nativeUpdate) -% 0x743bbe);
     @memcpy(bytes(0x743ca8, 9), &[_]u8{ 0xf6, 0xc4, 0x41, 0x0f, 0x85, 0xfc, 8, 0, 0 });
-    for ([_]usize{ 0x700000, 0x71ab90, 0x71ac10, 0x742051, 0x7427d8, 0x905f33 }) |a| protect(a, 64);
+    const blast = @import("blue_shadow_blast.zig");
+    for ([_]usize{ 0x700000, 0x71ab90, 0x71ac10, 0x742051, 0x7427d8, blast.register_site, 0x8860ce, 0x905f33 }) |a| protect(a, 64);
+    @memcpy(bytes(blast.register_site, blast.register_prefix.len), blast.register_prefix);
+    @memcpy(bytes(0x8860ce, blast.update_prefix.len), blast.update_prefix);
     @memcpy(bytes(0x71ab90, 6), &[_]u8{ 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c });
     @memcpy(bytes(0x71ac10, 6), &[_]u8{ 0x56, 0x68, 0x98, 0xf4, 0xe5, 0 });
     @memcpy(bytes(0x71ab96, 12), &[_]u8{ 0x57, 0xe8, 0, 0, 0, 0, 0x83, 0xc4, 4, 0x5f, 0x5e, 0xc3 });
@@ -472,6 +478,114 @@ fn install() void {
     check(@src(), e.physics_input_install() != 0);
     spins = .{ 0x71ab95 +% win.load(u32, 0x71ab91), 0x71ac15 +% win.load(u32, 0x71ac11) };
 }
+extern fn blue_shadow_blast_register(usize, usize) void;
+extern fn blue_shadow_blast_update() void;
+fn labBlast() void {
+    mode = 405;
+    setup();
+    frame.level = 73;
+    const blast_pool = 0xfb3358;
+    const native_slot = blast_pool + 3 * 64;
+    @memset(bytes(blast_pool, 512), 0);
+    put(0xfb30b0, 3);
+    put(descriptor, 0xad953c);
+    @memcpy(bytes(descriptor + 0x30, 16), "iVindi_Can_01_Bl");
+    const position = [3]u32{ 0x3f800000, 0x3f000000, 0x42200000 };
+    win.store([3]u32, descriptor + 0x60, position);
+    const arguments = [9]u32{ 0x86507b, descriptor + 0x60, 0x3ecccccc, 0x3f000000, 0, 0xce99e0, 0x4025, 0xffffffff, 0 };
+    const seed = (91 * 0x24cd + 1) & 0xffff;
+    const canonical = [16]u32{ 0, 0, 0, 0, position[0], position[1], position[2], 0x3ecccccc, 0, 0x3f000000, 0x4025, 0, 0xfffe0000 | seed, 0xff010000, 0xff, 0 };
+    check(@src(), s.physics_input_begin(frame, 1) != 0);
+    blue_shadow_blast_register(@intFromPtr(&arguments), descriptor);
+    win.store([16]u32, native_slot, canonical);
+    blue_shadow_blast_update();
+    check(@src(), frame.physics_choice_count == 1 and s.physics_input_finish() != 0);
+
+    const captured = frame.physics_choices[0];
+    current.cohort.release += 1;
+    put(0xfb4b6c, 30);
+    frame.physics_choice_count = 0;
+    check(@src(), s.physics_input_begin(frame, 0) != 0);
+    var early = canonical;
+    early[4] = 0x40000000;
+    put(descriptor + 0x60, early[4]);
+    blue_shadow_blast_register(@intFromPtr(&arguments), descriptor);
+    win.store([16]u32, native_slot, early);
+    blue_shadow_blast_update();
+    check(@src(), win.load(u32, native_slot + 0x10) == early[4] and win.load(u32, native_slot + 0x20) == early[9] and s.physics_input_finish() != 0);
+
+    current.cohort.sequence += 1;
+    frame.sequence += 1;
+    put(0xfb4b6c, 31);
+    frame.physics_choices[0] = captured;
+    frame.physics_choice_count = 1;
+    check(@src(), s.physics_input_begin(frame, 0) != 0);
+    blue_shadow_blast_update();
+    const after_early = win.load([16]u32, native_slot);
+    check(@src(), std.mem.eql(u32, &canonical, &after_early) and s.physics_input_finish() != 0);
+
+    current.cohort.sequence += 1;
+    frame.sequence += 1;
+    frame.physics_choice_count = 0;
+    check(@src(), s.physics_input_begin(frame, 0) != 0);
+    win.store(u8, descriptor + 0x30, 'x');
+    blue_shadow_blast_register(@intFromPtr(&arguments), descriptor);
+    win.store([16]u32, native_slot, canonical);
+    blue_shadow_blast_update();
+    check(@src(), win.load(u32, native_slot + 0x20) == 0 and s.physics_input_finish() != 0);
+
+    current.cohort.release += 1;
+    win.store(u8, descriptor + 0x30, 'i');
+    frame.physics_choice_count = 1;
+    frame.physics_choices[0].payload.blast.update = 2;
+    check(@src(), s.physics_input_begin(frame, 0) != 0);
+    put(descriptor + 0x60, position[0]);
+    blue_shadow_blast_register(@intFromPtr(&arguments), descriptor);
+    win.store([16]u32, native_slot, canonical);
+    var other_caller = arguments;
+    other_caller[0] = 0x434125;
+    blue_shadow_blast_register(@intFromPtr(&other_caller), descriptor);
+    blue_shadow_blast_update();
+    check(@src(), win.load(u32, native_slot + 0x20) == 0);
+    blue_shadow_blast_update();
+    check(@src(), win.load(u32, native_slot + 0x20) == 0 and s.physics_input_finish() == 0);
+
+    frame.physics_choices[0] = captured;
+    for ([_]usize{ 2, 3, 11 }) |index| {
+        var pointer_payload = captured;
+        pointer_payload.payload.blast.words[index] = descriptor;
+        check(@src(), !@import("physics_validation.zig").valid(&pointer_payload));
+    }
+    for (0..2) |conflict| {
+        current.cohort.release += 1;
+        @memset(bytes(native_slot, 64), 0);
+        if (conflict != 0) {
+            put(native_slot + 0x24, 0x3f000000);
+            put(native_slot + 0x28, 0x8025);
+        }
+        check(@src(), s.physics_input_begin(frame, 0) != 0);
+        blue_shadow_blast_update();
+        if (conflict == 0) {
+            const actual = win.load([16]u32, native_slot);
+            check(@src(), std.mem.eql(u32, &canonical, &actual) and s.physics_input_finish() != 0);
+        } else {
+            check(@src(), win.load(u32, native_slot + 0x28) == 0x8025 and s.physics_input_finish() == 0);
+        }
+    }
+
+    current.cohort.release += 1;
+    @memset(bytes(native_slot, 64), 0);
+    frame.actor_count = 1;
+    frame.actors[0].slot = 22;
+    frame.actors[0].generation = 45;
+    frame.physics_choices[0].payload.blast.words[0] = 1 << 22;
+    put(0xfb3090, 1 << 24);
+    put(0xfb3094, 0);
+    check(@src(), s.physics_input_begin(frame, 0) != 0);
+    blue_shadow_blast_update();
+    check(@src(), win.load(u32, native_slot) == 1 << 24 and s.physics_input_finish() != 0);
+    s.physics_input_cancel();
+}
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 1100 and @intFromPtr(&image) < 0x700000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0xe50000, 0xe60000, 0xfa0000, 0xfb0000 }) |address| protect(address, 0x10000);
@@ -483,6 +597,7 @@ pub fn main() void {
     }
     @memcpy(bytes(name, 8), "fixture\x00");
     install();
+    labBlast();
     setup();
     check(@src(), s.physics_input_begin(frame, 1) != 0);
     var a = std.mem.zeroes(p.SyncPhysicsChoice);

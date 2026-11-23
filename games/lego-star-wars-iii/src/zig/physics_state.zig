@@ -34,6 +34,7 @@ pub fn live() bool {
 fn sourceWord(value: ?*const p.SyncPhysicsChoice) u32 {
     const choice = value orelse return 0;
     return switch (choice.kind) {
+        p.SYNC_PHYSICS_BLUE_SHADOW_BLAST => choice.payload.blast.slot,
         p.SYNC_PHYSICS_BREAKUP_BASIS => choice.payload.breakup_basis.name_hash[0],
         p.SYNC_PHYSICS_BREAKUP_SCALE, p.SYNC_PHYSICS_EFFECT_BIRTH, p.SYNC_PHYSICS_EFFECT_STEP, p.SYNC_PHYSICS_EFFECT_REST => choice.payload.basic.name_hash[0],
         p.SYNC_PHYSICS_SPELLIT_BODY_BASIS, p.SYNC_PHYSICS_SPELLIT_BODY_MOTION => choice.payload.spellit_body.key[0],
@@ -42,6 +43,7 @@ fn sourceWord(value: ?*const p.SyncPhysicsChoice) u32 {
 }
 fn clock(value: ?*const p.SyncPhysicsChoice) u32 {
     const choice = value orelse return 0;
+    if (choice.kind == p.SYNC_PHYSICS_BLUE_SHADOW_BLAST) return choice.payload.blast.clock;
     return if (choice.kind < p.SYNC_PHYSICS_SPELLIT_SEED or choice.kind == p.SYNC_PHYSICS_BREAKUP_SCALE or choice.kind == p.SYNC_PHYSICS_EFFECT_BIRTH or choice.kind == p.SYNC_PHYSICS_EFFECT_STEP or choice.kind == p.SYNC_PHYSICS_EFFECT_REST) choice.payload.basic.clock else choice.payload.world.clock;
 }
 pub fn fail(reason: u32, local: ?*const p.SyncPhysicsChoice, expected: ?*const p.SyncPhysicsChoice) c_int {
