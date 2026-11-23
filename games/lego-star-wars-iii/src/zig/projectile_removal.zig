@@ -7,6 +7,7 @@ const retire = @import("projectile_retire.zig");
 const Scope = @import("combat_types.zig").Scope;
 const Machine = @import("machine_environment.zig").Environment;
 const read = s.read;
+pub var released_by_native_pool: [p.SYNC_MAX_PROJECTILES]u32 = @splat(0);
 pub const Call = struct {
     op: t.Operation,
     manager: usize,
@@ -41,6 +42,7 @@ fn abort(context: usize) callconv(.c) void {
 fn commit(call: *Call) void {
     for (&s.tracked, 0..) |*entry, i| if (call.captured_id[i] != 0 and entry.birth.id == call.captured_id[i] and s.instance_serial[i] == call.captured_instance[i] and entry.object == call.object) {
         retire.forget(call.captured_id[i], call.captured_instance[i]);
+        released_by_native_pool[i] = 0;
         entry.object = 0;
         if (call.op.session.host != 0) entry.* = std.mem.zeroes(t.Tracked);
         control.dispatchChanged(&call.op);
@@ -88,7 +90,7 @@ pub export fn projectile_remove_hook(manager: usize, _: usize, object: usize, fl
     return observed(&call, 0);
 }
 pub var native_pool_release: t.PoolRelease = @ptrFromInt(0x69c9b0);
-const Pool = struct { removal: Call, request: usize, arguments: [3]u32, native_stamp: u32, qualified: bool };
+const Pool = struct { removal: Call, request: usize, arguments: [3]u32, native_stamp: u32, caller: u32, qualified: bool };
 extern fn projectile_pool_complete(*Pool, usize) void;
 fn contains(op: *const t.Operation, manager: usize, object: usize, stamp: u32) c_int {
     if (!control.live(op) or !retire.managerLive(manager)) return -1;
@@ -131,6 +133,7 @@ export fn projectile_pool_complete_impl(call: *Pool, _: usize) void {
     for (&s.tracked, 0..) |*entry, i| if (removal.captured_id[i] != 0 and entry.birth.id == removal.captured_id[i] and s.instance_serial[i] == removal.captured_instance[i] and entry.object == removal.object) {
         retire.forget(removal.captured_id[i], removal.captured_instance[i]);
         entry.object = 0;
+        released_by_native_pool[i] = if (call.caller == 0x8464d4) s.instance_serial[i] else 0;
         if (removal.op.session.host != 0) entry.* = std.mem.zeroes(t.Tracked);
         s.clonewars_projectile_pool_release_debug[3] +%= 1;
         control.dispatchChanged(&removal.op);
@@ -144,6 +147,7 @@ pub export fn projectile_pool_release_hook(request: usize, _: usize, a: u32, b: 
     var call = std.mem.zeroes(Pool);
     const removal = &call.removal;
     call.request = request;
+    call.caller = @truncate(@returnAddress());
     call.arguments = .{ a, b, d };
     removal.op = control.capture();
     control.admit(&removal.op);
@@ -165,7 +169,7 @@ pub export fn projectile_pool_release_hook(request: usize, _: usize, a: u32, b: 
                 for (s.legacy, 0..) |legacy, i| if (legacy == removal.object) {
                     removal.captured_legacy[i] = s.legacy_version[i];
                 };
-                s.clonewars_projectile_pool_release_debug[4] = @truncate(@returnAddress());
+                s.clonewars_projectile_pool_release_debug[4] = call.caller;
                 s.clonewars_projectile_pool_release_debug[5] = read(u32, 0xfb4b6c);
                 s.clonewars_projectile_pool_release_debug[6] = call.native_stamp;
             }

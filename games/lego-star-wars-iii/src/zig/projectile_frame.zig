@@ -42,6 +42,7 @@ pub fn reset(normalize: bool) void {
     s.instance_serial = @splat(0);
     s.creation_count = @splat(0);
     s.next_instance_serial = 0;
+    @memset(&removal.released_by_native_pool, 0);
     s.legacy = @splat(0);
     s.legacy_version = @splat(0);
     s.next_legacy_version = 0;
@@ -228,7 +229,9 @@ pub export fn projectiles_dispatch_complete() c_int {
                 s.failed = true;
                 continue;
             };
-            if (entry.object == 0 and entry.resource != 0 and creation.canReplayAfterTick(frame.level, &entry.birth)) {
+            if (entry.object == 0 and entry.resource != 0 and
+                (creation.canReplayAfterTick(frame.level, &entry.birth) or canRestoreBlueShadowB2(frame.level, entry)))
+            {
                 // The host still owns this projectile after the guest removed its local copy.
                 const birth = entry.birth;
                 const resource = entry.resource;
@@ -282,6 +285,16 @@ pub export fn projectiles_dispatch_complete() c_int {
     s.dispatch_completed_revision = s.dispatch_revision;
     s.dispatch_completed = true;
     return 1;
+}
+
+fn canRestoreBlueShadowB2(level: i32, entry: *const t.Tracked) bool {
+    const birth = &entry.birth;
+    if (level != 73 or entry.native_stamp == 0 or
+        birth.weapon != 9 or birth.flags != 0 or birth.source != p.SYNC_SHOT_WEAPON) return false;
+    const index = tracking.index(entry);
+    if (s.instance_serial[index] == 0 or removal.released_by_native_pool[index] != s.instance_serial[index]) return false;
+    const owner = tracking.actorAt(birth.owner, birth.owner_generation);
+    return s.valid(owner, 0x1440) and s.read(u16, owner + 0xdc0) == 333;
 }
 fn less(_: void, a: p.SyncProjectile, b: p.SyncProjectile) bool {
     return a.id < b.id;
