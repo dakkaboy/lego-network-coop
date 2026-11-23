@@ -89,6 +89,7 @@ export fn entities_describe(out: *p.SyncActor, a: usize) void {
     out.spawn_position[0] = if (a == actor) 1 else 2;
 }
 export fn entities_slot(a: usize) c_int {
+    if (mode == 58 and a == node) return 9;
     return if (a == actor) 7 else 8;
 }
 export fn entities_observed_generation(_: usize) u32 {
@@ -119,7 +120,7 @@ export fn entities_resolve_reference(state: *const p.SyncActor) usize {
     if (client and mode == 55) retained = false;
     if (client and mode == 25) put(poi + 0xd4, 0);
     if (client and (mode == 12 or (mode == 33 and state.slot == 8))) return 0;
-    const resolved = if (state.slot == 7) actor else other;
+    const resolved = if (state.slot == 7) actor else if (state.slot == 9 and mode == 58) node else other;
     if ((state.character == 417 or state.character == 429) and state.character != win.load(i16, resolved + 0xdc0)) return 0;
     return resolved;
 }
@@ -1326,7 +1327,12 @@ fn blueShadowCloneMotionOrder(lab: bool) void {
     setup();
     frame.level = if (lab) 73 else 70;
     win.store(u16, other + 0xdc0, if (lab) 138 else 156);
-    if (lab) win.store(u16, actor + 0xdc0, 184);
+    if (lab) {
+        win.store(u16, actor + 0xdc0, 184);
+        win.store(u16, node + 0xdc0, 188);
+        put(0xfb4944, other);
+    }
+    defer if (lab) put(0xfb4944, 0);
     var token = std.mem.zeroes(Token);
     token.owner = actor;
     token.owner_nonce = 1;
@@ -1366,8 +1372,10 @@ fn blueShadowCloneMotionOrder(lab: bool) void {
         _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 1, @ptrCast(&admission), &debug);
         _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 0, @ptrCast(&admission), &debug);
         _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 1, @ptrCast(&spellit_query), &debug);
+        _ = gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 0, @ptrCast(&admission), &debug);
+        _ = gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 1, @ptrCast(&admission), &debug);
     }
-    const gate_count: u32 = if (lab) 6 else 3;
+    const gate_count: u32 = if (lab) 8 else 3;
     check(@src(), frame.fire_task_gate_count == gate_count and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
     client = true;
@@ -1380,6 +1388,8 @@ fn blueShadowCloneMotionOrder(lab: bool) void {
         check(@src(), gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 0, @ptrCast(&admission), &debug) == 1);
         check(@src(), gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 1, @ptrCast(&admission), &debug) == 0);
         check(@src(), gate.apply(other, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&spellit_query), &debug) == 1 and s.fire_task_cursor == 0);
+        check(@src(), gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 1, @ptrCast(&admission), &debug) == 0);
+        check(@src(), gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 0, @ptrCast(&admission), &debug) == 1 and s.fire_task_cursor == 0);
     }
     check(@src(), gate.apply(other, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 0, @ptrCast(&query), &debug) == 1);
     if (lab) {

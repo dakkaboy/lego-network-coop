@@ -147,6 +147,10 @@ fn droidDecisionClock(entry: *const p.SyncFireTaskGate) u32 {
 fn forceScan(kind: u32) bool {
     return kind == p.SYNC_ACTOR_FORCE_VISIBILITY or kind == p.SYNC_ACTOR_FORCE_GEOMETRY;
 }
+fn labCompanionAdmission(character: i32, kind: u32, flags: u16, action: u16) bool {
+    return (character == 188 or character == 199) and kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and
+        (flags == 4 or flags == 5) and action == 0;
+}
 fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16, action: u16, local: c_int, state: ?[*]u8, debug: *[4]u32) ?c_int {
     const frame = s.journal.frame.?;
     const head = &frame.fire_task_gates[s.fire_task_cursor];
@@ -154,14 +158,15 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
     const lab_spellit = frame.level == 73 and (kind == p.SYNC_ACTOR_SPELLIT_ADMISSION or kind == p.SYNC_ACTOR_SPELLIT_QUERY);
     const motion_character = if ((kind == p.SYNC_ACTOR_CHARACTER_MOTION or lab_spellit) and state != null and s.valid(actor, 0x1440)) s.read(u16, actor + 0xdc0) else 0;
     const companion = frame.level == 79 and motion_character == 259;
-    const lab_clone = frame.level == 73 and motion_character == 138 and head.kind == p.SYNC_ACTOR_FORCE_VISIBILITY;
-    const blue_shadow_clone = (frame.level == 70 and motion_character == 156 and forceScan(head.kind)) or lab_clone;
+    const lab_companion = labCompanionAdmission(motion_character, kind, flags, action);
+    const lab_party = frame.level == 73 and (motion_character == 138 or lab_companion) and head.kind == p.SYNC_ACTOR_FORCE_VISIBILITY;
+    const blue_shadow_clone = (frame.level == 70 and motion_character == 156 and forceScan(head.kind)) or lab_party;
     const blue_shadow_droid = frame.level == 70 and blueShadowDroidMotion(motion_character) and blueShadowDroidDecision(head);
     const blue_shadow_motion = blue_shadow_clone or blue_shadow_droid;
     const droid_aim = (frame.level == 29 or frame.level == 70) and droidAim(head.kind, head.character) and s.valid(actor, 0x1440) and
         droidAim(kind, s.read(i16, actor + 0xdc0));
     if (!competitor and !companion and !blue_shadow_motion and !droid_aim) return null;
-    if (lab_clone) {
+    if (lab_party) {
         const force = &head.payload.force;
         const caster = s.entities_actor(force.caster_slot, force.caster_generation);
         if (!s.live(op) or !s.valid(caster, 0x1440) or s.read(u16, caster + 0xdc0) != 184 or force.clock != s.read(u32, @intFromPtr(state.?))) return null;
@@ -190,13 +195,15 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
         if (lab_spellit) {
             const clock = head.payload.force.clock;
             if (lab_motion) |motion| {
-                if ((entry.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION and entry.kind != p.SYNC_ACTOR_SPELLIT_QUERY) or
-                    entry.slot != motion.slot or entry.generation != motion.generation or entry.payload.state.repeat != clock) return null;
+                const clone_stage = (entry.kind == p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.kind == p.SYNC_ACTOR_SPELLIT_QUERY) and
+                    entry.slot == motion.slot and entry.generation == motion.generation;
+                if ((!clone_stage and !labCompanionAdmission(entry.character, entry.kind, entry.flags, entry.action)) or entry.payload.state.repeat != clock) return null;
                 if (s.early_actor_gates.isSet(i)) continue;
             } else {
-                if (entry.kind != p.SYNC_ACTOR_CHARACTER_MOTION or entry.payload.character_motion.clock != clock or !s.early_actor_gates.isSet(i)) return null;
+                if (entry.kind != p.SYNC_ACTOR_CHARACTER_MOTION or entry.character != 138 or entry.payload.character_motion.clock != clock or !s.early_actor_gates.isSet(i)) return null;
                 const identity = s.reference(entry);
-                if (s.entities_resolve_reference(&identity) != actor or !s.live(op)) return null;
+                const clone = if (lab_companion) s.read(usize, 0xfb4944) else actor;
+                if (clone == 0 or s.entities_resolve_reference(&identity) != clone or !s.live(op)) return null;
                 lab_motion = entry;
                 continue;
             }
