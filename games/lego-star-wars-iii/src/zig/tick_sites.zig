@@ -86,6 +86,7 @@ pub const ZILLO_SPREAD: u32 = 0x449d0d;
 pub const ZILLO_ORIENTATION: u32 = 0x449480;
 pub const ZILLO_THROW_COUNTDOWN: u32 = 0x4496a0;
 pub const ZILLO_GROUND_RENDER: u32 = 0x52271f;
+pub const SWAMP_PERISCOPE_QUERY: u32 = 0x49c58f;
 
 pub const ARENA_ROPE_BASIS = 0x8143dd;
 pub const ARENA_ROPE_BIRTH = 0x814502;

@@ -196,6 +196,27 @@ pub fn main() void {
     check(@src(), frame.tick_gate_count == s.p.SYNC_MAX_TICK_GATES and std.meta.eql(last, frame.tick_gates[s.p.SYNC_MAX_TICK_GATES - 1]));
     check(@src(), @import("tick_input.zig").native_tick_finish() == 0);
     arenaRope(&token);
+    swampPeriscope(&token);
+}
+
+extern fn swamp_periscope_result(usize, u32) u32;
+
+fn swampPeriscope(token: *const s.Token) void {
+    const input = @import("tick_input.zig");
+    var camera: [0x108]u8 align(4) = @splat(0);
+    const address = @intFromPtr(&camera);
+    s.store(u32, address, 0xae5724);
+    s.store(u32, address + 8, 3472594585);
+    frame.level = 70;
+    phase = 1;
+    check(@src(), input.native_tick_begin(frame, 1, token) != 0);
+    phase = 2;
+    check(@src(), swamp_periscope_result(address, 0) == 0 and frame.tick_gate_count == 1);
+    check(@src(), input.native_tick_finish() != 0 and s.valid.streamValid(frame.tick_gates[0..1]));
+    phase = 1;
+    check(@src(), input.native_tick_begin(frame, 0, token) != 0);
+    phase = 2;
+    check(@src(), swamp_periscope_result(address, 1) == 0 and input.native_tick_finish() != 0);
 }
 
 extern fn arena_rope_sync(u32, usize, usize) void;

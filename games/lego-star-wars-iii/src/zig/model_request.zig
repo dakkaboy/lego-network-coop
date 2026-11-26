@@ -19,8 +19,9 @@ fn hiddenEnemyMotionAction(action: u32) bool {
 fn vindiHiddenMotionAction(action: u32) bool {
     return action == 0xffff or action == 29 or action == 92;
 }
-fn blueShadowB1Motion(level: i32, host: *const p.SyncModelInput, local: *const p.SyncModelInput) bool {
-    if ((level != 71 and level != 73 and level != 74) or host.character != 321 or local.character != 321) return false;
+fn blueShadowDroidMotion(level: i32, host: *const p.SyncModelInput, local: *const p.SyncModelInput) bool {
+    if (level != 71 and level != 73 and level != 74) return false;
+    if (host.character != local.character or (host.character != 321 and !(level == 73 and host.character == 333))) return false;
     const a = host.context.action;
     const b = local.context.action;
     return (a == 114 and (b == 0xffff or (level == 71 and b == 13))) or
@@ -133,7 +134,7 @@ pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) voi
             local.context.actor_76 = e.context.actor_76;
             // These actions take the same path through the model producer. Keep the native action intact.
             if (local.context.actor_4c_mask == 1 and
-                (blueShadowB1Motion(frame.level, e, &raw) or
+                (blueShadowDroidMotion(frame.level, e, &raw) or
                     (frame.level == 64 and hiddenEnemyMotionAction(e.context.action) and hiddenEnemyMotionAction(raw.context.action)) or
                     (frame.level == 73 and e.character == 201 and raw.character == 201 and
                         ((vindiHiddenMotionAction(e.context.action) and vindiHiddenMotionAction(raw.context.action)) or

@@ -48,8 +48,9 @@ extern fn native_rts_wait_sample_input() void;
 extern fn native_rts_wait_seed_input() void;
 extern fn native_pack_spawn_rng_input() void;
 extern fn native_pack_spawn_birth_input() void;
-pub fn patches() [53]hook.Patch {
+pub fn patches() [54]hook.Patch {
     return [_]hook.Patch{
+        .{ .address = s.site.SWAMP_PERISCOPE_QUERY, .expected = "\xe8\x8c\xfd\xff\xff", .target = @intFromPtr(&@import("tick_swamp_periscope.zig").swamp_periscope_query_thunk), .opcode = 0xe8 },
         .{ .address = s.site.ZILLO_THROW, .expected = "\xe8\x3b\xf8\xff\xff", .target = @intFromPtr(&@import("tick_zillo_rng.zig").prepareAndThrow), .opcode = 0xe8 },
         .{ .address = s.site.ZILLO_RELEASE, .expected = "\xe8\xab\x31\xfd\xff", .target = @intFromPtr(&@import("tick_zillo_rng.zig").prepareAndRelease), .opcode = 0xe8 },
         .{ .address = s.site.ZILLO_SPREAD, .expected = "\xe8\xbe\xc3\x28\x00", .target = @intFromPtr(&@import("tick_zillo_rng.zig").native_zillo_spread_seed), .opcode = 0xe8 },

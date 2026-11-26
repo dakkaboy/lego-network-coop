@@ -1,7 +1,7 @@
 const std = @import("std");
 const win = @import("win32.zig");
 pub const Patch = struct { address: usize, expected: []const u8, target: usize, opcode: u8 = 0xe9 };
-const max_patches = 67;
+const max_patches = 68;
 pub fn apply(patches: []const Patch) bool {
     if (patches.len == 0 or patches.len > max_patches) return false;
     for (patches) |patch| {

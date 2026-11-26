@@ -69,6 +69,7 @@ fn angle(bits: u32) bool {
     return value >= -32768 and value <= 32768;
 }
 pub fn gateValid(gate: p.SyncTickGate) bool {
+    if (gate.site >= s.SWAMP_PERISCOPE_QUERY and gate.site < s.SWAMP_PERISCOPE_QUERY + 5) return gate.value <= 1;
     for ([_]u32{ s.PACK_SPAWN_X, s.PACK_SPAWN_Z }) |first| if (gate.site >= first and gate.site < first + 8) return switch (gate.site - first) {
         0, 2, 3, 4 => gate.value <= 65535,
         else => true,
