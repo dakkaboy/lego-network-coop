@@ -161,17 +161,36 @@ fn labCompanionAdmission(character: i32, kind: u32, flags: u16, action: u16) boo
     return (character == 188 or character == 199) and kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and
         (flags == 4 or flags == 5) and action == 0;
 }
-fn afterLabForce(clock: u32) ?usize {
+pub fn labForceRequestOwner(clock: u32) ?p.SyncActor {
     const frame = s.journal.frame.?;
     const cursor = s.fire_task_cursor;
-    if (cursor == 0 or cursor + 4 >= frame.fire_task_gate_count) return null;
+    if (frame.level != 73 or cursor == 0 or cursor >= frame.fire_task_gate_count) return null;
     const previous = &frame.fire_task_gates[cursor - 1];
-    if (previous.kind != p.SYNC_ACTOR_SPELLIT_QUERY or previous.character != 184 or previous.payload.state.repeat != clock) return null;
+    if (previous.character != 184 or previous.payload.state.repeat != clock) return null;
     const caster = s.reference(previous);
+    if (previous.kind != p.SYNC_ACTOR_SPELLIT_QUERY) {
+        if (cursor < 4) return null;
+        for ([_]u16{ 4, 5, 2, 3 }, [_]c_int{ 1, 1, 0, 0 }, cursor - 4..cursor) |stage, result, index| {
+            const entry = &frame.fire_task_gates[index];
+            if (entry.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.flags != stage or entry.action != 0 or entry.value != result or
+                entry.payload.state.repeat != clock or !equal(&caster, &s.reference(entry))) return null;
+        }
+    }
+    const next = &frame.fire_task_gates[cursor];
+    if (next.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or next.flags != 0 or !equal(&caster, &s.reference(next))) return null;
+    return caster;
+}
+fn afterLabForce(clock: u32) ?usize {
+    const caster = labForceRequestOwner(clock) orelse return null;
+    const frame = s.journal.frame.?;
+    const cursor = s.fire_task_cursor;
     for (0..3) |stage| {
+        if (cursor + stage >= frame.fire_task_gate_count) return null;
         const entry = &frame.fire_task_gates[cursor + stage];
-        if (entry.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or entry.flags != stage or entry.value != 1 or
+        if (entry.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or entry.flags != stage or
             !equal(&caster, &s.reference(entry))) return null;
+        if (entry.value == 0 and stage < 2) return cursor + stage + 1;
+        if (entry.value != 1) return null;
     }
     const target_index = endLabForceScan(frame, cursor + 3, &caster, clock, 1) orelse return null;
     if (target_index >= frame.fire_task_gate_count) return null;

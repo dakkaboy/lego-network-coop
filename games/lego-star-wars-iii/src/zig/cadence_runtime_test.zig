@@ -1626,7 +1626,9 @@ fn blueShadowCompanionMotionOrder(level: i32) void {
         _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 0, @ptrCast(&admission), &debug);
         check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 
-        for ([_]bool{ true, false }) |target_found| {
+        for (0..3) |path| {
+            const target_found = path == 0;
+            const declined = path == 2;
             client = false;
             fault = 0;
             query.mode = 1;
@@ -1635,12 +1637,14 @@ fn blueShadowCompanionMotionOrder(level: i32) void {
             fallback.mode = 2;
             token.release += 1;
             check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
-            _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&spellit_query), &debug);
-            for (0..3) |stage| _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, @intCast(stage), 0, 1, null, &debug);
-            _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&query), &debug);
-            _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 4, 0, @intFromBool(target_found), null, &debug);
+            labForceAdmission(actor, declined, &admission, &spellit_query, &debug);
+            labForceChecks(actor, declined, &debug);
+            if (!declined) {
+                _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&query), &debug);
+                _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 4, 0, @intFromBool(target_found), null, &debug);
+            }
             if (!target_found) {
-                _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&fallback), &debug);
+                if (!declined) _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&fallback), &debug);
                 _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
                 _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 0, @ptrCast(&admission), &debug);
             }
@@ -1651,27 +1655,44 @@ fn blueShadowCompanionMotionOrder(level: i32) void {
             client = true;
             token.release += 1;
             check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-            _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&spellit_query), &debug);
+            labForceAdmission(actor, declined, &admission, &spellit_query, &debug);
+            const cursor: u32 = if (declined) 4 else 1;
             const request = @import("force_request.zig").force_request_begin;
             put(actor + 0x50, 0x200);
             put(0xfb4b6c, query.clock + 1);
-            check(@src(), request(actor) == 0 and s.fire_task_cursor == 1);
+            check(@src(), request(actor) == 0 and s.fire_task_cursor == cursor);
             put(0xfb4b6c, query.clock);
-            check(@src(), request(actor) == 1 and s.fire_task_cursor == 1);
+            check(@src(), request(actor) == 1 and s.fire_task_cursor == cursor);
             if (!target_found) {
                 _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
                 check(@src(), gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 1, @ptrCast(&admission), &debug) == 0);
             }
             check(@src(), gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 1, @ptrCast(&admission), &debug) == 0);
             check(@src(), gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 1, @ptrCast(&admission), &debug) == 0);
-            check(@src(), s.fire_task_cursor == 1 and fault == 0);
-            for (0..3) |stage| _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, @intCast(stage), 0, 1, null, &debug);
-            _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&query), &debug);
-            _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 4, 0, @intFromBool(target_found), null, &debug);
-            if (!target_found) _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&fallback), &debug);
+            check(@src(), s.fire_task_cursor == cursor and fault == 0);
+            labForceChecks(actor, declined, &debug);
+            if (!declined) {
+                _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&query), &debug);
+                _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 4, 0, @intFromBool(target_found), null, &debug);
+                if (!target_found) _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&fallback), &debug);
+            }
             check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
         }
     }
+}
+
+fn labForceAdmission(caster: usize, declined: bool, admission: *p.SyncFireTaskState, query: *p.SyncSpellItQueryState, debug: *[4]u32) void {
+    if (declined) {
+        for ([_]u16{ 4, 5, 2, 3 }, [_]c_int{ 1, 1, 0, 0 }) |stage, value| {
+            _ = gate.apply(caster, p.SYNC_ACTOR_SPELLIT_ADMISSION, stage, 0, value, @ptrCast(admission), debug);
+        }
+    } else _ = gate.apply(caster, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(query), debug);
+}
+
+fn labForceChecks(caster: usize, declined: bool, debug: *[4]u32) void {
+    _ = gate.apply(caster, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 0, 0, 1, null, debug);
+    _ = gate.apply(caster, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 1, 0, @intFromBool(!declined), null, debug);
+    if (!declined) _ = gate.apply(caster, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 2, 0, 1, null, debug);
 }
 
 fn blueShadowDroidMotionOrder(character: u16, extra_motion: bool, scripted_target: bool) void {

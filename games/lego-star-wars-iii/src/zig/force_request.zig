@@ -27,15 +27,8 @@ pub export fn force_request_begin(actor: usize) c_int {
     var lease: s.Lease = undefined;
     if (!s.ready(&lease) or s.journal.host != 0 or !s.valid(actor, 0x1440) or s.read(u16, actor + 0xdc0) != 184 or
         s.read(u32, actor + 0x50) & 0x200 == 0) return 0;
-    const frame = s.journal.frame.?;
-    const cursor = s.fire_task_cursor;
-    if (frame.level != 73 or cursor == 0 or cursor >= frame.fire_task_gate_count) return 0;
-    const query = &frame.fire_task_gates[cursor - 1];
-    const next = &frame.fire_task_gates[cursor];
-    if (query.kind != p.SYNC_ACTOR_SPELLIT_QUERY or query.payload.state.repeat != s.read(u32, 0xfb4b6c) or
-        next.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or next.character != 184 or next.flags != @backingInt(Stage.area)) return 0;
-    const owner = s.reference(query);
-    return @intFromBool(@import("validation.zig").equal(&owner, &s.reference(next)) and s.entities_resolve_reference(&owner) == actor and s.live(&lease));
+    const owner = @import("cadence_gate.zig").labForceRequestOwner(s.read(u32, 0xfb4b6c)) orelse return 0;
+    return @intFromBool(s.entities_resolve_reference(&owner) == actor and s.live(&lease));
 }
 
 pub fn eligible(actor: usize, stage: Stage, local: bool) bool {
