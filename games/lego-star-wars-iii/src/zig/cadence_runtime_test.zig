@@ -1889,22 +1889,29 @@ fn blueShadowPadmeSupport() void {
 
     put(0xfb4940, actor);
     defer put(0xfb4940, 0);
-    client = false;
-    token.release += 1;
-    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
-    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
-    for ([_]u16{ 4, 5, 2, 3 }, [_]c_int{ 0, 1, 0, 0 }) |stage, result| {
-        _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_ADMISSION, stage, 0, result, @ptrCast(&admission), &debug);
-    }
-    _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
-    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+    query.manager_class = 0x84c2ac;
+    query.caller_site = 0x457f0a;
+    for ([_]bool{ false, true }) |empty_query| {
+        const stages: []const u16 = if (empty_query) &.{ 4, 5, 2, 0, 1 } else &.{ 4, 5, 2, 3 };
+        const results: []const c_int = if (empty_query) &.{ 0, 1, 1, 0, 1 } else &.{ 0, 1, 0, 0 };
+        client = false;
+        token.release += 1;
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+        _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        for (stages, results) |stage, result| {
+            _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_ADMISSION, stage, if (stage < 2) 0x24 else 0, result, @ptrCast(&admission), &debug);
+        }
+        if (empty_query) _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&query), &debug);
+        _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
-    client = true;
-    token.release += 1;
-    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
-    _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
-    check(@src(), s.fire_task_cursor == 6 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+        client = true;
+        token.release += 1;
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+        _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        check(@src(), s.fire_task_cursor == frame.fire_task_gate_count and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+    }
 }
 
 fn blueShadowVindiSupport(character: u16) void {

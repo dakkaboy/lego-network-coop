@@ -356,12 +356,15 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
 fn skipSpellItNoOp(op: *const s.Lease, actor: usize, kind: u32, state: [*]const u8) void {
     const frame = s.journal.frame.?;
     const cursor = s.fire_task_cursor;
-    const stages = [_]u16{ 4, 5, 2, 3 };
-    const outcomes = [_]c_int{ 0, 1, 0, 0 };
-    if ((frame.level != 24 and frame.level != 74) or cursor == 0 or cursor + stages.len >= frame.fire_task_gate_count or !s.valid(actor, 0x1440)) return;
+    if ((frame.level != 24 and frame.level != 74) or cursor == 0 or cursor + 4 >= frame.fire_task_gate_count or !s.valid(actor, 0x1440)) return;
     if (frame.level == 24 and s.read(usize, 0xfb3088) != 0) return;
+    const empty_query = frame.level == 74 and cursor + 6 < frame.fire_task_gate_count and
+        frame.fire_task_gates[cursor + 5].kind == p.SYNC_ACTOR_SPELLIT_QUERY;
+    const stages: []const u16 = if (empty_query) &.{ 4, 5, 2, 0, 1 } else &.{ 4, 5, 2, 3 };
+    const outcomes: []const c_int = if (empty_query) &.{ 0, 1, 1, 0, 1 } else &.{ 0, 1, 0, 0 };
+    const next_index = cursor + stages.len + @intFromBool(empty_query);
     const previous = &frame.fire_task_gates[cursor - 1];
-    const next = &frame.fire_task_gates[cursor + stages.len];
+    const next = &frame.fire_task_gates[next_index];
     if (previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or next.kind != kind or next.slot == previous.slot or next.flags != 0 or next.action != 0 or
         next.character != s.read(i16, actor + 0xdc0)) return;
     const clock = previous.payload.character_motion.clock;
@@ -380,15 +383,23 @@ fn skipSpellItNoOp(op: *const s.Lease, actor: usize, kind: u32, state: [*]const 
     const prior_identity = s.reference(previous);
     for (stages, outcomes, cursor..) |stage, outcome, index| {
         const entry = &frame.fire_task_gates[index];
-        if (s.early_actor_gates.isSet(index) or entry.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.flags != stage or entry.action != 0 or
+        const action: u16 = if (stage < 2) 0x24 else 0;
+        if (s.early_actor_gates.isSet(index) or entry.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.flags != stage or entry.action != action or
             entry.value != outcome or entry.payload.state.repeat != clock or !equal(&prior_identity, &s.reference(entry))) return;
     }
+    if (empty_query) {
+        const query_index = next_index - 1;
+        const query = &frame.fire_task_gates[query_index];
+        if (s.early_actor_gates.isSet(query_index) or query.payload.spellit.clock != clock or
+            query.payload.spellit.manager_class != 0x84c2ac or query.payload.spellit.caller_site != 0x457f0a or
+            !equal(&prior_identity, &s.reference(query))) return;
+    }
     const player = s.read(usize, if (frame.level == 74) 0xfb4940 else 0xfb4944);
-    if (s.early_actor_gates.isSet(cursor + stages.len) or player == 0 or s.entities_resolve_reference(&prior_identity) != player or !s.live(op)) return;
+    if (s.early_actor_gates.isSet(next_index) or player == 0 or s.entities_resolve_reference(&prior_identity) != player or !s.live(op)) return;
     const next_identity = s.reference(next);
     if (s.entities_resolve_reference(&next_identity) != actor or !s.live(op)) return;
-    // Native SpellIt exits after both eligibility queries fail, before selecting a gizmo.
-    s.fire_task_cursor += stages.len;
+    // The host declined eligibility or finished an empty scan before evaluating any gizmo.
+    s.fire_task_cursor = @intCast(next_index);
 }
 
 pub fn replayResoluteSpellItNode(scope: *const s.SpellItScope, state: *p.SyncSpellItNodeState, debug: *[4]u32) enum { matched, absent, mismatch } {
