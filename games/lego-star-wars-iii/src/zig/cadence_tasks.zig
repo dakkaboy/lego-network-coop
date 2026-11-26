@@ -40,13 +40,17 @@ fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, task_target: usize
     const frame = s.journal.frame.?;
     if (s.journal.host != 0 or s.fire_task_cursor >= frame.fire_task_gate_count) return null;
     const droid = read(i16, actor + 0xdc0);
-    const lift = frame.level == 74 and droid == 321 and read(f32, actor + 0x24) > 30;
+    const x = read(f32, actor + 0x24);
+    const z = read(f32, actor + 0x2c);
+    const corridor_droid = droid == 333 and x >= 6 and x <= 10 and z >= 10 and z <= 14;
+    const lift = frame.level == 74 and ((droid == 321 and x > 30) or corridor_droid);
     const obi_wan = if (frame.level == 73 and (droid == 321 or droid == 333)) read(usize, 0xfb4944) else 0;
     const lab_exit = s.valid(obi_wan, 0x1440) and read(u16, obi_wan + 0xdc0) == 181;
     if (!lift and !lab_exit) return null;
     const expected = &frame.fire_task_gates[s.fire_task_cursor];
     const aim = &expected.payload.aim;
-    if (expected.kind != p.SYNC_ACTOR_AIM_TASK or expected.character != droid or aim.target_generation == 0) return null;
+    if (expected.kind != p.SYNC_ACTOR_AIM_TASK or expected.character != droid or aim.target_generation == 0 or
+        (lift and corridor_droid and expected.value != 0)) return null;
     const owner = s.reference(expected);
     if (s.entities_resolve_reference(&owner) != actor or !s.live(op)) return null;
     var reconciled = input.*;
@@ -58,7 +62,7 @@ fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, task_target: usize
     if (lift) {
         target = s.entities_actor(aim.target_slot, aim.target_generation);
         if (target == 0) {
-            // After the lift fight, a native aim target can leave the active party while its allocation is retained.
+            // Regrouping can retire the Jedi from the active roster while native aim tasks still refer to them.
             target = s.entities_retained_actor(aim.target_slot, aim.target_generation);
             if ((target != last_target and target != task_target) or !s.valid(target, 0x1440) or read(u32, target + 0x50) & 3 != 1) return null;
         }
