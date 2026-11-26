@@ -349,9 +349,9 @@ fn protect(address: usize, protection: u32) void {
     check(@src(), win.VirtualProtect(address, 0x10000, protection, &old) != 0);
 }
 fn installedHooks() void {
-    const sites = [_]usize{ 0x96a1bd, 0x96b2e1, 0x410cf3, 0x87ffb7, 0x89e430, 0x96b95e };
-    const sizes = [_]usize{ 7, 8, 5, 5, 7, 7 };
-    const prefixes = [_][8]u8{ .{ 0x8b, 0x7c, 0x24, 0x50, 0x83, 0xff, 0xff, 0 }, .{ 0x89, 0x44, 0x24, 0x44, 0xdb, 0x44, 0x24, 0x44 }, .{ 0xe8, 0xc8, 0x97, 0x55, 0, 0, 0, 0 }, .{ 0xe8, 0xf4, 0x2d, 0xf1, 0xff, 0, 0, 0 }, .{ 0x56, 0x8b, 0x74, 0x24, 0x08, 0x85, 0xf6, 0 }, .{ 0x0f, 0xbe, 0xbe, 0xde, 0x0d, 0, 0, 0 } };
+    const sites = [_]usize{ 0x96a1bd, 0x96b2e1, 0x410cf3, 0x87ffb7, 0x89e430, 0x96b95e, 0x96ad96 };
+    const sizes = [_]usize{ 7, 8, 5, 5, 7, 7, 10 };
+    const prefixes = [_][]const u8{ "\x8b\x7c\x24\x50\x83\xff\xff", "\x89\x44\x24\x44\xdb\x44\x24\x44", "\xe8\xc8\x97\x55\x00", "\xe8\xf4\x2d\xf1\xff", "\x56\x8b\x74\x24\x08\x85\xf6", "\x0f\xbe\xbe\xde\x0d\x00\x00", "\xf7\x86\x80\x0c\x00\x00\x00\x10\x00\x00" };
     for ([_]usize{ 0x410000, 0x870000, 0x890000, 0x960000 }) |a| protect(a, 0x40);
     for (sites, sizes, prefixes) |site, size, prefix| @memcpy(bytes(site, size), prefix[0..size]);
     win.store(u8, 0x96a1c4, 0xc3);
@@ -549,6 +549,34 @@ fn geonosisBlockedProjectile(health: i8, host_timer: f32, client_timer: f32) voi
     receipt.reaction_damage_complete(&hit);
     check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0 and fault == 0);
 }
+fn blueShadowLepProjectileContact() void {
+    mode = 20;
+    setup();
+    clearDebug();
+    frame.level = 74;
+    damage_caller = 0x81f27f;
+    source = 489;
+    win.store(i16, actor + 0xdc0, 354);
+    win.store(i16, actor + 0x2f4, -1);
+    win.store(u32, actor + 0xc80, 0x1000);
+    var token = tokenFor();
+    var lease: s.Lease = undefined;
+    begin(&token, &lease, 1);
+    selected_clip = 72;
+    choice.reaction_apply_choice(actor, &selected_clip);
+    check(@src(), frame.reaction_count == 1 and receipt.reaction_lep_projectile_contact(actor) == 0);
+    check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    begin(&token, &lease, 0);
+    check(@src(), receipt.reaction_lep_projectile_contact(actor) != 0 and s.journal.cursor == 0);
+    source += 1;
+    check(@src(), receipt.reaction_lep_projectile_contact(actor) == 0);
+    source -= 1;
+    choice.reaction_apply_choice(actor, &selected_clip);
+    check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0 and fault == 0);
+}
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 904 and @intFromPtr(&image) < 0x410000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0x790000, 0x8a0000, 0x960000, 0xe60000, 0xea0000 }) |a| protect(a, 0x40);
@@ -678,6 +706,7 @@ fn arenaBeforeHit() void {
     }
     geonosisProjectileCooldown(1, 0.75);
     geonosisProjectileCooldown(2, -0.01);
+    blueShadowLepProjectileContact();
     geonosisBlockedProjectile(1, -0.01, -0.01);
     geonosisBlockedProjectile(1, 0.9, 0.4984956);
     geonosisBlockedProjectile(2, 0.95, -0.09);

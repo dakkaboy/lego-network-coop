@@ -27,12 +27,22 @@ fn length(kind: u32) usize {
         p.SYNC_ACTOR_BARC_ALIGNMENT => @sizeOf(p.SyncBarcAlignmentState),
         p.SYNC_ACTOR_TUBE_CONTACT => @sizeOf([3]f32),
         p.SYNC_ACTOR_MELEE_CONTACT => @sizeOf(p.SyncMeleeContact),
+        p.SYNC_ACTOR_SABER_TARGET => @sizeOf(p.SyncSaberQueue),
+        p.SYNC_ACTOR_PROJECTILE_BRANCH => @sizeOf([2]u32),
+        p.SYNC_ACTOR_FORCE_ELIGIBILITY => @sizeOf([4]u32),
         else => @sizeOf(p.SyncFireTaskState),
     };
 }
 fn contextFailure(gate: *const p.SyncFireTaskGate, state: [*]const u8) u32 {
     const data = &gate.payload;
     switch (gate.kind) {
+        p.SYNC_ACTOR_FORCE_ELIGIBILITY => if (!std.mem.eql(u8, data.storage[0..4], state[0..4])) return 20,
+        p.SYNC_ACTOR_PROJECTILE_BRANCH => if (!std.mem.eql(u8, data.storage[0..8], state[0..8])) return 29,
+        p.SYNC_ACTOR_SABER_TARGET => {
+            const local = s.read(p.SyncSaberQueue, @intFromPtr(state));
+            if (data.saber_target.clock != local.clock or
+                (data.saber_target.mode != 0 and data.saber_target.mode != local.mode)) return 28;
+        },
         p.SYNC_ACTOR_MELEE_CONTACT => if (!std.mem.eql(u8, data.storage[0..@offsetOf(p.SyncMeleeContact, "impact_time")], state[0..@offsetOf(p.SyncMeleeContact, "impact_time")])) {
             return 27;
         },
@@ -151,25 +161,75 @@ fn labCompanionAdmission(character: i32, kind: u32, flags: u16, action: u16) boo
     return (character == 188 or character == 199) and kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and
         (flags == 4 or flags == 5) and action == 0;
 }
+fn earlyLabCompanion(op: *const s.Lease, actor: usize, flags: u16, clock: u32) ?c_int {
+    const frame = s.journal.frame.?;
+    const cursor = s.fire_task_cursor;
+    if (cursor == 0 or cursor + 4 >= frame.fire_task_gate_count) return null;
+    const previous = &frame.fire_task_gates[cursor - 1];
+    if (previous.kind != p.SYNC_ACTOR_SPELLIT_QUERY or previous.character != 184 or previous.payload.state.repeat != clock) return null;
+    const caster = s.reference(previous);
+    for (0..3) |stage| {
+        const entry = &frame.fire_task_gates[cursor + stage];
+        if (entry.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or entry.flags != stage or entry.value != 1 or
+            !equal(&caster, &s.reference(entry))) return null;
+    }
+    var index = cursor + 3;
+    while (index < frame.fire_task_gate_count) : (index += 1) {
+        const entry = &frame.fire_task_gates[index];
+        if (!forceScan(entry.kind)) break;
+        const query = &entry.payload.force;
+        if (query.caster_slot != caster.slot or query.caster_generation != caster.generation or query.clock != clock or query.mode != 1) return null;
+    }
+    if (index == cursor + 3 or index >= frame.fire_task_gate_count) return null;
+    const target = &frame.fire_task_gates[index];
+    if (target.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or target.flags != 4 or !equal(&caster, &s.reference(target))) return null;
+    index += 1;
+    while (index < frame.fire_task_gate_count) : (index += 1) {
+        const entry = &frame.fire_task_gates[index];
+        if (!labCompanionAdmission(entry.character, entry.kind, entry.flags, entry.action) or entry.payload.state.repeat != clock) return null;
+        if (entry.flags != flags or s.early_actor_gates.isSet(index)) continue;
+        const owner = s.reference(entry);
+        if (s.entities_resolve_reference(&owner) == actor and s.live(op)) {
+            s.early_actor_gates.set(index);
+            return entry.value;
+        }
+        if (!s.live(op)) return null;
+    }
+    return null;
+}
 fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16, action: u16, local: c_int, state: ?[*]u8, debug: *[4]u32) ?c_int {
     const frame = s.journal.frame.?;
     const head = &frame.fire_task_gates[s.fire_task_cursor];
     const competitor = frame.level == 79 and kind == p.SYNC_ACTOR_RTS_COMPETITOR and head.kind == kind;
-    const lab_spellit = frame.level == 73 and (kind == p.SYNC_ACTOR_SPELLIT_ADMISSION or kind == p.SYNC_ACTOR_SPELLIT_QUERY);
-    const motion_character = if ((kind == p.SYNC_ACTOR_CHARACTER_MOTION or lab_spellit) and state != null and s.valid(actor, 0x1440)) s.read(u16, actor + 0xdc0) else 0;
+    const party_spellit = (frame.level == 73 or frame.level == 74) and (kind == p.SYNC_ACTOR_SPELLIT_ADMISSION or kind == p.SYNC_ACTOR_SPELLIT_QUERY);
+    const motion_character = if ((kind == p.SYNC_ACTOR_CHARACTER_MOTION or party_spellit) and state != null and s.valid(actor, 0x1440)) s.read(u16, actor + 0xdc0) else 0;
     const companion = frame.level == 79 and motion_character == 259;
     const lab_companion = labCompanionAdmission(motion_character, kind, flags, action);
+    if (frame.level == 73 and lab_companion and head.kind == p.SYNC_ACTOR_FORCE_ELIGIBILITY) {
+        const clock = s.read(u32, @intFromPtr(state.?));
+        if (earlyLabCompanion(op, actor, flags, clock)) |value| {
+            debug[1] +%= 1;
+            debug[2] +%= @intFromBool(local != value);
+            return value;
+        }
+    }
     const lab_party = frame.level == 73 and (motion_character == 138 or lab_companion) and head.kind == p.SYNC_ACTOR_FORCE_VISIBILITY;
-    const blue_shadow_clone = (frame.level == 70 and motion_character == 156 and forceScan(head.kind)) or lab_party;
+    const corridor_party = frame.level == 74 and motion_character == 184 and s.read(f32, actor + 0x24) < 10 and
+        head.kind == p.SYNC_ACTOR_FORCE_VISIBILITY and (kind == p.SYNC_ACTOR_CHARACTER_MOTION or
+        (kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and (flags == 4 or flags == 5) and action == 0));
+    const blue_shadow_clone = (frame.level == 70 and motion_character == 156 and forceScan(head.kind)) or lab_party or corridor_party;
     const blue_shadow_droid = frame.level == 70 and blueShadowDroidMotion(motion_character) and blueShadowDroidDecision(head);
     const blue_shadow_motion = blue_shadow_clone or blue_shadow_droid;
     const droid_aim = (frame.level == 29 or frame.level == 70) and droidAim(head.kind, head.character) and s.valid(actor, 0x1440) and
         droidAim(kind, s.read(i16, actor + 0xdc0));
     if (!competitor and !companion and !blue_shadow_motion and !droid_aim) return null;
-    if (lab_party) {
+    if (lab_party or corridor_party) {
         const force = &head.payload.force;
         const caster = s.entities_actor(force.caster_slot, force.caster_generation);
-        if (!s.live(op) or !s.valid(caster, 0x1440) or s.read(u16, caster + 0xdc0) != 184 or force.clock != s.read(u32, @intFromPtr(state.?))) return null;
+        const caster_character: u16 = if (corridor_party) 181 else 184;
+        if (!s.live(op) or !s.valid(caster, 0x1440) or s.read(u16, caster + 0xdc0) != caster_character or
+            force.clock != s.read(u32, @intFromPtr(state.?))) return null;
+        if (corridor_party and (caster != s.read(usize, 0xfb4944) or !(s.read(f32, caster + 0x24) < 10))) return null;
     }
     const motion_clock = if (blue_shadow_droid) s.read(u32, @intFromPtr(state.?)) else 0;
     if (blue_shadow_droid and droidDecisionClock(head) != motion_clock) return null;
@@ -192,15 +252,16 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
             if (query.caster_slot != caster.caster_slot or query.caster_generation != caster.caster_generation or query.clock != caster.clock) return null;
             continue;
         }
-        if (lab_spellit) {
+        if (party_spellit) {
             const clock = head.payload.force.clock;
             if (lab_motion) |motion| {
                 const clone_stage = (entry.kind == p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.kind == p.SYNC_ACTOR_SPELLIT_QUERY) and
                     entry.slot == motion.slot and entry.generation == motion.generation;
-                if ((!clone_stage and !labCompanionAdmission(entry.character, entry.kind, entry.flags, entry.action)) or entry.payload.state.repeat != clock) return null;
+                if ((!clone_stage and !(lab_party and labCompanionAdmission(entry.character, entry.kind, entry.flags, entry.action))) or entry.payload.state.repeat != clock) return null;
                 if (s.early_actor_gates.isSet(i)) continue;
             } else {
-                if (entry.kind != p.SYNC_ACTOR_CHARACTER_MOTION or entry.character != 138 or entry.payload.character_motion.clock != clock or !s.early_actor_gates.isSet(i)) return null;
+                const character: i32 = if (corridor_party) 184 else 138;
+                if (entry.kind != p.SYNC_ACTOR_CHARACTER_MOTION or entry.character != character or entry.payload.character_motion.clock != clock or !s.early_actor_gates.isSet(i)) return null;
                 const identity = s.reference(entry);
                 const clone = if (lab_companion) s.read(usize, 0xfb4944) else actor;
                 if (clone == 0 or s.entities_resolve_reference(&identity) != clone or !s.live(op)) return null;
@@ -251,12 +312,13 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
     }
     return null;
 }
-fn skipGunganSpellItNoOp(op: *const s.Lease, actor: usize, kind: u32, state: [*]const u8) void {
+fn skipSpellItNoOp(op: *const s.Lease, actor: usize, kind: u32, state: [*]const u8) void {
     const frame = s.journal.frame.?;
     const cursor = s.fire_task_cursor;
     const stages = [_]u16{ 4, 5, 2, 3 };
     const outcomes = [_]c_int{ 0, 1, 0, 0 };
-    if (frame.level != 24 or s.read(usize, 0xfb3088) != 0 or cursor == 0 or cursor + stages.len >= frame.fire_task_gate_count or !s.valid(actor, 0x1440)) return;
+    if ((frame.level != 24 and frame.level != 74) or cursor == 0 or cursor + stages.len >= frame.fire_task_gate_count or !s.valid(actor, 0x1440)) return;
+    if (frame.level == 24 and s.read(usize, 0xfb3088) != 0) return;
     const previous = &frame.fire_task_gates[cursor - 1];
     const next = &frame.fire_task_gates[cursor + stages.len];
     if (previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or next.kind != kind or next.slot == previous.slot or next.flags != 0 or next.action != 0 or
@@ -264,11 +326,12 @@ fn skipGunganSpellItNoOp(op: *const s.Lease, actor: usize, kind: u32, state: [*]
     const clock = previous.payload.character_motion.clock;
     switch (kind) {
         p.SYNC_ACTOR_CHARACTER_MOTION => {
-            if (previous.character != 176 or next.character != 138 or next.payload.character_motion.clock != clock or
+            const matches_party = if (frame.level == 74) previous.character == 188 and next.character == 199 else previous.character == 176 and next.character == 138;
+            if (!matches_party or next.payload.character_motion.clock != clock or
                 s.read(p.SyncCharacterMotionState, @intFromPtr(state)).clock != clock) return;
         },
         p.SYNC_ACTOR_RTS_COMPETITOR => {
-            if (previous.character != 138 or next.character != 199 or next.payload.competitor.clock != clock +% 1 or
+            if (frame.level != 24 or previous.character != 138 or next.character != 199 or next.payload.competitor.clock != clock +% 1 or
                 s.read(p.SyncRtsCompetitorState, @intFromPtr(state)).clock != clock +% 1) return;
         },
         else => return,
@@ -279,7 +342,7 @@ fn skipGunganSpellItNoOp(op: *const s.Lease, actor: usize, kind: u32, state: [*]
         if (s.early_actor_gates.isSet(index) or entry.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.flags != stage or entry.action != 0 or
             entry.value != outcome or entry.payload.state.repeat != clock or !equal(&prior_identity, &s.reference(entry))) return;
     }
-    const player = s.read(usize, 0xfb4944);
+    const player = s.read(usize, if (frame.level == 74) 0xfb4940 else 0xfb4944);
     if (s.early_actor_gates.isSet(cursor + stages.len) or player == 0 or s.entities_resolve_reference(&prior_identity) != player or !s.live(op)) return;
     const next_identity = s.reference(next);
     if (s.entities_resolve_reference(&next_identity) != actor or !s.live(op)) return;
@@ -311,6 +374,48 @@ pub fn replayResoluteSpellItNode(scope: *const s.SpellItScope, state: *p.SyncSpe
     return .absent;
 }
 
+fn padmeSupportNoOp(previous: *const p.SyncFireTaskGate, support: *const p.SyncFireTaskGate, clock: u32) bool {
+    return support.kind == p.SYNC_FIRE_ATTACK_SUPPORT and support.character == 188 and support.value == 3 and
+        previous.slot == support.slot and previous.generation == support.generation and previous.value == 0 and
+        previous.kind == p.SYNC_ACTOR_SPELLIT_QUERY and
+        s.read(p.SyncSpellItQueryState, @intFromPtr(&previous.payload.storage)).clock == clock;
+}
+
+pub fn skipTrailingPadmeSupport(op: *const s.Lease) void {
+    const frame = s.journal.frame.?;
+    const cursor = s.fire_task_cursor;
+    if (frame.level != 74 or cursor == 0 or cursor + 1 != frame.fire_task_gate_count) return;
+    if (padmeSupportNoOp(&frame.fire_task_gates[cursor - 1], &frame.fire_task_gates[cursor], s.read(u32, 0xfb4b6c)) and s.live(op)) {
+        s.fire_task_cursor += 1;
+    }
+}
+
+fn skipAbsentBlueShadowMotionDecision(op: *const s.Lease, actor: usize, state: [*]const u8) void {
+    const frame = s.journal.frame.?;
+    const cursor = s.fire_task_cursor;
+    if ((frame.level != 71 and frame.level != 73 and frame.level != 74) or cursor == 0 or cursor + 1 >= frame.fire_task_gate_count) return;
+    const support = &frame.fire_task_gates[cursor];
+    const previous = &frame.fire_task_gates[cursor - 1];
+    const next = &frame.fire_task_gates[cursor + 1];
+    const clock = s.read(u32, @intFromPtr(state));
+    if (previous.slot != support.slot or previous.generation != support.generation or
+        previous.value != 0 or next.kind != p.SYNC_ACTOR_CHARACTER_MOTION or next.payload.character_motion.clock != clock) return;
+    if (frame.level == 71) {
+        if (support.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or support.flags != 3 or support.value != 0 or
+            previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or previous.payload.character_motion.clock != clock or
+            previous.character != 321 or support.character != 321 or next.character != 321 or next.slot == support.slot) return;
+    } else if (support.kind != p.SYNC_FIRE_ATTACK_SUPPORT or support.value != 3) {
+        return;
+    } else if (frame.level == 73) {
+        if (support.character != 201 or previous.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or previous.flags != 5 or
+            previous.payload.state.repeat != clock or (next.character != 321 and next.character != 333)) return;
+    } else {
+        if (!padmeSupportNoOp(previous, support, clock) or next.character != 199) return;
+    }
+    const identity = s.reference(next);
+    if (s.entities_resolve_reference(&identity) == actor and s.live(op)) s.fire_task_cursor += 1;
+}
+
 pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, state: ?[*]u8, debug: *[4]u32) c_int {
     var op: s.Lease = undefined;
     if (!s.get(&op) or !s.active) return value;
@@ -322,7 +427,10 @@ pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, sta
     };
     if (s.journal.failed != 0) return failure;
     if (s.journal.host == 0 and (kind == p.SYNC_ACTOR_CHARACTER_MOTION or kind == p.SYNC_ACTOR_RTS_COMPETITOR) and flags == 0 and action == 0) {
-        if (state) |pointer| skipGunganSpellItNoOp(&op, actor, kind, pointer);
+        if (state) |pointer| {
+            skipSpellItNoOp(&op, actor, kind, pointer);
+            if (kind == p.SYNC_ACTOR_CHARACTER_MOTION) skipAbsentBlueShadowMotionDecision(&op, actor, pointer);
+        }
     }
     if (s.journal.host != 0) {
         s.entities_update();

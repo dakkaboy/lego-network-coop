@@ -213,12 +213,20 @@ fn run() Snapshot {
     if (mode == 4) put(actor + 0x50, 0x203);
     if (mode == 5) win.store(u8, actor + 0x138e, 0);
     if (mode >= 18) {
-        frame.level = if (mode >= 24) 73 else if (mode == 20) 63 else 64;
+        frame.level = switch (mode) {
+            20 => 63,
+            24...28, 33 => 73,
+            29, 32 => 71,
+            31 => 74,
+            else => 64,
+        };
         put(actor + 0x4c, 0x400);
-        if (mode >= 24) win.store(i16, actor + 0xdc0, 201);
+        if (mode >= 24) win.store(i16, actor + 0xdc0, if (mode < 28 or mode == 33) 201 else 321);
         win.store(u16, actor + 0x2f4, switch (mode) {
-            24 => 29,
+            24, 27, 33 => 29,
             25 => 92,
+            29 => 114,
+            32 => 13,
             else => 0xffff,
         });
     }
@@ -247,9 +255,10 @@ fn run() Snapshot {
         if (mode == 15) put(0xfb4b6c, 44);
         if (mode == 16) frame.model_input_count = 0;
         if (mode >= 18) win.store(u16, actor + 0x2f4, switch (mode) {
-            18 => 1,
-            19, 20 => 10,
-            24, 25 => 0xffff,
+            18, 27 => 1,
+            19, 20, 33 => 10,
+            24, 25, 29 => 0xffff,
+            28, 30, 31, 32 => 114,
             else => 0x29,
         });
         enter(&b);
@@ -428,6 +437,24 @@ pub fn main() void {
             check(@src(), out.finish != 0 and out.fault == 0);
             check(@src(), win.load(u16, actor + 0x2f4) == 0xffff);
         } else check(@src(), out.finish == 0 and out.fault == 20 and out.failure[7] == 9);
+    }
+    mode = 27;
+    const landing = run();
+    check(@src(), landing.finish != 0 and landing.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 1 and win.load(u32, actor + 0x4c) == 0x400);
+    mode = 33;
+    const projectile_landing = run();
+    check(@src(), projectile_landing.finish != 0 and projectile_landing.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 10 and win.load(u32, actor + 0x4c) == 0x400);
+    for (28..33) |variant| {
+        mode = @intCast(variant);
+        const droid = run();
+        if (mode == 30) {
+            check(@src(), droid.finish == 0 and droid.fault == 20 and droid.failure[7] == 9);
+        } else {
+            check(@src(), droid.finish != 0 and droid.fault == 0);
+            check(@src(), win.load(u16, actor + 0x2f4) == if (mode == 29) @as(u16, 0xffff) else 114);
+        }
     }
     droidModelInputOrder(29, 333);
     droidModelInputOrder(70, 333);

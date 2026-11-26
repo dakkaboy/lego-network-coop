@@ -64,6 +64,7 @@ pub export fn cadence_finish() c_int {
         }
         return 0;
     }
+    if (s.journal.host == 0) @import("cadence_gate.zig").skipTrailingPadmeSupport(&op);
     if (s.journal.host == 0 and s.fire_task_cursor != s.journal.frame.?.fire_task_gate_count) {
         const frame = s.journal.frame.?;
         if (clonewars_actor_gate_unconsumed[0] == 0 and s.fire_task_cursor < frame.fire_task_gate_count) {

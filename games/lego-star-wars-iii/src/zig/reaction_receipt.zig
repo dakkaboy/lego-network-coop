@@ -3,6 +3,23 @@ const p = @import("protocol.zig");
 const s = @import("reaction_state.zig");
 const validation = @import("reaction_validation.zig");
 const read = s.read;
+// The LEP's local contact mask can reject a hit before the native reaction selector runs.
+pub export fn reaction_lep_projectile_contact(actor: usize) c_int {
+    if (s.combat_damage_native_caller() != 0x81f27f) return 0;
+    const saved = s.win.GetLastError();
+    defer s.win.SetLastError(saved);
+    var op: s.Lease = undefined;
+    if (!s.get(&op) or !s.active or s.journal.host != 0 or s.journal.failed != 0 or
+        s.journal.frame.?.level != 74 or !s.valid(actor, 0x1440) or read(i16, actor + 0xdc0) != 354 or
+        read(u32, actor + 0xc80) & 0x1000 == 0) return 0;
+    const entry = s.journal.peek() orelse return 0;
+    const clip = &entry.payload.clip;
+    if (entry.kind != p.SYNC_REACTION_CLIP or !validation.valid(entry) or clip.selection.clip < 0 or
+        clip.arena_attacker_generation != 0 or clip.source_id == 0 or
+        clip.source_id != s.combat_damage_source_id() or entry.old_action != read(i16, actor + 0x2f4)) return 0;
+    const identity = s.identity(entry);
+    return @intFromBool(s.entities_resolve_reference(&identity) == actor and s.live(&op));
+}
 fn blockedByCooldown(hit: *const p.SyncReactionHitOutcome) bool {
     return hit.timer_before > 0 and hit.timer_before == hit.timer_after and
         hit.health_before > 0 and hit.health_before == hit.health_after and

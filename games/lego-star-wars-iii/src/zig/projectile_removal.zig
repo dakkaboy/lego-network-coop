@@ -70,6 +70,25 @@ pub fn observed(call: *Call, reason: u32) u8 {
     projectile_remove_complete(call, removed);
     return removed;
 }
+
+fn retainBlueShadowCollision(call: *const Call, caller: usize) bool {
+    if (caller != 0x8643a6 or call.op.kind != t.keyed or call.op.session.host != 0 or
+        call.op.session.level != 73 or call.flags != 0 or call.effects != 1 or
+        !control.live(&call.op) or !retire.managerLive(call.manager) or !s.valid(call.object, 0x210)) return false;
+    const frame = s.current orelse return false;
+    if (frame.projectile_count > p.SYNC_MAX_PROJECTILES) return false;
+    for (s.tracked, 0..) |entry, i| {
+        if (entry.object != call.object or entry.birth.id == 0 or entry.birth.weapon != 7 or
+            entry.birth.source != p.SYNC_SHOT_WEAPON or s.instance_serial[i] == 0 or
+            entry.native_stamp != read(u32, call.object + 8) or
+            entry.resource != read(usize, call.object + 0x14)) continue;
+        for (frame.projectiles[0..frame.projectile_count]) |state| {
+            if (state.id == entry.birth.id) return control.live(&call.op);
+        }
+    }
+    return false;
+}
+
 pub export fn projectile_remove_hook(manager: usize, _: usize, object: usize, flags: u32, effects: c_int) callconv(.{ .x86_fastcall = .{} }) u8 {
     var call = std.mem.zeroes(Call);
     call.op = control.capture();
@@ -79,7 +98,10 @@ pub export fn projectile_remove_hook(manager: usize, _: usize, object: usize, fl
     call.flags = flags;
     call.effects = effects;
     call.hook_commit = true;
-    if (retire.enqueue(&call.op, manager, object, flags, effects, @truncate(@returnAddress()))) return 0;
+    const caller = @returnAddress();
+    // The native collision walker ignores the return value and continues to its saved next object.
+    if (retainBlueShadowCollision(&call, caller)) return 0;
+    if (retire.enqueue(&call.op, manager, object, flags, effects, @truncate(caller))) return 0;
     if ((call.op.kind == t.keyed or call.op.kind == t.control) and control.live(&call.op)) for (s.tracked, 0..) |entry, i| if (entry.object == object) {
         call.captured_id[i] = entry.birth.id;
         call.captured_instance[i] = s.instance_serial[i];

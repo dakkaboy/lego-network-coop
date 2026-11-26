@@ -66,7 +66,6 @@ comptime {
         \\    fninit
         \\    movl $0x1f80,516(%esp)
         \\    ldmxcsr 516(%esp)
-
         \\    subl $8,%esp
         \\    pushl 16(%eax)
         \\    pushl 4(%eax)
@@ -86,6 +85,35 @@ comptime {
         \\    popfl
         \\    movsbl 0xdde(%esi),%edi
         \\    jmp *_reaction_projectile_damage_resume
+        \\.globl _reaction_lep_projectile_contact_thunk
+        \\_reaction_lep_projectile_contact_thunk:
+        \\    pushfl
+        \\    pushal
+        \\    movl %esp,%eax
+        \\    subl $544,%esp
+        \\    andl $-16,%esp
+        \\    movl %eax,512(%esp)
+        \\    fxsave (%esp)
+        \\    fninit
+        \\    movl $0x1f80,516(%esp)
+        \\    ldmxcsr 516(%esp)
+        \\    subl $12,%esp
+        \\    pushl 4(%eax)
+        \\    cld
+        \\    call _reaction_lep_projectile_contact
+        \\    addl $16,%esp
+        \\    fxrstor (%esp)
+        \\    movl 512(%esp),%esp
+        \\    testl %eax,%eax
+        \\    jnz 1f
+        \\    popal
+        \\    popfl
+        \\    testl $0x1000,0xc80(%esi)
+        \\    jmp *_reaction_lep_contact_resume
+        \\1:
+        \\    popal
+        \\    popfl
+        \\    jmp *_reaction_lep_contact_allowed
         \\.globl _reaction_arena_contact_thunk
         \\_reaction_arena_contact_thunk:
         \\pushl 8(%esp)

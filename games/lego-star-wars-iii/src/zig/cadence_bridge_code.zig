@@ -96,11 +96,16 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\    addl $16,%esp
     \\    fxrstor (%esp)
     \\    movl 512(%esp),%esp
+    \\    testl %eax,%eax
+    \\    jnz 1f
     \\    popal
     \\    popfl
     \\    movl 0x54(%esp),%esi
     \\    movl 0x24(%ebp),%ecx
     \\    jmp *_attack_support_resume
+    \\1:  popal
+    \\    popfl
+    \\    jmp *_attack_support_skip
     ;
     if (std.mem.eql(u8, name, "breakup_visibility_thunk")) return
     \\.text

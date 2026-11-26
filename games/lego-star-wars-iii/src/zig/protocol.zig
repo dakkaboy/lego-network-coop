@@ -363,6 +363,18 @@ pub const SyncAimTaskState = extern struct {
     reserved: u32,
 };
 
+pub const SABER_QUEUE_SCENE: u16 = 0x1000;
+pub const SABER_QUEUE_INACTIVE: u16 = 0x2000;
+pub const SABER_QUEUE_FIXED_POINT: u16 = 0x8000;
+pub const SyncSaberQueue = extern struct {
+    clock: u32,
+    generations: [10]u32,
+    slots: [10]u16,
+    count: u8,
+    cursor: u8,
+    mode: u8,
+    reserved: u8,
+};
 pub const SyncMeleeContact = extern struct { attacker_slot: u32, attacker_generation: u32, attack_pool_slot: u32, impact_time: f32 };
 
 pub const SyncAimBaseState = extern struct {
@@ -483,6 +495,8 @@ const FireTaskPayload = extern union {
     aim_base: SyncAimBaseState,
     tube_position: [3]f32,
     melee_contact: SyncMeleeContact,
+    saber_target: SyncSaberQueue,
+    projectile_branch: [2]u32,
     force_geometry: SyncForceGeometryState,
     spellit: SyncSpellItQueryState,
     character_motion: SyncCharacterMotionState,
@@ -847,6 +861,8 @@ pub const SYNC_ACTOR_RYLOTH_FIGHTER_DEATH: c_int = 21;
 pub const SYNC_ACTOR_FORCE_ELIGIBILITY: c_int = 22;
 pub const SYNC_ACTOR_TUBE_CONTACT: c_int = 23;
 pub const SYNC_ACTOR_MELEE_CONTACT: c_int = 24;
+pub const SYNC_ACTOR_SABER_TARGET: c_int = 26;
+pub const SYNC_ACTOR_PROJECTILE_BRANCH: c_int = 27;
 pub const SYNC_ACTOR_GEONOSIS_VEHICLE_DEATH: c_int = 25;
 pub const SYNC_TRANSITION_NATIVE_CYCLE: u32 = 2;
 
@@ -938,7 +954,7 @@ pub const SYNC_PROFILE_BYTES = @as(c_int, 0xb5c0);
 
 pub const SYNC_LAYOUT_VERSION = @as(c_int, 55);
 
-pub const SYNC_WIRE_VERSION = @as(c_int, 223);
+pub const SYNC_WIRE_VERSION = @as(c_int, 225);
 
 pub const SYNC_NATIVE_SPAN_PLAN_MASK = @as(c_uint, 7);
 

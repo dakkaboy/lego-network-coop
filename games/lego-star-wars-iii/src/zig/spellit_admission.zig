@@ -27,25 +27,42 @@ pub export fn spellit_gungan_action100_admitted(actor: usize) c_int {
     return @intFromBool(s.entities_resolve_reference(&identity) == actor and s.live(&op));
 }
 
-fn missingGunganManagerStage(op: *const s.Lease, actor: usize, stage: u32, clock: u32) bool {
+fn missingManagerStage(op: *const s.Lease, actor: usize, stage: u32, clock: u32) bool {
     const frame = s.journal.frame.?;
     const cursor = s.fire_task_cursor;
-    if (s.journal.host != 0 or frame.level != 24 or stage < 4 or cursor == 0 or cursor >= frame.fire_task_gate_count) return false;
+    if (s.journal.host != 0 or (frame.level != 24 and frame.level != 74) or stage < 4 or cursor == 0 or cursor >= frame.fire_task_gate_count) return false;
     const previous = &frame.fire_task_gates[cursor - 1];
     const next = &frame.fire_task_gates[cursor];
     if (previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or previous.payload.character_motion.clock != clock or previous.slot == next.slot) return false;
     const character = s.read(u16, actor + 0xdc0);
-    const next_motion = character == 176 and next.kind == p.SYNC_ACTOR_CHARACTER_MOTION and next.payload.character_motion.clock == clock;
-    const next_tick = character == 138 and next.kind == p.SYNC_ACTOR_RTS_COMPETITOR and next.payload.competitor.clock == clock +% 1;
+    const motion_order = if (frame.level == 74)
+        character == 188 and next.character == 199
+    else
+        character == 176;
+    const next_motion = motion_order and next.kind == p.SYNC_ACTOR_CHARACTER_MOTION and next.payload.character_motion.clock == clock;
+    const next_tick = frame.level == 24 and character == 138 and next.kind == p.SYNC_ACTOR_RTS_COMPETITOR and next.payload.competitor.clock == clock +% 1;
     if (!next_motion and !next_tick) return false;
     const identity = s.reference(previous);
     if (s.entities_resolve_reference(&identity) != actor or !s.live(op)) return false;
-    // The host completed this clone's motion and moved on without a manager update.
+    // The host moved on after this actor's motion without a manager update.
     for (frame.fire_task_gates[cursor..frame.fire_task_gate_count]) |entry| {
         if (entry.kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and entry.flags >= 4 and entry.slot == previous.slot and
             entry.generation == previous.generation and entry.payload.state.repeat == clock) return false;
     }
     return true;
+}
+
+fn absentSwampBuildEligibility(op: *const s.Lease, actor: usize, stage: u32, clock: u32) bool {
+    const frame = s.journal.frame.?;
+    const cursor = s.fire_task_cursor;
+    if (s.journal.host != 0 or frame.level != 70 or stage != 3 or cursor == 0 or
+        cursor != frame.fire_task_gate_count or actor != s.read(usize, 0xfb4944) or
+        s.read(i16, actor + 0xdc0) != 156) return false;
+    const last = &frame.fire_task_gates[cursor - 1];
+    if (last.kind != p.SYNC_ACTOR_CHARACTER_MOTION or last.character != 156 or
+        last.payload.character_motion.clock != clock) return false;
+    const identity = s.reference(last);
+    return s.entities_resolve_reference(&identity) == actor and s.live(op);
 }
 
 pub export fn cadence_spellit_admission(actor: usize, kind: u32, stage: u32, local: u32) u32 {
@@ -62,7 +79,7 @@ pub export fn cadence_spellit_admission(actor: usize, kind: u32, stage: u32, loc
     }
     var state = std.mem.zeroes(p.SyncFireTaskState);
     state.repeat = s.read(u32, 0xfb4b6c);
-    if (missingGunganManagerStage(&op, actor, stage, state.repeat)) return 0;
+    if (missingManagerStage(&op, actor, stage, state.repeat) or absentSwampBuildEligibility(&op, actor, stage, state.repeat)) return 0;
     const result = @import("cadence_gate.zig").apply(actor, p.SYNC_ACTOR_SPELLIT_ADMISSION, @intCast(stage), @intCast(kind), @intFromBool(local != 0), @ptrCast(&state), &clonewars_spellit_admission_debug);
     if (stage >= 2 and s.live(&op) and s.journal.failed == 0) {
         const debug = if (stage >= 4) &clonewars_spellit_manager_debug else &clonewars_spellit_eligibility_debug;

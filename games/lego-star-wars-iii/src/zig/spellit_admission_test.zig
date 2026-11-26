@@ -112,6 +112,22 @@ pub fn main() void {
     hazardDeath(frame, actor);
     outerEligibility(frame, actor);
     riderFire(frame, actor);
+    frame.level = 70;
+    win.store(i16, actor + 0xdc0, 156);
+    win.store(usize, 0xfb4944, actor);
+    begin(frame, false);
+    frame.fire_task_gate_count = 1;
+    frame.fire_task_gates[0] = std.mem.zeroes(p.SyncFireTaskGate);
+    frame.fire_task_gates[0].kind = p.SYNC_ACTOR_CHARACTER_MOTION;
+    frame.fire_task_gates[0].slot = 7;
+    frame.fire_task_gates[0].generation = 19;
+    frame.fire_task_gates[0].character = 156;
+    frame.fire_task_gates[0].payload.character_motion.clock = win.load(u32, 0xfb4b6c);
+    s.fire_task_cursor = 1;
+    check(@src(), call(actor, 0, 3, 1) == 0 and s.journal.failed == 0 and fault == 0);
+    finish();
+    frame.level = 0;
+    win.store(i16, actor + 0xdc0, 184);
     for (0..16) |host| for (0..16) |local| {
         begin(frame, true);
         managerFlow(actor, @intCast(host));

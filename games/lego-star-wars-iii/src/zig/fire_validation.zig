@@ -21,6 +21,26 @@ pub fn supportValid(s: *const p.SyncCharacterMotionState) bool {
     if (s.support_frame != 0) return s.support_material_flags & p.SYNC_SUPPORT_ABSENT == 0;
     return zeros(std.mem.asBytes(&s.support_anchor)) and zeros(std.mem.asBytes(&s.support_normal)) and (s.support_material_flags == 0 or s.support_material_flags == p.SYNC_SUPPORT_ABSENT);
 }
+fn saberQueueValid(queue: *const p.SyncSaberQueue) bool {
+    if (queue.count > queue.slots.len or queue.cursor > queue.slots.len or queue.reserved != 0) return false;
+    if (queue.mode == 0 and (queue.count != 0 or queue.cursor != 0)) return false;
+    for (queue.slots, queue.generations, 0..) |descriptor, generation, index| {
+        if (index >= queue.count) {
+            if (descriptor != 0 or generation != 0) return false;
+            continue;
+        }
+        if (descriptor == p.SABER_QUEUE_INACTIVE) {
+            if (generation != 0) return false;
+            continue;
+        }
+        if (index < queue.cursor) return false;
+        const slot = descriptor & ~p.SABER_QUEUE_FIXED_POINT;
+        if (slot < p.SYNC_MAX_ACTORS) {
+            if (generation == 0) return false;
+        } else if (slot & 0xfff0 != p.SABER_QUEUE_SCENE or slot & 0xf == 2 or generation != 0) return false;
+    }
+    return true;
+}
 pub fn valid(g: *const p.SyncFireTaskGate) bool {
     if (!sourceValid(g.spawn_source) or g.slot >= p.SYNC_MAX_ACTORS or g.generation == 0 or !abi.validLevel(g.character) or !v.finite(g.origin)) return false;
     const data = &g.payload;
@@ -37,6 +57,9 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
             p.SYNC_ACTOR_BARC_ALIGNMENT => @sizeOf(p.SyncBarcAlignmentState),
             p.SYNC_ACTOR_TUBE_CONTACT => @sizeOf([3]f32),
             p.SYNC_ACTOR_MELEE_CONTACT => @sizeOf(p.SyncMeleeContact),
+            p.SYNC_ACTOR_SABER_TARGET => @sizeOf(p.SyncSaberQueue),
+            p.SYNC_ACTOR_PROJECTILE_BRANCH => @sizeOf([2]u32),
+            p.SYNC_ACTOR_FORCE_ELIGIBILITY => @sizeOf([4]u32),
             else => @sizeOf(p.SyncFireTaskState),
         };
         if (!zeros(data.storage[used..])) return false;
@@ -52,9 +75,15 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
         p.SYNC_ACTOR_RIDER_FIRE => return g.flags <= 1 and g.action == 0 and boolean and data.rider_fire.behavior_class == 0x6d83dc and data.rider_fire.mount_slot < p.SYNC_MAX_ACTORS and data.rider_fire.mount_generation != 0 and v.finite(data.rider_fire.cooldown),
         p.SYNC_ACTOR_RYLOTH_FIGHTER_DEATH => return clean and boolean and g.character == 381 and zeros(&data.storage),
         p.SYNC_ACTOR_GEONOSIS_VEHICLE_DEATH => return clean and boolean and g.character == 417 and zeros(&data.storage),
-        p.SYNC_ACTOR_FORCE_ELIGIBILITY => return (g.flags <= 2 or (g.flags == 3 and (g.character == 321 or g.character == 333))) and g.action == 0 and boolean and zeros(&data.storage),
+        p.SYNC_ACTOR_FORCE_ELIGIBILITY => return (g.flags <= 2 or (g.flags == 3 and (g.character == 321 or g.character == 333)) or
+            (g.flags == 4 and (g.character == 181 or g.character == 184))) and g.action == 0 and boolean and
+            @import("force_primary_target.zig").valid(g.flags, g.value, std.mem.bytesToValue(@import("force_primary_target.zig").Target, data.storage[0..16])),
         p.SYNC_ACTOR_TUBE_CONTACT => return g.flags <= 3 and g.action == 0 and boolean and
             (if (g.flags == 2) zeros(&data.storage) else v.finite(data.tube_position)),
+        p.SYNC_ACTOR_PROJECTILE_BRANCH => return g.action == 0 and data.projectile_branch[1] != 0 and
+            ((g.flags == 0 and g.character == 184 and g.value >= 0 and g.value <= 2) or
+                (g.flags == 1 and (g.character == 156 or g.character == 188) and g.value == 1)),
+        p.SYNC_ACTOR_SABER_TARGET => return clean and (g.character == 184 or g.character == 191) and g.value == 0 and saberQueueValid(&data.saber_target),
         p.SYNC_ACTOR_MELEE_CONTACT => return g.action == 0 and data.melee_contact.attacker_slot < p.SYNC_MAX_ACTORS and data.melee_contact.attacker_generation != 0 and switch (g.flags) {
             0 => g.value == 1 and data.melee_contact.attack_pool_slot == 0 and @as(u32, @bitCast(data.melee_contact.impact_time)) == 0,
             1 => boolean and data.melee_contact.attack_pool_slot < 4096 and std.math.isFinite(data.melee_contact.impact_time) and data.melee_contact.impact_time >= 0,
