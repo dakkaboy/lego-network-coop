@@ -425,7 +425,7 @@ export fn projectiles_observe_live(object: usize, out: *ProjectileIdentity) c_in
 }
 fn installedHooks() void {
     const patches = @import("cadence_install.zig").patches();
-    check(@src(), patches.len == 63);
+    check(@src(), patches.len == 64);
     for (patches) |patch| {
         check(@src(), (patch.address & 0xffff) + patch.expected.len <= 0x10000);
         protect(patch.address & ~@as(usize, 0xffff), 0x10000, 0x40);
@@ -1652,6 +1652,12 @@ fn blueShadowCompanionMotionOrder(level: i32) void {
             token.release += 1;
             check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
             _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&spellit_query), &debug);
+            const request = @import("force_request.zig").force_request_begin;
+            put(actor + 0x50, 0x200);
+            put(0xfb4b6c, query.clock + 1);
+            check(@src(), request(actor) == 0 and s.fire_task_cursor == 1);
+            put(0xfb4b6c, query.clock);
+            check(@src(), request(actor) == 1 and s.fire_task_cursor == 1);
             if (!target_found) {
                 _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
                 check(@src(), gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 1, @ptrCast(&admission), &debug) == 0);

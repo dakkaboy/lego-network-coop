@@ -2,6 +2,7 @@ const p = @import("protocol.zig");
 const s = @import("cadence_state.zig");
 
 pub extern fn force_request_eligible_thunk() void;
+pub extern fn force_request_begin_thunk() void;
 pub extern fn force_request_action_thunk() void;
 pub extern fn force_request_available_thunk() void;
 pub extern fn force_request_first_target_thunk() void;
@@ -12,12 +13,31 @@ export var force_request_eligible_continue: usize = 0x84bc9d;
 export var force_request_action_continue: usize = 0x84bcd9;
 export var force_request_available_continue: usize = 0x84bd03;
 export var force_request_eligible_skip: usize = 0x84be6e;
+export const force_request_begin_continue: usize = 0x84b305;
+export const force_request_begin_new: usize = 0x84bc4b;
 export var force_request_available_skip: usize = 0x84bd31;
 export const force_request_first_target_continue: usize = 0x84bd13;
 export const force_request_first_target_skip: usize = 0x84bd21;
 pub export var clonewars_force_eligibility_debug: [5][4]u32 = @splat(@splat(0));
 
 const Stage = enum(u16) { area, action, available, release_expired, first_target };
+pub export fn force_request_begin(actor: usize) c_int {
+    const saved = s.win.GetLastError();
+    defer s.win.SetLastError(saved);
+    var lease: s.Lease = undefined;
+    if (!s.ready(&lease) or s.journal.host != 0 or !s.valid(actor, 0x1440) or s.read(u16, actor + 0xdc0) != 184 or
+        s.read(u32, actor + 0x50) & 0x200 == 0) return 0;
+    const frame = s.journal.frame.?;
+    const cursor = s.fire_task_cursor;
+    if (frame.level != 73 or cursor == 0 or cursor >= frame.fire_task_gate_count) return 0;
+    const query = &frame.fire_task_gates[cursor - 1];
+    const next = &frame.fire_task_gates[cursor];
+    if (query.kind != p.SYNC_ACTOR_SPELLIT_QUERY or query.payload.state.repeat != s.read(u32, 0xfb4b6c) or
+        next.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or next.character != 184 or next.flags != @backingInt(Stage.area)) return 0;
+    const owner = s.reference(query);
+    return @intFromBool(@import("validation.zig").equal(&owner, &s.reference(next)) and s.entities_resolve_reference(&owner) == actor and s.live(&lease));
+}
+
 pub fn eligible(actor: usize, stage: Stage, local: bool) bool {
     var lease: s.Lease = undefined;
     if (!s.ready(&lease) or !s.valid(actor, 0x1440) or s.read(u32, actor + 0x50) & 0x200 == 0) return local;
@@ -151,6 +171,38 @@ comptime {
     asm (bridge("force_request_eligible", "force_request_eligible_skip", ""));
     asm (bridge("force_request_action", "force_request_eligible_skip", ""));
     asm (bridge("force_request_available", "force_request_available_skip", "movl (%ebx),%eax"));
+    asm (
+        \\.text
+        \\.globl _force_request_begin_thunk
+        \\_force_request_begin_thunk:
+        \\    pushfl
+        \\    pushal
+        \\    movl %esp,%edx
+        \\    subl $544,%esp
+        \\    andl $-16,%esp
+        \\    movl %edx,512(%esp)
+        \\    fxsave (%esp)
+        \\    fninit
+        \\    movl $0x1f80,516(%esp)
+        \\    ldmxcsr 516(%esp)
+        \\    cld
+        \\    subl $12,%esp
+        \\    pushl 4(%edx)
+        \\    call _force_request_begin
+        \\    addl $16,%esp
+        \\    fxrstor (%esp)
+        \\    movl 512(%esp),%esp
+        \\    testl %eax,%eax
+        \\    jnz 2f
+        \\    popal
+        \\    popfl
+        \\    cmpl %ecx,%edx
+        \\    jne 3f
+        \\    jmp *_force_request_begin_continue
+        \\2:  popal
+        \\    popfl
+        \\3:  jmp *_force_request_begin_new
+    );
     asm (
         \\.text
         \\.globl _force_request_first_target_thunk
