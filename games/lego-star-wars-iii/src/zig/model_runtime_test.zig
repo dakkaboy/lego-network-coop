@@ -219,7 +219,7 @@ fn run() Snapshot {
     if (mode >= 18) {
         frame.level = switch (mode) {
             20 => 63,
-            24...28, 33...35, 39...43 => 73,
+            24...28, 33...35, 39...44 => 73,
             29, 32, 37 => 71,
             31 => 74,
             36, 38 => 70,
@@ -230,6 +230,7 @@ fn run() Snapshot {
         win.store(u16, actor + 0x2f4, switch (mode) {
             24, 27, 33 => 29,
             34, 38, 41 => 10,
+            44 => 1,
             25 => 92,
             29 => 114,
             32 => 13,
@@ -274,6 +275,7 @@ fn run() Snapshot {
             34 => 29,
             42 => 102,
             43 => 11,
+            44 => 114,
             36, 38 => 22,
             else => 0x29,
         });
@@ -486,6 +488,10 @@ pub fn main() void {
     const lab_vindi_look = run();
     check(@src(), lab_vindi_look.finish != 0 and lab_vindi_look.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 11 and win.load(u32, actor + 0x4c) == 0x400);
+    mode = 44;
+    const lab_b1_motion = run();
+    check(@src(), lab_b1_motion.finish != 0 and lab_b1_motion.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 114 and win.load(u32, actor + 0x4c) == 0x400);
     mode = 41;
     const lab_hidden_b1 = run();
     check(@src(), lab_hidden_b1.finish != 0 and lab_hidden_b1.fault == 0);
