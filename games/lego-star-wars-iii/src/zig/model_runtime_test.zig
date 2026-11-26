@@ -219,14 +219,19 @@ fn run() Snapshot {
     if (mode >= 18) {
         frame.level = switch (mode) {
             20 => 63,
-            24...28, 33...35, 39...45 => 73,
+            24...28, 33...35, 39...46 => 73,
             29, 32, 37 => 71,
             31 => 74,
             36, 38 => 70,
             else => 64,
         };
         put(actor + 0x4c, 0x400);
-        if (mode >= 24) win.store(i16, actor + 0xdc0, if (mode == 35 or mode == 37 or mode == 40 or mode == 42) 333 else if (mode < 28 or (mode >= 33 and mode <= 34) or mode == 43 or mode == 45) 201 else 321);
+        if (mode >= 24) win.store(i16, actor + 0xdc0, switch (mode) {
+            24...27, 33, 34, 43, 45 => 201,
+            35, 37, 40, 42 => 333,
+            46 => 337,
+            else => 321,
+        });
         win.store(u16, actor + 0x2f4, switch (mode) {
             24, 27, 33 => 29,
             34, 38, 41 => 10,
@@ -269,7 +274,7 @@ fn run() Snapshot {
         if (mode == 16) frame.model_input_count = 0;
         if (mode >= 18) win.store(u16, actor + 0x2f4, switch (mode) {
             18, 27 => 1,
-            19, 20, 33, 39 => 10,
+            19, 20, 33, 39, 46 => 10,
             24, 25, 29, 40, 41 => 0xffff,
             28, 30, 31, 32, 35, 37 => 114,
             34 => 29,
@@ -497,6 +502,10 @@ pub fn main() void {
     const lab_b1_motion = run();
     check(@src(), lab_b1_motion.finish != 0 and lab_b1_motion.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 114 and win.load(u32, actor + 0x4c) == 0x400);
+    mode = 46;
+    const lab_post_victory_droid = run();
+    check(@src(), lab_post_victory_droid.finish != 0 and lab_post_victory_droid.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 10 and win.load(u32, actor + 0x4c) == 0x400);
     mode = 41;
     const lab_hidden_b1 = run();
     check(@src(), lab_hidden_b1.finish != 0 and lab_hidden_b1.fault == 0);

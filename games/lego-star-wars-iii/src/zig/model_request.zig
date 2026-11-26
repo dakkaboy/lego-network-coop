@@ -26,6 +26,7 @@ fn blueShadowDroidMotion(level: i32, host: *const p.SyncModelInput, local: *cons
             (host.context.action == 0xffff or host.context.action == 10) and local.context.action == 22;
     }
     if (level != 71 and level != 73 and level != 74) return false;
+    if (level == 73 and host.character == 337 and local.character == 337) return host.context.action == 0xffff and local.context.action == 10;
     if (host.character != local.character or (host.character != 321 and !((level == 71 or level == 73) and host.character == 333))) return false;
     const a = host.context.action;
     const b = local.context.action;
