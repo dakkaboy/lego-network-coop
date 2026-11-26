@@ -370,13 +370,15 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
 fn skipSpellItNoOp(op: *const s.Lease, actor: usize, kind: u32, state: [*]const u8) void {
     const frame = s.journal.frame.?;
     const cursor = s.fire_task_cursor;
-    if ((frame.level != 24 and frame.level != 74) or cursor == 0 or cursor + 4 >= frame.fire_task_gate_count or !s.valid(actor, 0x1440)) return;
+    if ((frame.level != 24 and frame.level != 74) or cursor == 0 or cursor + 2 >= frame.fire_task_gate_count or !s.valid(actor, 0x1440)) return;
     if (frame.level == 24 and s.read(usize, 0xfb3088) != 0) return;
-    const empty_query = frame.level == 74 and cursor + 6 < frame.fire_task_gate_count and
+    const manager_declined = frame.level == 74 and frame.fire_task_gates[cursor + 2].kind == kind;
+    const empty_query = frame.level == 74 and !manager_declined and cursor + 6 < frame.fire_task_gate_count and
         frame.fire_task_gates[cursor + 5].kind == p.SYNC_ACTOR_SPELLIT_QUERY;
-    const stages: []const u16 = if (empty_query) &.{ 4, 5, 2, 0, 1 } else &.{ 4, 5, 2, 3 };
-    const outcomes: []const c_int = if (empty_query) &.{ 0, 1, 1, 0, 1 } else &.{ 0, 1, 0, 0 };
+    const stages: []const u16 = if (manager_declined) &.{ 4, 5 } else if (empty_query) &.{ 4, 5, 2, 0, 1 } else &.{ 4, 5, 2, 3 };
+    const outcomes: []const c_int = if (manager_declined) &.{ 0, 0 } else if (empty_query) &.{ 0, 1, 1, 0, 1 } else &.{ 0, 1, 0, 0 };
     const next_index = cursor + stages.len + @intFromBool(empty_query);
+    if (next_index >= frame.fire_task_gate_count) return;
     const previous = &frame.fire_task_gates[cursor - 1];
     const next = &frame.fire_task_gates[next_index];
     if (previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or next.kind != kind or next.slot == previous.slot or next.flags != 0 or next.action != 0 or

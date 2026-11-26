@@ -1929,9 +1929,18 @@ fn blueShadowPadmeSupport() void {
     defer put(0xfb4940, 0);
     query.manager_class = 0x84c2ac;
     query.caller_site = 0x457f0a;
-    for ([_]bool{ false, true }) |empty_query| {
-        const stages: []const u16 = if (empty_query) &.{ 4, 5, 2, 0, 1 } else &.{ 4, 5, 2, 3 };
-        const results: []const c_int = if (empty_query) &.{ 0, 1, 1, 0, 1 } else &.{ 0, 1, 0, 0 };
+    for (0..3) |variant| {
+        const empty_query = variant == 1;
+        const stages: []const u16 = switch (variant) {
+            0 => &.{ 4, 5, 2, 3 },
+            1 => &.{ 4, 5, 2, 0, 1 },
+            else => &.{ 4, 5 },
+        };
+        const results: []const c_int = switch (variant) {
+            0 => &.{ 0, 1, 0, 0 },
+            1 => &.{ 0, 1, 1, 0, 1 },
+            else => &.{ 0, 0 },
+        };
         client = false;
         token.release += 1;
         check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
