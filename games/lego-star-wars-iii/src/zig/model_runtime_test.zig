@@ -215,7 +215,7 @@ fn run() Snapshot {
     if (mode >= 18) {
         frame.level = switch (mode) {
             20 => 63,
-            24...28, 33...35 => 73,
+            24...28, 33...35, 39 => 73,
             29, 32, 37 => 71,
             31 => 74,
             36, 38 => 70,
@@ -258,7 +258,7 @@ fn run() Snapshot {
         if (mode == 16) frame.model_input_count = 0;
         if (mode >= 18) win.store(u16, actor + 0x2f4, switch (mode) {
             18, 27 => 1,
-            19, 20, 33 => 10,
+            19, 20, 33, 39 => 10,
             24, 25, 29 => 0xffff,
             28, 30, 31, 32, 35, 37 => 114,
             34 => 29,
@@ -458,6 +458,10 @@ pub fn main() void {
     const lab_droid = run();
     check(@src(), lab_droid.finish != 0 and lab_droid.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 114 and win.load(u32, actor + 0x4c) == 0x400);
+    mode = 39;
+    const lab_b1 = run();
+    check(@src(), lab_b1.finish != 0 and lab_b1.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 10 and win.load(u32, actor + 0x4c) == 0x400);
     for ([_]u32{ 36, 38 }) |swamp_mode| {
         mode = swamp_mode;
         const swamp_droid = run();
