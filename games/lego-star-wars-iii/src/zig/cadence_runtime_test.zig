@@ -1854,11 +1854,15 @@ fn blueShadowPadmeSupport() void {
         if (followed_by_jar_jar) _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
         check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
     }
-    for ([_]bool{ false, true }) |trailing| {
+    for (0..3) |variant| {
+        const trailing = variant == 1;
+        const prior_kind: u32 = if (variant == 2) p.SYNC_ACTOR_SPELLIT_ADMISSION else p.SYNC_ACTOR_SPELLIT_QUERY;
+        const stage: u16 = if (variant == 2) 3 else 0;
+        const state: [*]u8 = if (variant == 2) @ptrCast(&admission) else @ptrCast(&query);
         client = false;
         token.release += 1;
         check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
-        _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&query), &debug);
+        _ = gate.apply(actor, prior_kind, stage, 0, 0, state, &debug);
         _ = gate.apply(actor, p.SYNC_FIRE_ATTACK_SUPPORT, 0, 0, 3, null, &debug);
         if (!trailing) _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
         check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
@@ -1866,7 +1870,7 @@ fn blueShadowPadmeSupport() void {
         client = true;
         token.release += 1;
         check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-        _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&query), &debug);
+        _ = gate.apply(actor, prior_kind, stage, 0, 0, state, &debug);
         if (!trailing) _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
         check(@src(), ci.cadence_finish() != 0 and s.fire_task_cursor == frame.fire_task_gate_count and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
     }

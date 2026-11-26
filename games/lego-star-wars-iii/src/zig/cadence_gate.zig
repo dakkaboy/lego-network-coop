@@ -427,10 +427,13 @@ pub fn replayResoluteSpellItNode(scope: *const s.SpellItScope, state: *p.SyncSpe
 }
 
 fn padmeSupportNoOp(previous: *const p.SyncFireTaskGate, support: *const p.SyncFireTaskGate, clock: u32) bool {
-    return support.kind == p.SYNC_FIRE_ATTACK_SUPPORT and support.character == 188 and support.value == 3 and
-        previous.slot == support.slot and previous.generation == support.generation and previous.value == 0 and
-        previous.kind == p.SYNC_ACTOR_SPELLIT_QUERY and
-        s.read(p.SyncSpellItQueryState, @intFromPtr(&previous.payload.storage)).clock == clock;
+    if (support.kind != p.SYNC_FIRE_ATTACK_SUPPORT or support.character != 188 or support.value != 3 or
+        previous.slot != support.slot or previous.generation != support.generation or previous.value != 0) return false;
+    return switch (previous.kind) {
+        p.SYNC_ACTOR_SPELLIT_QUERY => previous.payload.spellit.clock == clock,
+        p.SYNC_ACTOR_SPELLIT_ADMISSION => previous.flags == 3 and previous.action == 0 and previous.payload.state.repeat == clock,
+        else => false,
+    };
 }
 
 pub fn skipTrailingPadmeSupport(op: *const s.Lease) void {
