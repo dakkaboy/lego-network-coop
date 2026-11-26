@@ -2073,14 +2073,14 @@ fn blueShadowRecordedAim(level: i32) void {
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
-fn blueShadowGuestOnlyAim(clone_dead: bool, lab_resume: bool) void {
+fn blueShadowGuestOnlyAim(clone_dead: bool, lab_resume: bool, droid: u16) void {
     mode = 58;
     setup();
     frame.level = if (lab_resume) 73 else 70;
     if (lab_resume) frame.sequence = 1;
-    win.store(u16, actor + 0xdc0, 321);
+    win.store(u16, actor + 0xdc0, droid);
     win.store(u16, other + 0xdc0, 191);
-    win.store(u16, component + 0xdc0, 156);
+    win.store(u16, component + 0xdc0, if (lab_resume) 181 else 156);
     win.store(u8, component + 0xdde, if (clone_dead) 0 else 4);
     put(0xfb4940, other);
     put(0xfb4944, component);
@@ -2429,9 +2429,10 @@ fn arenaRunRandomChecks() void {
     blueShadowRecordedAim(70);
     blueShadowRecordedAim(73);
     blueShadowRecordedAim(74);
-    blueShadowGuestOnlyAim(false, false);
-    blueShadowGuestOnlyAim(true, false);
-    blueShadowGuestOnlyAim(false, true);
+    blueShadowGuestOnlyAim(false, false, 321);
+    blueShadowGuestOnlyAim(true, false, 321);
+    blueShadowGuestOnlyAim(false, true, 321);
+    blueShadowGuestOnlyAim(false, true, 333);
     droidAimOrder(29);
     droidAimOrder(70);
 }
