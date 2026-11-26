@@ -219,7 +219,7 @@ fn run() Snapshot {
     if (mode >= 18) {
         frame.level = switch (mode) {
             20 => 63,
-            24...28, 33...35, 39...46 => 73,
+            24...28, 33...35, 39...47 => 73,
             29, 32, 37 => 71,
             31 => 74,
             36, 38 => 70,
@@ -228,7 +228,7 @@ fn run() Snapshot {
         put(actor + 0x4c, 0x400);
         if (mode >= 24) win.store(i16, actor + 0xdc0, switch (mode) {
             24...27, 33, 34, 43, 45 => 201,
-            35, 37, 40, 42 => 333,
+            35, 37, 40, 42, 47 => 333,
             46 => 337,
             else => 321,
         });
@@ -240,6 +240,7 @@ fn run() Snapshot {
             29 => 114,
             32 => 13,
             40 => 102,
+            47 => 47,
             else => 0xffff,
         });
     }
@@ -261,7 +262,7 @@ fn run() Snapshot {
         saved[7] = provider;
         saved[17] = 0x3e800000;
         saved[19] = 0x3f000000;
-        put(provider + 0xb0, 2);
+        put(provider + 0xb0, if (mode == 47) @as(u32, 1) else 2);
         win.store(u16, actor + 0x76, 5);
         put(actor + 0xcf4, 0x3f000000);
         win.store(u8, model_object + 0x42, 1);
@@ -275,7 +276,7 @@ fn run() Snapshot {
         if (mode >= 18) win.store(u16, actor + 0x2f4, switch (mode) {
             18, 27 => 1,
             19, 20, 33, 39, 46 => 10,
-            24, 25, 29, 40, 41 => 0xffff,
+            24, 25, 29, 40, 41, 47 => 0xffff,
             28, 30, 31, 32, 35, 37 => 114,
             34 => 29,
             42 => 102,
@@ -506,6 +507,10 @@ pub fn main() void {
     const lab_post_victory_droid = run();
     check(@src(), lab_post_victory_droid.finish != 0 and lab_post_victory_droid.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 10 and win.load(u32, actor + 0x4c) == 0x400);
+    mode = 47;
+    const lab_hidden_b2 = run();
+    check(@src(), lab_hidden_b2.finish != 0 and lab_hidden_b2.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 0xffff and win.load(u32, actor + 0x4c) == 0x400);
     mode = 41;
     const lab_hidden_b1 = run();
     check(@src(), lab_hidden_b1.finish != 0 and lab_hidden_b1.fault == 0);
