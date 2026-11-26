@@ -105,6 +105,22 @@ pub fn replay(op: *const t.Operation, manager: usize, shot: *const p.SyncShot, t
     }
     return constructor_lexical_seh(@intFromPtr(&call), replayInvoke, replayAbort);
 }
+
+pub fn replayDeferred(op: *const t.Operation, root: usize, shot: *const p.SyncShot) void {
+    if (!control.live(op)) return;
+    var manager = root;
+    if (shot.source != p.SYNC_SHOT_WEAPON) {
+        // The primary wrapper selects the pool at +0x38 before calling the secondary constructor.
+        manager = s.read(usize, root + 0x38);
+        const context = if (s.valid(manager, 0x24)) s.read(usize, manager + 0xc) else 0;
+        const world = if (s.valid(context, 0x10)) s.read(usize, context + 0xc) else 0;
+        if (!s.valid(world, 0x22ec)) {
+            if (control.live(op)) s.failed = true;
+            return;
+        }
+    }
+    _ = replay(op, manager, shot, 0, 0);
+}
 const Call = struct {
     op: t.Operation,
     manager: usize,

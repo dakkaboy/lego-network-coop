@@ -158,7 +158,7 @@ pub export fn projectiles_begin(frame: *p.SyncFrame, host: c_int) c_int {
         if (!control.live(&op)) return 0;
         if (shot.owner >= 0 and owner == 0) continue;
         s.consumed[i] = 1;
-        _ = creation.replay(&op, manager, shot, 0, 0);
+        creation.replayDeferred(&op, manager, shot);
         if (!control.live(&op)) return 0;
     }
     return @intFromBool(control.live(&op));
@@ -212,7 +212,7 @@ pub export fn projectiles_dispatch_complete() c_int {
             if (!control.live(&op)) return 0;
             if (s.consumed[i] != 0 or shot.phase != 0 or !creation.canReplayAfterTick(frame.level, shot)) continue;
             s.consumed[i] = 1;
-            _ = creation.replay(&op, manager, shot, 0, 0);
+            creation.replayDeferred(&op, manager, shot);
         }
         var i: u32 = 0;
         while (true) : (i += 1) {
@@ -235,7 +235,7 @@ pub export fn projectiles_dispatch_complete() c_int {
                 // The host still owns this projectile after the guest removed its local copy.
                 const birth = entry.birth;
                 const resource = entry.resource;
-                _ = creation.replay(&op, manager, &birth, 0, 0);
+                creation.replayDeferred(&op, manager, &birth);
                 if (!control.live(&op)) return 0;
                 if (entry.resource != resource) {
                     tracking.failure(&op, 5, tracking.actorAt(birth.owner, birth.owner_generation), 0, state.id, entry.object, 0, std.math.maxInt(u32));

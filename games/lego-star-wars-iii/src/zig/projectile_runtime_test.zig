@@ -227,7 +227,9 @@ fn nativePrimary(m: usize, o: usize, position: usize, tr: usize, w: usize, flags
 fn nativeSecondary(m: usize, o: usize, position: usize, tr: usize, w: usize, flags: u32, d: u32, x: usize) callconv(.{ .x86_thiscall = .{} }) usize {
     secondary_calls += 1;
     native_input[4] = d;
-    return nativeCreation(m, o, position, tr, w, flags, x);
+    const deferred = mode == 37 or (mode == 10 and frame.level == 74);
+    check(@src(), m == if (deferred) manager_pool else manager_root);
+    return nativeCreation(manager_root, o, position, tr, w, flags, x);
 }
 fn nativeRemove(manager: usize, obj: usize, flags: u32, effects: c_int) callconv(.{ .x86_thiscall = .{} }) u8 {
     check(@src(), manager == manager_pool and obj == object(0) and flags == 0 and effects == 0);
@@ -338,6 +340,8 @@ fn setup(host: bool) void {
     put(0xe637b4, 234);
     put(0xe9019c, manager_root);
     put(manager_root + 0x38, manager_pool);
+    put(manager_pool + 0xc, backing_pool);
+    put(backing_pool + 0xc, @intFromPtr(frame));
     put(manager_pool + 0x20, backing_pool);
     put(backing_pool + 4, backing_pool);
     put(manager_pool + 0x28, object(0));
