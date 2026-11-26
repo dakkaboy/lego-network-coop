@@ -175,7 +175,8 @@ fn primaryCall() usize {
 fn nativeCreation(manager: usize, owner: usize, o: usize, tr: usize, w: usize, flags: u32, x: usize) usize {
     const turret = frame.level == 79 or frame.level == 24;
     const expected_weapon = if (turret or frame.level == 73) frame.shots[0].weapon else 7;
-    check(@src(), manager == manager_root and owner == actor and w != 0 and win.load(i8, w) == expected_weapon and flags == (if (turret) @as(u32, 0x800) else 0) and x == 0 and win.load(f32, o) == 1 and win.load(f32, tr) == 1);
+    const expected_x: f32 = if (frame.level == 74) -20.944128 else 1;
+    check(@src(), manager == manager_root and owner == actor and w != 0 and win.load(i8, w) == expected_weapon and flags == (if (turret) @as(u32, 0x800) else 0) and x == 0 and win.load(f32, o) == expected_x and win.load(f32, tr) == 1);
     native_calls += 1;
     native_input[0] = win.load(u32, 0xfb4b6c);
     native_input[1] = win.load(u32, 0xe637b4);
@@ -619,15 +620,19 @@ fn replayRetainedShot(level: i32, weapon_id: i32, retired_locally: bool, pool_wi
     session.level = level;
     lease.level = level;
     frame.level = level;
-    win.store(u16, actor + 0xdc0, if (level == 73) 333 else 466);
+    win.store(u16, actor + 0xdc0, switch (level) {
+        73 => 333,
+        74 => 188,
+        else => 466,
+    });
     frame.combat_ready = 1;
     frame.shot_count = 1;
     frame.shots[0] = std.mem.zeroes(p.SyncShot);
     frame.shots[0].id = 9;
     frame.shots[0].owner_generation = 19;
     frame.shots[0].weapon = weapon_id;
-    frame.shots[0].flags = if (level == 73) 0 else 0x800;
-    frame.shots[0].origin = origin.*;
+    frame.shots[0].flags = if (level == 73 or level == 74) 0 else 0x800;
+    frame.shots[0].origin = if (level == 74) .{ -20.944128, 1.443787, 28.830505 } else origin.*;
     frame.shots[0].transform = transform.*;
     frame.projectile_count = 1;
     frame.projectiles[0].id = 9;
@@ -700,5 +705,6 @@ pub fn main() void {
     replayRetainedShot(24, 31, false, false);
     replayRetainedShot(73, 9, true, true);
     replayRetainedShot(73, 9, true, false);
+    replayRetainedShot(74, 7, false, false);
     installedHooks();
 }

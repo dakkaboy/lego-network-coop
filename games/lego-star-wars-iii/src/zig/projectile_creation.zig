@@ -16,6 +16,13 @@ fn isDefenseTurret(actor: usize) bool {
 }
 pub fn canReplayAfterTick(level: i32, shot: *const p.SyncShot) bool {
     if (shot_source.isGeonosisBarrage(level, shot.owner, shot.weapon, shot.flags, shot.source)) return true;
+    if (level == 74 and shot.weapon == 7 and shot.flags == 0 and shot.source == p.SYNC_SHOT_WEAPON and
+        shot.origin[0] < -17 and shot.origin[2] > 24)
+    {
+        const owner = tracking.actorAt(shot.owner, shot.owner_generation);
+        // Padmé's native fire callback can be absent after her bomb-room attack.
+        return s.valid(owner, 0x1440) and s.read(u16, owner + 0xdc0) == 188;
+    }
     return isDefenseTurretWeapon(level, shot.weapon, shot.flags, shot.source) and
         isDefenseTurret(tracking.actorAt(shot.owner, shot.owner_generation));
 }
