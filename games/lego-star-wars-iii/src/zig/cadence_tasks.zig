@@ -40,10 +40,10 @@ fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, task_target: usize
     const frame = s.journal.frame.?;
     if (s.journal.host != 0 or s.fire_task_cursor >= frame.fire_task_gate_count) return null;
     const droid = read(i16, actor + 0xdc0);
-    const x = read(f32, actor + 0x24);
-    const z = read(f32, actor + 0x2c);
-    const corridor_droid = droid == 333 and x >= 6 and x <= 10 and z >= 10 and z <= 14;
-    const lift = frame.level == 74 and ((droid == 321 and x > 30) or corridor_droid);
+    const player_two = read(usize, 0xfb4944);
+    const corridor_droid = frame.level == 74 and droid == 333 and
+        s.valid(player_two, 0x1440) and read(u16, player_two + 0xdc0) == 199;
+    const lift = (frame.level == 74 and droid == 321 and read(f32, actor + 0x24) > 30) or corridor_droid;
     const obi_wan = if (frame.level == 73 and (droid == 321 or droid == 333)) read(usize, 0xfb4944) else 0;
     const lab_exit = s.valid(obi_wan, 0x1440) and read(u16, obi_wan + 0xdc0) == 181;
     if (!lift and !lab_exit) return null;
@@ -71,7 +71,8 @@ fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, task_target: usize
     if (lift) {
         if (!s.valid(target, 0x1440)) return null;
         const character = read(u16, target + 0xdc0);
-        if (read(f32, target + 0x24) <= 30 or (character != 181 and character != 184)) return null;
+        if (read(f32, target + 0x24) <= 30 or (character != 181 and character != 184) or
+            (corridor_droid and read(u32, target + 0x50) & 3 != 1)) return null;
     } else {
         if (aim.target_character != 138) return null;
         if (retainedLabClone(task_target)) {

@@ -2078,15 +2078,14 @@ fn blueShadowRecordedAim(level: i32, retained_lift_target: bool, corridor_droid:
     frame.level = level;
     win.store(u16, actor + 0xdc0, if (level == 73) 138 else if (stale) 184 else 191);
     win.store(f32, actor + 0x24, 39);
-    win.store(f32, other + 0x24, if (corridor_droid) 7.9164195 else 41);
-    if (corridor_droid) win.store(f32, other + 0x2c, 12.363004);
+    win.store(f32, other + 0x24, if (corridor_droid) 3.1796846 else 41);
     win.store(u8, actor + 0xdde, 4);
     win.store(u16, other + 0xdc0, if (level == 73 or corridor_droid) 333 else 321);
-    win.store(u16, component + 0xdc0, 181);
+    win.store(u16, component + 0xdc0, if (corridor_droid) 199 else 181);
     if (level == 73) put(actor + 0x50, 0x1001);
     put(other + 8, model);
     put(0xfb4940, actor);
-    put(0xfb4944, if (level == 73) component else 0);
+    put(0xfb4944, if (level == 73 or corridor_droid) component else 0);
     put(task + 0x10, actor);
     var token = std.mem.zeroes(Token);
     token.owner = actor;
