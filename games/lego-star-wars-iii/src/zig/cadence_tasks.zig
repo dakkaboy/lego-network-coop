@@ -5,6 +5,7 @@ const gate = @import("cadence_gate.zig");
 const equal = @import("validation.zig").equal;
 const read = s.read;
 pub export var clonewars_lab_aim_failure: [12]u32 = @splat(0);
+pub export var clonewars_lift_aim_failure: [12]u32 = @splat(0);
 fn reject(op: *const s.Lease, actor: usize, reason: u32) void {
     s.journal.failed = @bitCast(reason);
     s.failed(op, actor, null, reason);
@@ -59,7 +60,7 @@ fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, task_target: usize
         if (target == 0) {
             // After the lift fight, a native aim target can leave the active party while its allocation is retained.
             target = s.entities_retained_actor(aim.target_slot, aim.target_generation);
-            if (target != last_target or !s.valid(target, 0x1440) or read(u32, target + 0x50) & 3 != 1) return null;
+            if ((target != last_target and target != task_target) or !s.valid(target, 0x1440) or read(u32, target + 0x50) & 3 != 1) return null;
         }
     }
     if (!s.live(op)) return null;
@@ -144,6 +145,9 @@ pub export fn cadence_prepare_aim_task(actor: usize, task: usize) c_int {
                 const frame = s.journal.frame.?;
                 if (frame.level == 73 and clonewars_lab_aim_failure[0] != frame.epoch) {
                     clonewars_lab_aim_failure = .{ frame.epoch, frame.sequence, s.fire_task_cursor, input.clock, input.task_class, s.bits(input.minimum), s.bits(input.maximum), @truncate(actor), @truncate(task), @truncate(target), @truncate(read(usize, actor + 0xbdc)), @truncate(read(usize, 0xfb4944)) };
+                }
+                if (frame.level == 74 and clonewars_lift_aim_failure[0] != frame.epoch) {
+                    clonewars_lift_aim_failure = .{ frame.epoch, frame.sequence, s.fire_task_cursor, input.clock, input.task_class, s.bits(input.minimum), s.bits(input.maximum), @truncate(actor), @truncate(task), @truncate(target), @truncate(read(usize, actor + 0xbdc)), @truncate(read(usize, 0xfb4944)) };
                 }
                 reject(&op, actor, 8);
             }
