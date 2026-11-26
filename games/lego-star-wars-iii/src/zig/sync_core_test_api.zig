@@ -361,7 +361,7 @@ pub fn native_tick_finish() c_int {
 pub fn native_tick_cancel(_: *const s.Token) void {
     record(19);
 }
-pub fn reaction_drain_arena() c_int {
+pub fn reaction_drain_contact_hits() c_int {
     return 1;
 }
 pub fn rts_spawn_timers_finish(_: *const s.p.SyncFrame) c_int {

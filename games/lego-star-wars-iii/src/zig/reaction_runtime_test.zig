@@ -129,7 +129,7 @@ fn nativeRange(a: usize, b: usize, reach: f32) callconv(.c) c_int {
     return @intFromBool(@abs(win.load(f32, a + 0x24) - win.load(f32, b + 0x24)) <= reach + win.load(f32, a + 0x1088) + win.load(f32, b + 0x1088));
 }
 fn nativeHit(a: usize, b: usize, one: u32, flags: u32, zero: u32, last: u32) callconv(.c) u32 {
-    check(@src(), a == target and b == actor and one == 1 and flags == 0x400000 and zero == 0 and last == 1);
+    check(@src(), a == target and b == actor and one == 1 and flags == (if (mode == 53) @as(u32, 0x100010a) else 0x400000) and zero == 0 and last == 1);
     hit_calls += 1;
     if (mode >= 50 and mode <= 52) {
         check(@src(), win.load(i16, actor + 0x2f4) == 65);
@@ -141,7 +141,7 @@ fn nativeHit(a: usize, b: usize, one: u32, flags: u32, zero: u32, last: u32) cal
         win.store(f32, actor + 0xd3c, 0.4);
     }
     if (mode == 27) win.RaiseException(0xe1459876, 0, 0, null);
-    if (mode == 25) {
+    if (mode == 25 or mode == 53) {
         selected_clip = if (client) 9 else 7;
         choice.reaction_apply_choice(actor, &selected_clip);
     }
@@ -325,7 +325,7 @@ fn run() Snapshot {
             win.store(f32, actor + 0xd3c, 1);
             hitReceipt(&out, mode == 20);
         } else if (mode >= 24 and mode <= 26) {
-            out.drain = arena.reaction_drain_arena();
+            out.drain = arena.reaction_drain_contact_hits();
         } else {
             selected_clip = 9;
             choice.reaction_apply_choice(actor, &selected_clip);
@@ -349,9 +349,9 @@ fn protect(address: usize, protection: u32) void {
     check(@src(), win.VirtualProtect(address, 0x10000, protection, &old) != 0);
 }
 fn installedHooks() void {
-    const sites = [_]usize{ 0x96a1bd, 0x96b2e1, 0x410cf3, 0x87ffb7, 0x89e430, 0x96b95e, 0x96ad96 };
-    const sizes = [_]usize{ 7, 8, 5, 5, 7, 7, 10 };
-    const prefixes = [_][]const u8{ "\x8b\x7c\x24\x50\x83\xff\xff", "\x89\x44\x24\x44\xdb\x44\x24\x44", "\xe8\xc8\x97\x55\x00", "\xe8\xf4\x2d\xf1\xff", "\x56\x8b\x74\x24\x08\x85\xf6", "\x0f\xbe\xbe\xde\x0d\x00\x00", "\xf7\x86\x80\x0c\x00\x00\x00\x10\x00\x00" };
+    const sites = [_]usize{ 0x96a1bd, 0x96b2e1, 0x410cf3, 0x87ffb7, 0x89e430, 0x96b95e, 0x96ad96, 0x87acd0 };
+    const sizes = [_]usize{ 7, 8, 5, 5, 7, 7, 10, 5 };
+    const prefixes = [_][]const u8{ "\x8b\x7c\x24\x50\x83\xff\xff", "\x89\x44\x24\x44\xdb\x44\x24\x44", "\xe8\xc8\x97\x55\x00", "\xe8\xf4\x2d\xf1\xff", "\x56\x8b\x74\x24\x08\x85\xf6", "\x0f\xbe\xbe\xde\x0d\x00\x00", "\xf7\x86\x80\x0c\x00\x00\x00\x10\x00\x00", "\xe8\xeb\xf7\x0e\x00" };
     for ([_]usize{ 0x410000, 0x870000, 0x890000, 0x960000 }) |a| protect(a, 0x40);
     for (sites, sizes, prefixes) |site, size, prefix| @memcpy(bytes(site, size), prefix[0..size]);
     win.store(u8, 0x96a1c4, 0xc3);
@@ -401,7 +401,7 @@ fn installedHooks() void {
     check(@src(), reaction_fixture_draw == 17);
     check(@src(), range(actor, target, 1.5) != 0);
     source = 0;
-    check(@src(), arena.reaction_drain_arena() != 0 and r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
+    check(@src(), arena.reaction_drain_contact_hits() != 0 and r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
     mode = 27;
     setup();
     frame.epoch = 2000;
@@ -613,7 +613,37 @@ pub fn main() void {
     unchangedNativeChoice();
     idleWalkReactionClip();
     arenaBeforeHit();
+    blueShadowLiftContact();
     actionTraceChecks();
+}
+
+fn blueShadowLiftContact() void {
+    for ([_]bool{ false, true }) |local_contact| {
+        mode = 53;
+        setup();
+        clearDebug();
+        source = 0;
+        frame.level = 74;
+        frame.sequence = 33535;
+        win.store(i16, target + 0xdc0, 184);
+        win.store(i16, actor + 0xdc0, 321);
+        win.store(f32, target + 0x24, 39);
+        win.store(f32, actor + 0x24, 40);
+        var token = tokenFor();
+        var lease: s.Lease = undefined;
+        begin(&token, &lease, 1);
+        check(@src(), arena.liftContact(target, actor, 1, 0x100010a, 0, 1) == 13);
+        check(@src(), frame.reaction_count == 1 and r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
+
+        client = true;
+        token.release += 1;
+        begin(&token, &lease, 0);
+        if (local_contact) check(@src(), arena.liftContact(target, actor, 1, 0x100010a, 0, 1) == 13);
+        check(@src(), arena.reaction_drain_contact_hits() != 0);
+        check(@src(), hit_calls == 2 and selected_clip == 7 and win.load(f32, actor + 0xd3c) != 2.5);
+        check(@src(), arena.liftContact(target, actor, 1, 0x100010a, 0, 1) == 0 and hit_calls == 2);
+        check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0 and fault == 0);
+    }
 }
 fn actionTraceChecks() void {
     const trace = @import("native_action_trace.zig");
@@ -694,7 +724,7 @@ fn arenaBeforeHit() void {
         const before = win.load([0x1440]u8, actor);
         const calls = hit_calls;
         begin(&token, &lease, 0);
-        const result = arena.reaction_drain_arena();
+        const result = arena.reaction_drain_contact_hits();
         if (mutation == 0) {
             check(@src(), result != 0 and hit_calls == calls + 1 and selected_clip == 73 and win.load(i8, actor + 0xdde) == 2 and win.load(i16, actor + 0x2f4) == 20 and win.load(f32, actor + 0xd3c) == 2.5 and r.reaction_finish() != 0);
         } else {

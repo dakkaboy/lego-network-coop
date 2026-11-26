@@ -78,7 +78,7 @@ pub fn finish(owner: *s.owner.Scope, nonce: u32, _: usize) callconv(.c) void {
         return;
     }
     if (s.core.host == 0) {
-        if (s.working.level == 12 and api.reaction_drain_arena() == 0) {
+        if ((s.working.level == 12 or s.working.level == 74) and api.reaction_drain_contact_hits() == 0) {
             fault(17);
             return;
         }

@@ -429,7 +429,7 @@ export fn projectiles_observe_live(object: usize, out: *ProjectileIdentity) c_in
 }
 fn installedHooks() void {
     const patches = @import("cadence_install.zig").patches();
-    check(@src(), patches.len == 64);
+    check(@src(), patches.len == 65);
     for (patches) |patch| {
         check(@src(), (patch.address & 0xffff) + patch.expected.len <= 0x10000);
         protect(patch.address & ~@as(usize, 0xffff), 0x10000, 0x40);

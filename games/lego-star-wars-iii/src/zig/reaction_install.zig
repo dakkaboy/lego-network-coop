@@ -22,6 +22,7 @@ pub fn install() c_int {
         .{ .address = 0x96b95e, .expected = "\x0f\xbe\xbe\xde\x0d\x00\x00", .target = @intFromPtr(&reaction_projectile_damage_thunk) },
         .{ .address = 0x96ad96, .expected = "\xf7\x86\x80\x0c\x00\x00\x00\x10\x00\x00", .target = @intFromPtr(&reaction_lep_projectile_contact_thunk) },
         .{ .address = 0x410cf3, .expected = "\xe8\xc8\x97\x55\x00", .target = @intFromPtr(&reaction_arena_contact_thunk), .opcode = 0xe8 },
+        .{ .address = 0x87acd0, .expected = "\xe8\xeb\xf7\x0e\x00", .target = @intFromPtr(&@import("reaction_arena.zig").liftContact), .opcode = 0xe8 },
         .{ .address = 0x87ffb7, .expected = "\xe8\xf4\x2d\xf1\xff", .target = @intFromPtr(&reaction_item_range_hook), .opcode = 0xe8 },
     };
     const ok = hooks.apply(&patches);
