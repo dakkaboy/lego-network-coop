@@ -1363,6 +1363,45 @@ fn blueShadowContactDecisions() void {
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
+export fn combat_damage_native_caller() u32 {
+    return if (contact_shot != 0) 0x81f27f else 0;
+}
+
+export fn combat_damage_source_id() u32 {
+    return contact_shot;
+}
+
+fn blueShadowProjectileAction() void {
+    const hit_action = @import("projectile_actor_branch.zig").projectile_hit_action;
+    mode = 58;
+    setup();
+    frame.level = 73;
+    frame.sequence = 2102;
+    put(0xfb4b6c, 2104);
+    win.store(u16, actor + 0xdc0, 184);
+    contact_shot = 125;
+    defer contact_shot = 0;
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    check(@src(), hit_action(actor, 0x800) == 0 and frame.fire_task_gate_count == 1);
+    check(@src(), @import("fire_validation.zig").valid(&frame.fire_task_gates[0]));
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), hit_action(actor, 0x904) == 0 and s.fire_task_cursor == 1);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+}
+
 fn blueShadowPlayerProjectileContact(level: i32, character: u16, id: u32) void {
     const hit = @import("projectile_actor_branch.zig").projectile_player_hit;
     mode = 58;
@@ -2333,6 +2372,7 @@ pub fn main() void {
     geonosisVehicleDeath();
     hiddenEnemyForceEligibility();
     blueShadowContactDecisions();
+    blueShadowProjectileAction();
     blueShadowPlayerProjectileContact(71, 156, 3432);
     blueShadowPlayerProjectileContact(74, 188, 1268);
     blueShadowVindiSupport(321);

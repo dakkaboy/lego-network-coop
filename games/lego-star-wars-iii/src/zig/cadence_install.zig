@@ -78,7 +78,7 @@ pub export var rider_fire_hidden_resume: usize = 0x4397ef;
 extern fn rider_fire_visibility_thunk() void;
 extern fn arena_run_random_thunk() void;
 extern fn zillo_support_throw_thunk() void;
-pub fn patches() [64]hooks.Patch {
+pub fn patches() [65]hooks.Patch {
     return [_]hooks.Patch{
         .{ .address = 0x99a39b, .expected = "\x33\x8a\x68\x02\x00\x00", .target = @intFromPtr(&@import("barc_suspension.zig").barc_suspension_thunk) },
         .{ .address = 0x9977c9, .expected = "\xe8\xc2\x4a\xff\xff", .target = @intFromPtr(&@import("barc_alignment.zig").barc_alignment_thunk), .opcode = 0xe8 },
@@ -121,6 +121,7 @@ pub fn patches() [64]hooks.Patch {
         .{ .address = 0x81ecf0, .expected = "\x8b\x5d\x14\x8b\x45\x10", .target = @intFromPtr(&@import("projectile_actor_branch.zig").projectile_actor_reflect_thunk) },
         .{ .address = 0x81f08e, .expected = "\x8b\x47\x14\x8b\x48\x74", .target = @intFromPtr(&@import("projectile_actor_branch.zig").projectile_actor_damage_thunk) },
         .{ .address = 0x81f27a, .expected = "\xe8\x41\xb2\x14\x00", .target = @intFromPtr(&@import("projectile_actor_branch.zig").projectile_player_hit_thunk) },
+        .{ .address = 0x96a953, .expected = "\x83\xe0\x04\x33\xc9\x0b\xc8", .target = @intFromPtr(&@import("projectile_actor_branch.zig").projectile_hit_action_thunk) },
         .{ .address = 0x81f382, .expected = "\x8b\x87\x60\x01\x00\x00", .target = @intFromPtr(&@import("projectile_actor_branch.zig").projectile_actor_followup_thunk) },
         .{ .address = 0x8cd570, .expected = "\x80\xbb\x5d\x02\x00\x00\x00", .target = @intFromPtr(&@import("saber_target.zig").saber_target_queue_thunk) },
         .{ .address = 0x8cd6a6, .expected = "\x8a\x83\x5e\x02\x00\x00\x3a\x83\x5c\x02\x00\x00", .target = @intFromPtr(&@import("saber_contact_observe.zig").saber_contact_observe_thunk) },

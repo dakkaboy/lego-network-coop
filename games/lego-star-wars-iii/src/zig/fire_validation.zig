@@ -82,7 +82,8 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
             (if (g.flags == 2) zeros(&data.storage) else v.finite(data.tube_position)),
         p.SYNC_ACTOR_PROJECTILE_BRANCH => return g.action == 0 and data.projectile_branch[1] != 0 and
             ((g.flags == 0 and g.character == 184 and g.value >= 0 and g.value <= 2) or
-                (g.flags == 1 and (g.character == 156 or g.character == 188) and g.value == 1)),
+                (g.flags == 1 and (g.character == 156 or g.character == 188) and g.value == 1) or
+                (g.flags == 2 and g.character == 184 and boolean)),
         p.SYNC_ACTOR_SABER_TARGET => return clean and (g.character == 184 or g.character == 191) and g.value == 0 and saberQueueValid(&data.saber_target),
         p.SYNC_ACTOR_MELEE_CONTACT => return g.action == 0 and data.melee_contact.attacker_slot < p.SYNC_MAX_ACTORS and data.melee_contact.attacker_generation != 0 and switch (g.flags) {
             0 => g.value == 1 and data.melee_contact.attack_pool_slot == 0 and @as(u32, @bitCast(data.melee_contact.impact_time)) == 0,
