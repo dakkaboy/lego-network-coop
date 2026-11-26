@@ -216,13 +216,13 @@ fn run() Snapshot {
         frame.level = switch (mode) {
             20 => 63,
             24...28, 33...35 => 73,
-            29, 32 => 71,
+            29, 32, 37 => 71,
             31 => 74,
             36 => 70,
             else => 64,
         };
         put(actor + 0x4c, 0x400);
-        if (mode >= 24) win.store(i16, actor + 0xdc0, if (mode == 35) 333 else if (mode < 28 or (mode >= 33 and mode <= 34)) 201 else 321);
+        if (mode >= 24) win.store(i16, actor + 0xdc0, if (mode == 35 or mode == 37) 333 else if (mode < 28 or (mode >= 33 and mode <= 34)) 201 else 321);
         win.store(u16, actor + 0x2f4, switch (mode) {
             24, 27, 33 => 29,
             34 => 10,
@@ -260,7 +260,7 @@ fn run() Snapshot {
             18, 27 => 1,
             19, 20, 33 => 10,
             24, 25, 29 => 0xffff,
-            28, 30, 31, 32, 35 => 114,
+            28, 30, 31, 32, 35, 37 => 114,
             34 => 29,
             36 => 22,
             else => 0x29,
@@ -462,6 +462,10 @@ pub fn main() void {
     const swamp_droid = run();
     check(@src(), swamp_droid.finish != 0 and swamp_droid.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 22 and win.load(u32, actor + 0x4c) == 0x400);
+    mode = 37;
+    const corridor_droid = run();
+    check(@src(), corridor_droid.finish != 0 and corridor_droid.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 114 and win.load(u32, actor + 0x4c) == 0x400);
     for (28..33) |variant| {
         mode = @intCast(variant);
         const droid = run();

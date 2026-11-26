@@ -1450,7 +1450,11 @@ fn forceReleaseCountdown(level: i32) void {
         _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
         check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
     }
-    if (level != 74) return;
+    if (level != 74 and level != 71) return;
+    if (level == 71) {
+        win.store(u16, actor + 0xdc0, 333);
+        win.store(u16, other + 0xdc0, 333);
+    }
 
     const apply = gate.apply;
     var motion = std.mem.zeroes(p.SyncCharacterMotionState);
