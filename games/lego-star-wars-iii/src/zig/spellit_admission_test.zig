@@ -126,6 +126,7 @@ pub fn main() void {
     s.fire_task_cursor = 1;
     check(@src(), call(actor, 0, 3, 1) == 0 and s.journal.failed == 0 and fault == 0);
     finish();
+    corridorPanelEndOfFrame(frame, actor);
     bombRoomEndOfFrame(frame, actor);
     bombRoomBeforeObiWan(frame, actor);
     frame.level = 0;
@@ -226,6 +227,38 @@ pub fn main() void {
     gunganManagerOmission(frame, actor);
     gunganHostManagerNoOp(frame, actor);
     gunganAction100Admission(frame, actor);
+}
+
+fn corridorPanelEndOfFrame(frame: *p.SyncFrame, rex: usize) void {
+    frame.level = 71;
+    win.store(f32, rex + 0x24, 1.52);
+    win.store(f32, rex + 0x2c, 15.76);
+    defer {
+        win.store(f32, rex + 0x24, 0);
+        win.store(f32, rex + 0x2c, 0);
+    }
+    for ([_]u32{ 51, 50 }) |clock| {
+        begin(frame, false);
+        frame.fire_task_gate_count = 2;
+        frame.fire_task_gates[0..2].* = std.mem.zeroes([2]p.SyncFireTaskGate);
+        const admission_gate = &frame.fire_task_gates[0];
+        admission_gate.kind = p.SYNC_ACTOR_SPELLIT_ADMISSION;
+        admission_gate.slot = 8;
+        admission_gate.character = 191;
+        admission_gate.flags = 5;
+        admission_gate.payload.state.repeat = clock;
+        const motion = &frame.fire_task_gates[1];
+        motion.kind = p.SYNC_ACTOR_CHARACTER_MOTION;
+        motion.slot = 7;
+        motion.generation = 19;
+        motion.character = 156;
+        motion.payload.character_motion.clock = 51;
+        s.fire_task_cursor = 2;
+        const result = call(rex, 0, 4, 1);
+        check(@src(), s.fire_task_cursor == 2);
+        if (clock == 51) check(@src(), result == 0 and fault == 0) else check(@src(), fault == 14);
+        finish();
+    }
 }
 
 fn bombRoomEndOfFrame(frame: *p.SyncFrame, padme: usize) void {

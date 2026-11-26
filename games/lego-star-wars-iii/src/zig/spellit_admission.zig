@@ -30,13 +30,22 @@ pub export fn spellit_gungan_action100_admitted(actor: usize) c_int {
 fn missingManagerStage(op: *const s.Lease, actor: usize, stage: u32, clock: u32) bool {
     const frame = s.journal.frame.?;
     const cursor = s.fire_task_cursor;
-    if (s.journal.host != 0 or (frame.level != 24 and frame.level != 74) or stage < 4 or cursor == 0 or cursor > frame.fire_task_gate_count) return false;
+    if (s.journal.host != 0 or (frame.level != 24 and frame.level != 71 and frame.level != 74) or
+        stage < 4 or cursor == 0 or cursor > frame.fire_task_gate_count) return false;
     const previous = &frame.fire_task_gates[cursor - 1];
     if (previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or previous.payload.character_motion.clock != clock) return false;
     const character = s.read(u16, actor + 0xdc0);
     if (cursor == frame.fire_task_gate_count) {
-        if (frame.level != 74 or cursor < 2 or character != 188 or previous.character != 188 or actor != s.read(usize, 0xfb4944)) return false;
+        if (cursor < 2 or previous.character != character or actor != s.read(usize, 0xfb4944)) return false;
         const query = &frame.fire_task_gates[cursor - 2];
+        if (frame.level == 71) {
+            // The corridor panel can leave a trailing manager check on Rex after the door has opened.
+            if (character != 156 or query.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or query.character != 191 or
+                query.flags != 5 or query.action != 0 or query.value != 0 or query.payload.state.repeat != clock or
+                query.slot == previous.slot or !(s.read(f32, actor + 0x24) > 1 and s.read(f32, actor + 0x2c) > 15)) return false;
+            return s.entities_resolve_reference(&s.reference(previous)) == actor and s.live(op);
+        }
+        if (frame.level != 74 or character != 188) return false;
         if (query.kind != p.SYNC_ACTOR_SPELLIT_QUERY or query.character != 199 or query.payload.state.repeat != clock or query.slot == previous.slot) return false;
         const padme = s.reference(previous);
         const jar_jar = s.reference(query);
@@ -45,6 +54,7 @@ fn missingManagerStage(op: *const s.Lease, actor: usize, stage: u32, clock: u32)
         return first_player != 0 and s.entities_resolve_reference(&padme) == actor and
             s.entities_resolve_reference(&jar_jar) == first_player and s.live(op);
     }
+    if (frame.level == 71) return false;
     const next = &frame.fire_task_gates[cursor];
     if (previous.slot == next.slot) return false;
     const player_one = s.read(usize, 0xfb4940);
