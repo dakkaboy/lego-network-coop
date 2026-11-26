@@ -1498,16 +1498,16 @@ fn forceReleaseCountdown(level: i32) void {
     }
     if (level != 74 and level != 73 and level != 71) return;
     if (level == 73) win.store(u16, other + 0xdc0, 333);
-    if (level == 71) {
-        win.store(u16, actor + 0xdc0, 333);
-        win.store(u16, other + 0xdc0, 333);
-    }
-
     const apply = gate.apply;
     var motion = std.mem.zeroes(p.SyncCharacterMotionState);
-    motion.clock = 42;
-    put(0xfb4b6c, 42);
-    for ([_]bool{ false, true }) |with_support| {
+    motion.clock = if (level == 71) 19422 else 42;
+    put(0xfb4b6c, motion.clock);
+    const variants: []const u16 = if (level == 71) &.{ 321, 333 } else &.{321};
+    for (variants) |character| for ([_]bool{ false, true }) |with_support| {
+        if (level == 71) {
+            win.store(u16, actor + 0xdc0, character);
+            win.store(u16, other + 0xdc0, character);
+        }
         client = false;
         token.release += 1;
         check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
@@ -1524,7 +1524,7 @@ fn forceReleaseCountdown(level: i32) void {
         check(@src(), expired(actor, 0) == 0 and s.fire_task_cursor == (if (with_support) @as(u32, 2) else 1));
         _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
         check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
-    }
+    };
 }
 
 fn geonosisCompanionMotionOrder() void {
