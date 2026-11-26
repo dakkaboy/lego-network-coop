@@ -1787,24 +1787,29 @@ fn blueShadowPadmeSupport() void {
     var debug: [4]u32 = @splat(0);
     var admission = std.mem.zeroes(p.SyncFireTaskState);
     admission.repeat = 42;
-    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
-    _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_ADMISSION, 3, 0, 0, @ptrCast(&admission), &debug);
-    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
-
-    client = true;
-    token.release += 1;
-    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-    _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_ADMISSION, 3, 0, 0, @ptrCast(&admission), &debug);
-    var attack_support: c_int = 0;
-    check(@src(), cb.cadence_apply_attack_support(actor, &attack_support) == 1 and attack_support == 0 and s.fire_task_cursor == 1);
-    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
-
     win.store(u16, other + 0xdc0, 199);
     win.store(f32, other + 0x24, -7.311);
     var query = std.mem.zeroes(p.SyncSpellItQueryState);
     query.clock = 42;
     var motion = std.mem.zeroes(p.SyncCharacterMotionState);
     motion.clock = query.clock;
+    for ([_]bool{ false, true }) |followed_by_jar_jar| {
+        client = false;
+        token.release += 1;
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+        _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_ADMISSION, 3, 0, 0, @ptrCast(&admission), &debug);
+        if (followed_by_jar_jar) _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+        client = true;
+        token.release += 1;
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+        _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_ADMISSION, 3, 0, 0, @ptrCast(&admission), &debug);
+        var attack_support: c_int = 0;
+        check(@src(), cb.cadence_apply_attack_support(actor, &attack_support) == 1 and attack_support == 0 and s.fire_task_cursor == 1);
+        if (followed_by_jar_jar) _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+    }
     for ([_]bool{ false, true }) |trailing| {
         client = false;
         token.release += 1;

@@ -103,13 +103,17 @@ pub export fn cadence_apply_attack_support(actor: usize, support: *c_int) c_int 
     if (s.ready(&lease) and s.journal.host == 0) {
         const frame = s.journal.frame.?;
         const cursor = s.fire_task_cursor;
-        if (frame.level == 74 and cursor != 0 and cursor == frame.fire_task_gate_count) {
+        if (frame.level == 74 and cursor != 0 and cursor <= frame.fire_task_gate_count) {
             const previous = &frame.fire_task_gates[cursor - 1];
+            const clock = s.read(u32, 0xfb4b6c);
             if (previous.kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and previous.character == 188 and
-                previous.flags == 3 and previous.value == 0 and previous.payload.state.repeat == s.read(u32, 0xfb4b6c))
+                previous.flags == 3 and previous.action == 0 and previous.value == 0 and previous.payload.state.repeat == clock)
             {
-                const identity = s.reference(previous);
-                if (s.entities_resolve_reference(&identity) == actor and s.live(&lease)) return 1;
+                const host_moved_on = cursor == frame.fire_task_gate_count or movedOnToJarJar(&frame.fire_task_gates[cursor], previous.slot, clock);
+                if (host_moved_on) {
+                    const identity = s.reference(previous);
+                    if (s.entities_resolve_reference(&identity) == actor and s.live(&lease)) return 1;
+                }
             }
         }
     }
@@ -117,6 +121,10 @@ pub export fn cadence_apply_attack_support(actor: usize, support: *c_int) c_int 
     const authoritative = gate.apply(actor, p.SYNC_FIRE_ATTACK_SUPPORT, 0, 0, native, null, &s.clonewars_attack_support_debug);
     if (authoritative != native) support.* = authoritative;
     return 0;
+}
+fn movedOnToJarJar(next: *const p.SyncFireTaskGate, padme_slot: u32, clock: u32) bool {
+    return next.kind == p.SYNC_ACTOR_CHARACTER_MOTION and next.character == 199 and next.slot != padme_slot and
+        next.payload.character_motion.clock == clock;
 }
 fn recordVisibility(actor: usize, local: c_int, result: c_int, correction: *[8]u32, site: u32) void {
     var op: s.Lease = undefined;
