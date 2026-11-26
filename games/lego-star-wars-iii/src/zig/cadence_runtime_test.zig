@@ -1888,6 +1888,18 @@ fn blueShadowPadmeSupport() void {
     _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 
+    win.store(f32, actor + 0x24, -22.89929);
+    win.store(f32, actor + 0x2c, 26.65648);
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    var attack_support: c_int = 3;
+    check(@src(), cb.cadence_apply_attack_support(actor, &attack_support) == 1 and s.fire_task_cursor == 1);
+    _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+    win.store(f32, actor + 0x24, -6.6884594);
+    win.store(f32, actor + 0x2c, 0);
+
     put(0xfb4940, actor);
     defer put(0xfb4940, 0);
     query.manager_class = 0x84c2ac;

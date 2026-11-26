@@ -106,14 +106,15 @@ pub export fn cadence_apply_attack_support(actor: usize, support: *c_int) c_int 
         if (frame.level == 74 and cursor != 0 and cursor <= frame.fire_task_gate_count) {
             const previous = &frame.fire_task_gates[cursor - 1];
             const clock = s.read(u32, 0xfb4b6c);
-            if (previous.kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and previous.character == 188 and
-                previous.flags == 3 and previous.action == 0 and previous.value == 0 and previous.payload.state.repeat == clock)
-            {
-                const host_moved_on = cursor == frame.fire_task_gate_count or movedOnToJarJar(&frame.fire_task_gates[cursor], previous.slot, clock);
-                if (host_moved_on) {
-                    const identity = s.reference(previous);
-                    if (s.entities_resolve_reference(&identity) == actor and s.live(&lease)) return 1;
-                }
+            const next_is_jar = cursor < frame.fire_task_gate_count and movedOnToJarJar(&frame.fire_task_gates[cursor], previous.slot, clock);
+            const declined = previous.kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and previous.flags == 3 and
+                previous.action == 0 and previous.value == 0 and previous.payload.state.repeat == clock;
+            const bomb_room = next_is_jar and previous.kind == p.SYNC_ACTOR_CHARACTER_MOTION and
+                previous.payload.character_motion.clock == clock and s.valid(actor, 0x1440) and
+                s.read(f32, actor + 0x24) < -17 and s.read(f32, actor + 0x2c) > 24;
+            if (previous.character == 188 and ((declined and (next_is_jar or cursor == frame.fire_task_gate_count)) or bomb_room)) {
+                const identity = s.reference(previous);
+                if (s.entities_resolve_reference(&identity) == actor and s.live(&lease)) return 1;
             }
         }
     }
