@@ -27,8 +27,12 @@ pub export fn force_request_begin(actor: usize) c_int {
     var lease: s.Lease = undefined;
     if (!s.ready(&lease) or s.journal.host != 0 or !s.valid(actor, 0x1440) or s.read(u16, actor + 0xdc0) != 184 or
         s.read(u32, actor + 0x50) & 0x200 == 0) return 0;
-    const owner = @import("cadence_gate.zig").labForceRequestOwner(s.read(u32, 0xfb4b6c)) orelse return 0;
-    return @intFromBool(s.entities_resolve_reference(&owner) == actor and s.live(&lease));
+    const gate = @import("cadence_gate.zig");
+    const clock = s.read(u32, 0xfb4b6c);
+    const owner = gate.labForceRequestAdmission(clock) orelse return 0;
+    if (s.entities_resolve_reference(&owner) != actor or !s.live(&lease)) return 0;
+    if (gate.labForceRequestOwner(clock) != null) return 1;
+    return if (gate.labForceRequestFollowedByCompanion(clock)) -1 else 0;
 }
 
 pub fn eligible(actor: usize, stage: Stage, local: bool) bool {
@@ -186,7 +190,8 @@ comptime {
         \\    fxrstor (%esp)
         \\    movl 512(%esp),%esp
         \\    testl %eax,%eax
-        \\    jnz 2f
+        \\    jg 2f
+        \\    jl 4f
         \\    popal
         \\    popfl
         \\    cmpl %ecx,%edx
@@ -195,6 +200,9 @@ comptime {
         \\2:  popal
         \\    popfl
         \\3:  jmp *_force_request_begin_new
+        \\4:  popal
+        \\    popfl
+        \\    jmp *_force_request_begin_continue
     );
     asm (
         \\.text

@@ -161,7 +161,7 @@ fn labCompanionAdmission(character: i32, kind: u32, flags: u16, action: u16) boo
     return (character == 188 or character == 199) and kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and
         (flags == 4 or flags == 5) and action == 0;
 }
-pub fn labForceRequestOwner(clock: u32) ?p.SyncActor {
+pub fn labForceRequestAdmission(clock: u32) ?p.SyncActor {
     const frame = s.journal.frame.?;
     const cursor = s.fire_task_cursor;
     if (frame.level != 73 or cursor == 0 or cursor >= frame.fire_task_gate_count) return null;
@@ -176,9 +176,20 @@ pub fn labForceRequestOwner(clock: u32) ?p.SyncActor {
                 entry.payload.state.repeat != clock or !equal(&caster, &s.reference(entry))) return null;
         }
     }
-    const next = &frame.fire_task_gates[cursor];
+    return caster;
+}
+
+pub fn labForceRequestOwner(clock: u32) ?p.SyncActor {
+    const caster = labForceRequestAdmission(clock) orelse return null;
+    const next = &s.journal.frame.?.fire_task_gates[s.fire_task_cursor];
     if (next.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or next.flags != 0 or !equal(&caster, &s.reference(next))) return null;
     return caster;
+}
+
+pub fn labForceRequestFollowedByCompanion(clock: u32) bool {
+    const frame = s.journal.frame.?;
+    const next = &frame.fire_task_gates[s.fire_task_cursor];
+    return labCompanionAdmission(next.character, next.kind, next.flags, next.action) and next.payload.state.repeat == clock;
 }
 fn afterLabForce(clock: u32) ?usize {
     const caster = labForceRequestOwner(clock) orelse return null;
