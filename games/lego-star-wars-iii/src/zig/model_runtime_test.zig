@@ -142,7 +142,6 @@ const Snapshot = extern struct {
     mode: u32,
     priority: u32,
     visibility: u32,
-    hidden: u32,
     cf4: u32,
     debug: [16]u32,
     failure: [16]u32,
@@ -173,7 +172,10 @@ fn consumers(out: *Snapshot) void {
     if (mode != 7) _ = request.request_mode_mov_checkpoint(&saved, &out.mode);
     if (mode == 8) _ = request.request_mode_mov_checkpoint(&saved, &out.mode);
     _ = request.request_priority_checkpoint(&saved, &out.priority);
-    _ = request.request_hidden_model_checkpoint(&saved, &out.hidden);
+    if (mode == 41 and s.journal.host == 0) {
+        var hidden: u32 = 0;
+        check(@src(), request.request_hidden_model_checkpoint(&saved, &hidden) == 1 and hidden == 1);
+    }
     saved[7] = model_object;
     _ = request.request_visibility_checkpoint(&saved, &out.visibility);
     if (mode != 9) request.request_mode_join_checkpoint(&saved, &fx);
@@ -217,14 +219,14 @@ fn run() Snapshot {
     if (mode >= 18) {
         frame.level = switch (mode) {
             20 => 63,
-            24...28, 33...35, 39...41 => 73,
+            24...28, 33...35, 39...42 => 73,
             29, 32, 37 => 71,
             31 => 74,
             36, 38 => 70,
             else => 64,
         };
         put(actor + 0x4c, 0x400);
-        if (mode >= 24) win.store(i16, actor + 0xdc0, if (mode == 35 or mode == 37 or mode == 40) 333 else if (mode < 28 or (mode >= 33 and mode <= 34)) 201 else 321);
+        if (mode >= 24) win.store(i16, actor + 0xdc0, if (mode == 35 or mode == 37 or mode == 40 or mode == 42) 333 else if (mode < 28 or (mode >= 33 and mode <= 34)) 201 else 321);
         win.store(u16, actor + 0x2f4, switch (mode) {
             24, 27, 33 => 29,
             34, 38, 41 => 10,
@@ -270,6 +272,7 @@ fn run() Snapshot {
             24, 25, 29, 40, 41 => 0xffff,
             28, 30, 31, 32, 35, 37 => 114,
             34 => 29,
+            42 => 102,
             36, 38 => 22,
             else => 0x29,
         });
@@ -412,7 +415,7 @@ fn installedBridge() void {
     };
 }
 pub fn main() void {
-    check(@src(), @sizeOf(Snapshot) == 1944 and @intFromPtr(&image) < 0x9b0000 and @intFromPtr(&image) + image.len > 0xfc1000);
+    check(@src(), @sizeOf(Snapshot) == 1940 and @intFromPtr(&image) < 0x9b0000 and @intFromPtr(&image) + image.len > 0xfc1000);
     for ([_]usize{ 0xe60000, 0xfb0000, 0xfc0000 }) |a| protect(a, 0x10000, 4);
     for (0..7) |i| {
         const a = actor + i * 0x10000;
@@ -474,9 +477,13 @@ pub fn main() void {
     const lab_b2 = run();
     check(@src(), lab_b2.finish != 0 and lab_b2.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 0xffff and win.load(u32, actor + 0x4c) == 0x400);
+    mode = 42;
+    const lab_b2_inverse = run();
+    check(@src(), lab_b2_inverse.finish != 0 and lab_b2_inverse.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 102 and win.load(u32, actor + 0x4c) == 0x400);
     mode = 41;
     const lab_hidden_b1 = run();
-    check(@src(), lab_hidden_b1.finish != 0 and lab_hidden_b1.fault == 0 and lab_hidden_b1.hidden == 1);
+    check(@src(), lab_hidden_b1.finish != 0 and lab_hidden_b1.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 0xffff and win.load(u32, actor + 0x4c) == 0);
     for ([_]u32{ 36, 38 }) |swamp_mode| {
         mode = swamp_mode;
