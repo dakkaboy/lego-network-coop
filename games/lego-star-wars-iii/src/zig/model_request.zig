@@ -29,7 +29,7 @@ fn blueShadowDroidMotion(level: i32, host: *const p.SyncModelInput, local: *cons
     if (host.character != local.character or (host.character != 321 and !((level == 71 or level == 73) and host.character == 333))) return false;
     const a = host.context.action;
     const b = local.context.action;
-    if (level == 73 and host.character == 321 and a == 0xffff and b == 10) return true;
+    if (level == 73 and host.character == 321 and ((a == 0xffff and b == 10) or (a == 10 and b == 0xffff))) return true;
     if (level == 73 and host.character == 333 and a == 102 and b == 0xffff) return true;
     return (a == 114 and (b == 0xffff or (level == 71 and b == 13))) or
         (b == 114 and (a == 0xffff or (level == 71 and a == 13)));
@@ -131,10 +131,18 @@ pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) voi
         raw = local;
         if (entry) |e| {
             if (e.context.actor_4c_mask != raw.context.actor_4c_mask) {
-                state.failed(&op, actor, e, &raw, 9);
-                return;
+                // The B1 model can still be visible on the guest just after the laboratory cutscene.
+                if (frame.level != 73 or frame.epoch < 2 or resolved != actor or
+                    e.character != 321 or raw.character != 321 or e.input_mode != 4 or raw.input_mode != 4 or
+                    e.context.actor_4c_mask != 1 or raw.context.actor_4c_mask != 0 or
+                    e.context.action != 10 or raw.context.action != 0xffff)
+                {
+                    state.failed(&op, actor, e, &raw, 9);
+                    return;
+                }
+                local.context.actor_4c_mask = e.context.actor_4c_mask;
             }
-            if (model_context_canonicalize(e, &raw.context, &local.context, &mask) == 0) {
+            if (model_context_canonicalize(e, &local.context, &local.context, &mask) == 0) {
                 state.failed(&op, actor, e, &raw, 4);
                 return;
             }
@@ -259,6 +267,15 @@ pub export fn request_priority_checkpoint(saved: [*]u32, priority: *u32) c_int {
     const s = state.qualified(&op) orelse return 0;
     if (state.journal.host != 0 or state.journal.failed != 0 or s.source == 0 or s.mov_seen == 0 or s.request.input_mode != 1 or !capture.scopeValid(&op, s, saved[4], saved[16], saved[2])) return 0;
     priority.* = s.request.context.actor_76;
+    return 1;
+}
+pub export fn request_hidden_model_checkpoint(saved: [*]u32, hidden: *u32) c_int {
+    var op: t.Lease = undefined;
+    const s = state.qualified(&op) orelse return 0;
+    if (state.journal.host != 0 or state.journal.failed != 0 or s.mov_seen == 0 or
+        s.request.context.actor_4c_mask != 1 or s.raw_source_context.actor_4c_mask != 0 or
+        !capture.scopeValid(&op, s, saved[4], saved[16], saved[2])) return 0;
+    hidden.* = 1;
     return 1;
 }
 pub export fn request_visibility_checkpoint(saved: [*]u32, visibility: *u32) c_int {

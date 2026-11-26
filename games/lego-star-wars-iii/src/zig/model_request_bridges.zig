@@ -117,6 +117,50 @@ comptime {
         \\    popal
         \\    popfl
         \\    jmp *_request_priority_resume
+        \\.globl _model_hidden_model_thunk
+        \\_model_hidden_model_thunk:
+        \\testl %edx,0x4c(%ebx)
+        \\    pushfl
+        \\    pushal
+        \\    movl %esp,%eax
+        \\    subl $544,%esp
+        \\    andl $-16,%esp
+        \\    movl %eax,512(%esp)
+        \\    fxsave (%esp)
+        \\    fninit
+        \\    movl $0x1f80,516(%esp)
+        \\    ldmxcsr 516(%esp)
+        \\    cld
+        \\    call _GetLastError@0
+        \\    movl %eax,524(%esp)
+        \\    leal 520(%esp),%ecx
+        \\    movl 512(%esp),%eax
+        \\    subl $8,%esp
+        \\    pushl %ecx
+        \\    pushl %eax
+        \\    call _request_hidden_model_checkpoint
+        \\    addl $16,%esp
+        \\    movl %eax,528(%esp)
+        \\    cld
+        \\    pushl 524(%esp)
+        \\    call _SetLastError@4
+        \\    cmpl $0,528(%esp)
+        \\    je 1f
+        \\    movl 512(%esp),%eax
+        \\    cmpb $0,520(%esp)
+        \\    pushfl
+        \\    popl %edx
+        \\    andl $0x8d5,%edx
+        \\    andl $0xfffff72a,32(%eax)
+        \\    orl %edx,32(%eax)
+        \\    1:
+        \\    fxrstor (%esp)
+        \\    movl 512(%esp),%esp
+        \\    popal
+        \\    popfl
+        \\    jne 2f
+        \\    jmp *_request_hidden_model_continue
+        \\    2: jmp *_request_visibility_skip
         \\.globl _model_visibility_thunk
         \\_model_visibility_thunk:
         \\cmpb $0,0x42(%eax)
