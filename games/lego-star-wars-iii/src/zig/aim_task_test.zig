@@ -16,12 +16,13 @@ pub const probe_registers =
 fn clobber() void {
     asm volatile ("fninit; pcmpeqd %%xmm0,%%xmm0; pxor %%xmm7,%%xmm7" ::: .{ .xmm0 = true, .xmm7 = true });
 }
-export fn cadence_prepare_aim_task(actor: usize, task: usize) void {
+export fn cadence_prepare_aim_task(actor: usize, task: usize) c_int {
     const err = win.GetLastError();
     check(@src(), actor == 0x66666666 and task == @intFromPtr(&f.task));
     input_calls += 1;
     clobber();
     win.SetLastError(err);
+    return 1;
 }
 export fn cadence_aim_task_visibility(actor: usize, task: usize, visible: i32) i32 {
     const err = win.GetLastError();

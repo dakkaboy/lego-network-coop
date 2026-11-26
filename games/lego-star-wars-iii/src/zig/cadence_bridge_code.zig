@@ -225,11 +225,16 @@ pub fn code(comptime name: []const u8) []const u8 {
     \\    addl $16,%esp
     \\    fxrstor (%esp)
     \\    movl 512(%esp),%esp
+    \\    testl %eax,%eax
+    \\    jz 1f
     \\    popal
     \\    popfl
     \\    movl 0x10(%edi),%ecx
     \\    testl %ecx,%ecx
     \\    jmp *_aim_task_input_resume
+    \\1:  popal
+    \\    popfl
+    \\    jmp *_aim_task_hidden_resume
     ;
     if (std.mem.eql(u8, name, "aim_task_visibility_thunk")) return
     \\.text

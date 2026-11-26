@@ -291,7 +291,7 @@ fn perform(out: *Snapshot) void {
         7 => out.result = cb.cadence_apply_fall_visibility(actor, @intFromBool(!client)),
         8...10 => {
             if (mode == 9 and client) float(task + 0x14, 4);
-            if (mode != 10) ct.cadence_prepare_aim_task(actor, task);
+            if (mode != 10) _ = ct.cadence_prepare_aim_task(actor, task);
             out.result = ct.cadence_aim_task_visibility(actor, task, @intFromBool(!client));
         },
         11...13 => {
@@ -1967,7 +1967,7 @@ fn blueShadowReleasedAim() void {
     token.frame = @intFromPtr(frame);
     var lease: s.Lease = undefined;
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
-    ct.cadence_prepare_aim_task(other, task);
+    _ = ct.cadence_prepare_aim_task(other, task);
     check(@src(), frame.fire_task_gate_count == 1 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
     client = true;
@@ -1975,7 +1975,7 @@ fn blueShadowReleasedAim() void {
     put(task + 0x10, actor);
     put(other + 0xbdc, actor);
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-    ct.cadence_prepare_aim_task(other, task);
+    _ = ct.cadence_prepare_aim_task(other, task);
     check(@src(), win.load(usize, task + 0x10) == 0 and win.load(usize, other + 0xbdc) == 0);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 
@@ -1984,7 +1984,7 @@ fn blueShadowReleasedAim() void {
     put(other + 0xbdc, actor);
     put(other + 0x50, 0x8003);
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-    ct.cadence_prepare_aim_task(other, task);
+    _ = ct.cadence_prepare_aim_task(other, task);
     check(@src(), win.load(usize, task + 0x10) == actor and win.load(usize, other + 0xbdc) == actor);
     check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 }
@@ -2015,7 +2015,7 @@ fn blueShadowRecordedAim(level: i32) void {
     token.frame = @intFromPtr(frame);
     var lease: s.Lease = undefined;
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
-    ct.cadence_prepare_aim_task(other, task);
+    _ = ct.cadence_prepare_aim_task(other, task);
     check(@src(), frame.fire_task_gate_count == 1 and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
     client = true;
@@ -2024,7 +2024,7 @@ fn blueShadowRecordedAim(level: i32) void {
     put(task + 0x10, stale_target);
     put(other + 0xbdc, if (level == 73) actor else stale_target);
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-    ct.cadence_prepare_aim_task(other, task);
+    _ = ct.cadence_prepare_aim_task(other, task);
     check(@src(), win.load(usize, task + 0x10) == actor);
     if (stale) check(@src(), win.load(usize, other + 0xbdc) == actor);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
@@ -2037,9 +2037,36 @@ fn blueShadowRecordedAim(level: i32) void {
         frame.fire_task_gates[0].payload.aim.target_generation += 1;
     }
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-    ct.cadence_prepare_aim_task(other, task);
+    _ = ct.cadence_prepare_aim_task(other, task);
     check(@src(), win.load(usize, task + 0x10) == stale_target and fault == 14);
     check(@src(), ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    if (level != 73) return;
+    fault = 0;
+    frame.sequence = 1;
+    token.sequence = 1;
+    token.release += 1;
+    win.store(u16, other + 0xdc0, 321);
+    win.store(u16, runtime + 0xdc0, 138);
+    put(runtime + 0x50, 0x1001);
+    put(other + 0xbdc, actor);
+    frame.fire_task_gates[0].character = 321;
+    frame.fire_task_gates[0].payload.aim.target_character = 138;
+    frame.fire_task_gates[1] = frame.fire_task_gates[0];
+    frame.fire_task_gates[1].kind = p.SYNC_ACTOR_FORCE_VISIBILITY;
+    var query = std.mem.zeroes(p.SyncForceQueryState);
+    query.clock = frame.fire_task_gates[0].payload.aim.clock;
+    query.mode = 1;
+    frame.fire_task_gates[1].payload.force = query;
+    frame.fire_task_gate_count = 2;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), ct.cadence_prepare_aim_task(other, task) == 1 and s.fire_task_cursor == 1);
+    put(task + 0x10, runtime);
+    put(other + 0xbdc, runtime);
+    check(@src(), ct.cadence_prepare_aim_task(other, task) == 0 and s.fire_task_cursor == 1);
+    var debug: [4]u32 = @splat(0);
+    _ = gate.apply(other, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 0, @ptrCast(&query), &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
 fn blueShadowGuestOnlyAim(clone_dead: bool, lab_resume: bool) void {
