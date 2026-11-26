@@ -220,7 +220,7 @@ fn run() Snapshot {
         frame.level = switch (mode) {
             20 => 63,
             24...28, 33...35, 39...49 => 73,
-            29, 32, 37 => 71,
+            29, 32, 37, 50 => 71,
             31 => 74,
             36, 38 => 70,
             else => 64,
@@ -241,7 +241,7 @@ fn run() Snapshot {
             32 => 13,
             40 => 102,
             47 => 47,
-            48 => 27,
+            48, 50 => 27,
             49 => 0x29,
             else => 0xffff,
         });
@@ -278,7 +278,7 @@ fn run() Snapshot {
         if (mode >= 18) win.store(u16, actor + 0x2f4, switch (mode) {
             18, 27 => 1,
             19, 20, 33, 39, 46 => 10,
-            24, 25, 29, 40, 41, 47...49 => 0xffff,
+            24, 25, 29, 40, 41, 47...50 => 0xffff,
             28, 30, 31, 32, 35, 37 => 114,
             34 => 29,
             42 => 102,
@@ -509,10 +509,10 @@ pub fn main() void {
     const lab_post_victory_droid = run();
     check(@src(), lab_post_victory_droid.finish != 0 and lab_post_victory_droid.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 10 and win.load(u32, actor + 0x4c) == 0x400);
-    for ([_]u32{ 47, 48 }) |variant| {
+    for ([_]u32{ 47, 48, 50 }) |variant| {
         mode = variant;
-        const lab_hidden_b2 = run();
-        check(@src(), lab_hidden_b2.finish != 0 and lab_hidden_b2.fault == 0);
+        const hidden_droid = run();
+        check(@src(), hidden_droid.finish != 0 and hidden_droid.fault == 0);
         check(@src(), win.load(u16, actor + 0x2f4) == 0xffff and win.load(u32, actor + 0x4c) == 0x400);
     }
     mode = 49;
