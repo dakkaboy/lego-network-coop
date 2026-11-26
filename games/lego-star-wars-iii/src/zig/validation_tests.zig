@@ -7,6 +7,7 @@ const frame = @import("frame_validation.zig");
 const Cursor = @import("validation_reference.zig").Cursor;
 extern fn sync_frame_encode(*const p.SyncFrame, [*]u8, u32) u32;
 extern fn sync_frame_decode(*p.SyncFrame, [*]const u8, u32) c_int;
+extern fn sync_frame_size(*const p.SyncFrame) u32;
 comptime {
     _ = @import("wire.zig");
 }
@@ -400,4 +401,41 @@ test "wire validation: SpellIt admission stages and malformed gate words" {
         try std.testing.expect(length > 0);
         try std.testing.expectEqualSlices(u8, reference[0..length], encoded[0..length]);
     };
+}
+
+test "wire validation: a recorded B1 contact is valid in the Blue Shadow Virus lift" {
+    const f = try std.testing.allocator.create(p.SyncFrame);
+    defer std.testing.allocator.destroy(f);
+    @memset(std.mem.asBytes(f), 0);
+    f.epoch = 1;
+    f.sequence = 17858;
+    f.level = 74;
+    f.reaction_count = 1;
+    const entry = &f.reactions[0];
+    entry.slot = 17;
+    entry.generation = 57;
+    entry.character = 321;
+    entry.old_action = -1;
+    entry.kind = p.SYNC_REACTION_CLIP;
+    entry.payload.clip.selection.clip = 973;
+    entry.payload.clip.arena_attacker_slot = 2;
+    entry.payload.clip.arena_attacker_generation = 14;
+    entry.payload.clip.hit = .{
+        .completed = 1,
+        .health_before = 1,
+        .health_after = 1,
+        .life_before = 3,
+        .life_after = 3,
+        .action_before = -1,
+        .action_after = -1,
+        .timer_before = 0,
+        .timer_after = 0,
+    };
+    const size = sync_frame_size(f);
+    try std.testing.expect(frame.valid(f, size));
+    f.level = 73;
+    try std.testing.expect(!frame.valid(f, size));
+    f.level = 74;
+    entry.character = 333;
+    try std.testing.expect(!frame.valid(f, size));
 }

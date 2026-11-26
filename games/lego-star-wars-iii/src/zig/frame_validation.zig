@@ -128,8 +128,11 @@ pub fn valid(f: *const p.SyncFrame, bytes: u32) bool {
         if (!fire.sourceValid(entry.spawn_source) or !@import("geometry.zig").valid(entry) or entry.manager_ordinal > f.geometry_calls) return false;
         if (i > 0 and (entry.manager_ordinal < geometry[i - 1].manager_ordinal or (entry.manager_ordinal == geometry[i - 1].manager_ordinal and entry.slot <= geometry[i - 1].slot))) return false;
     }
-    for (f.reactions[0..f.reaction_count]) |*entry| if (!@import("reaction.zig").valid(entry) or !fire.sourceValid(entry.spawn_source) or
-        (entry.kind == p.SYNC_REACTION_CLIP and entry.payload.clip.arena_attacker_generation != 0 and f.level != 12)) return false;
+    for (f.reactions[0..f.reaction_count]) |*entry| {
+        if (!@import("reaction.zig").valid(entry) or !fire.sourceValid(entry.spawn_source)) return false;
+        if (entry.kind == p.SYNC_REACTION_CLIP and entry.payload.clip.arena_attacker_generation != 0 and f.level != 12 and
+            !(f.level == 74 and entry.character == 321 and entry.payload.clip.hit.completed == 1)) return false;
+    }
     for (f.model_inputs[0..f.model_input_count]) |*entry| if (!@import("model.zig").valid(entry) or !fire.sourceValid(entry.spawn_source)) return false;
     return true;
 }
