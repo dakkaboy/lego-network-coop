@@ -711,6 +711,45 @@ fn missingLaboratoryProjectileChild() void {
     phase = 3;
     check(@src(), lifecycle.projectiles_finish() != 0);
 }
+fn laboratoryConstructorRetention() void {
+    mode = 10;
+    setup(false);
+    session.level = 73;
+    lease.level = 73;
+    frame.level = 73;
+    frame.combat_ready = 1;
+    win.store(u16, actor + 0xdc0, 333);
+    begin();
+
+    const removal = @import("projectile_removal.zig");
+    var call = std.mem.zeroes(removal.Call);
+    call.op = control.capture();
+    call.manager = manager_pool;
+    call.object = object(0);
+    call.effects = 1;
+    var shot = std.mem.zeroes(p.SyncShot);
+    shot.id = 34;
+    shot.weapon = 9;
+    shot.source = p.SYNC_SHOT_WEAPON;
+    shot.clock = win.load(u32, 0xfb4b6c);
+    var launch: t.Launch = .{
+        .previous = s.launch,
+        .operation = &call.op,
+        .shot = &shot,
+        .owner = actor,
+        .origin = @intFromPtr(&shot.origin),
+        .transform = @intFromPtr(&shot.transform),
+        .center_visited = false,
+    };
+    s.launch = &launch;
+    defer s.launch = launch.previous;
+    frame.projectile_count = 1;
+    frame.projectiles[0].id = 34;
+    check(@src(), removal.retainBlueShadowConstructor(&call, 0x85b344));
+    check(@src(), !removal.retainBlueShadowConstructor(&call, 0x8643a6));
+    frame.projectiles[0].id = 35;
+    check(@src(), !removal.retainBlueShadowConstructor(&call, 0x85b344));
+}
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 5480 and @intFromPtr(&image) < 0x440000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0x440000, 0x450000, 0x570000, 0x810000, 0x840000, 0x850000, 0x860000, 0x870000, 0x880000, 0xe60000, 0xe80000, 0xe90000, 0xea0000, 0xfb0000 }) |a| protect(a, 0x40);
@@ -765,5 +804,6 @@ pub fn main() void {
     replayRetainedShot(74, 7, false, false, p.SYNC_SHOT_ACTOR_FOLLOWUP);
     extraBombRoomPadmeShot();
     missingLaboratoryProjectileChild();
+    laboratoryConstructorRetention();
     installedHooks();
 }

@@ -89,6 +89,23 @@ fn retainBlueShadowCollision(call: *const Call, caller: usize) bool {
     return false;
 }
 
+pub fn retainBlueShadowConstructor(call: *const Call, caller: usize) bool {
+    if (caller != 0x85b344 or call.op.kind != t.keyed or call.op.session.host != 0 or
+        call.op.session.level != 73 or call.effects != 1 or !control.live(&call.op) or
+        !retire.managerLive(call.manager) or !s.valid(call.object, 0x210)) return false;
+    const launch = s.launch orelse return false;
+    const shot = launch.shot;
+    if (!control.live(launch.operation) or shot.id == 0 or shot.source != p.SYNC_SHOT_WEAPON or
+        shot.weapon != 9 or shot.flags != 0 or shot.clock != read(u32, 0xfb4b6c) or
+        !s.valid(launch.owner, 0x1440) or read(u16, launch.owner + 0xdc0) != 333) return false;
+    const frame = s.current orelse return false;
+    if (frame.projectile_count > p.SYNC_MAX_PROJECTILES) return false;
+    for (frame.projectiles[0..frame.projectile_count]) |state| {
+        if (state.id == shot.id) return control.live(&call.op) and control.live(launch.operation);
+    }
+    return false;
+}
+
 pub export fn projectile_remove_hook(manager: usize, _: usize, object: usize, flags: u32, effects: c_int) callconv(.{ .x86_fastcall = .{} }) u8 {
     var call = std.mem.zeroes(Call);
     call.op = control.capture();
@@ -101,6 +118,8 @@ pub export fn projectile_remove_hook(manager: usize, _: usize, object: usize, fl
     const caller = @returnAddress();
     // The native collision walker ignores the return value and continues to its saved next object.
     if (retainBlueShadowCollision(&call, caller)) return 0;
+    // Returning zero here keeps the constructor on its initialization path.
+    if (retainBlueShadowConstructor(&call, caller)) return 0;
     if (retire.enqueue(&call.op, manager, object, flags, effects, @truncate(caller))) return 0;
     if ((call.op.kind == t.keyed or call.op.kind == t.control) and control.live(&call.op)) for (s.tracked, 0..) |entry, i| if (entry.object == object) {
         call.captured_id[i] = entry.birth.id;
