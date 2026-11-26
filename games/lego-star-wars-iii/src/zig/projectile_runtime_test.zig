@@ -655,6 +655,22 @@ fn replayRetainedShot(level: i32, weapon_id: i32, retired_locally: bool, pool_wi
     phase = 3;
     check(@src(), lifecycle.projectiles_finish() != 0);
 }
+fn extraBombRoomPadmeShot() void {
+    mode = 10;
+    setup(false);
+    session.level = 74;
+    lease.level = 74;
+    frame.level = 74;
+    frame.combat_ready = 1;
+    win.store(u16, actor + 0xdc0, 188);
+    origin.* = .{ -20.944128, 1.443787, 28.830505 };
+    defer origin.* = .{ 1, 2, 3 };
+    begin();
+    check(@src(), primaryCall() == 0 and native_calls == 0);
+    check(@src(), lifecycle.projectiles_dispatch_pending() == 1 and lifecycle.projectiles_dispatch_complete() != 0);
+    phase = 3;
+    check(@src(), lifecycle.projectiles_finish() != 0);
+}
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 5480 and @intFromPtr(&image) < 0x440000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0x440000, 0x450000, 0x570000, 0x810000, 0x840000, 0x850000, 0x860000, 0x870000, 0x880000, 0xe60000, 0xe80000, 0xe90000, 0xea0000, 0xfb0000 }) |a| protect(a, 0x40);
@@ -706,5 +722,6 @@ pub fn main() void {
     replayRetainedShot(73, 9, true, true);
     replayRetainedShot(73, 9, true, false);
     replayRetainedShot(74, 7, false, false);
+    extraBombRoomPadmeShot();
     installedHooks();
 }
