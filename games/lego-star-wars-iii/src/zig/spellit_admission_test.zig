@@ -127,6 +127,7 @@ pub fn main() void {
     check(@src(), call(actor, 0, 3, 1) == 0 and s.journal.failed == 0 and fault == 0);
     finish();
     bombRoomEndOfFrame(frame, actor);
+    bombRoomBeforeObiWan(frame, actor);
     frame.level = 0;
     win.store(i16, actor + 0xdc0, 184);
     for (0..16) |host| for (0..16) |local| {
@@ -261,6 +262,45 @@ fn bombRoomEndOfFrame(frame: *p.SyncFrame, padme: usize) void {
         check(@src(), s.fire_task_cursor == 2);
         finish();
         win.store(usize, 0xfb4944, padme);
+    }
+}
+
+fn bombRoomBeforeObiWan(frame: *p.SyncFrame, padme: usize) void {
+    const obi_wan = @intFromPtr(&actors[1]);
+    win.store(i16, padme + 0xdc0, 188);
+    win.store(f32, padme + 0x24, -8.167632);
+    win.store(f32, padme + 0x2c, 17.47954);
+    win.store(i16, obi_wan + 0xdc0, 181);
+    win.store(usize, 0xfb4940, obi_wan);
+    win.store(usize, 0xfb4944, padme);
+    defer win.store(usize, 0xfb4940, 0);
+    frame.level = 74;
+    for (0..3) |scenario| {
+        begin(frame, false);
+        frame.fire_task_gate_count = 2;
+        frame.fire_task_gates[0..2].* = std.mem.zeroes([2]p.SyncFireTaskGate);
+        const motion = &frame.fire_task_gates[0];
+        motion.kind = p.SYNC_ACTOR_CHARACTER_MOTION;
+        motion.slot = 7;
+        motion.generation = 19;
+        motion.character = 188;
+        motion.payload.character_motion.clock = 51;
+        const next = &frame.fire_task_gates[1];
+        next.* = motion.*;
+        next.slot = 8;
+        next.generation = if (scenario == 1) 20 else 19;
+        next.character = 181;
+        next.payload.character_motion.clock = if (scenario == 2) 50 else 51;
+        s.fire_task_cursor = 1;
+        if (scenario == 0) {
+            check(@src(), call(padme, 0, 4, 1) == 0 and call(padme, 0, 5, 1) == 0);
+            check(@src(), fault == 0 and s.journal.failed == 0);
+        } else {
+            _ = call(padme, 0, 4, 1);
+            check(@src(), fault == 14 and s.journal.failed != 0);
+        }
+        check(@src(), s.fire_task_cursor == 1);
+        finish();
     }
 }
 
