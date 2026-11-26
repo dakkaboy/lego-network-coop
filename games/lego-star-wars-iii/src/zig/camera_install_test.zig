@@ -133,6 +133,9 @@ export fn coop_input(_: usize, _: u32, _: usize, _: isize) c_int {
 }
 export fn game_request_reload(_: c_int) void {}
 export fn game_request_level(_: c_int) void {}
+export fn game_native_section_queue_allowed(_: usize, _: i32) c_int {
+    return 1;
+}
 export fn camera_init_observer_snapshot(_: usize, _: u32, _: c_int) void {}
 export fn camera_order_leave_guarded(bridge: *order.Bridge, unwound: c_int) void {
     var machine: s.Machine = undefined;

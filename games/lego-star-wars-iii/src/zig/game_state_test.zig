@@ -293,6 +293,13 @@ pub fn main() void {
     check(@src(), game.game_network_profile_ready() == 0 and game.game_network_target_level() == -1);
     mock.status = 3;
     mock.host = 0;
+    mock.current = 76;
+    mock.sync_level = 76;
+    check(@src(), game.game_native_section_queue_allowed(0xe6e618, 78) == 0 and game.game_native_section_queue_allowed(0xe6e618, 3) != 0);
+    mock.sync_level = 78;
+    check(@src(), game.game_native_section_queue_allowed(0xe6e618, 78) != 0);
+    mock.current = 3;
+    mock.sync_level = 3;
     mock.session += 1;
     mock.sequence = 0;
     mock.scene_ready = 0;

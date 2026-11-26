@@ -202,6 +202,13 @@ pub export fn game_network_level_authorized(level: i32) c_int {
     if (level < 0 or level != game_network_target_level() or api.game_sync_epoch() == 0 or api.game_sync_epoch_level() != level) return 0;
     return @intFromBool(api.lan_is_host() == 0 or desiredLevel() < 0 or accepted_serial == request_serial);
 }
+
+pub export fn game_native_section_queue_allowed(manager: usize, destination: i32) c_int {
+    // Results can receive local confirmation independently on each peer. Keep the guest in the
+    // current epoch until the host queues the continuation so it can drain the remaining frames.
+    return @intFromBool(manager != 0xe6e618 or destination != 78 or api.lan_status() != 3 or api.lan_is_host() != 0 or
+        api.game_current_level() != 76 or game_network_target_level() == destination);
+}
 fn resetProfileClock() void {
     profile_checked = 0;
     profile_sent = 0;

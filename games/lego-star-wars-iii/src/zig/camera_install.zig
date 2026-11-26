@@ -7,12 +7,20 @@ const log = @import("camera_log.zig").line;
 extern fn camera_order_hook() void;
 extern fn camera_target_end() void;
 extern fn background_device_guard() void;
+extern fn game_native_section_queue_allowed(usize, i32) c_int;
 export const background_device_continue: usize = 0x63b307;
 export const background_device_skip: usize = 0x63b310;
 const ReadKeyboard = *const fn (usize) callconv(.{ .x86_thiscall = .{} }) usize;
+const QueueSection = *const fn (usize, i32, i32) callconv(.{ .x86_thiscall = .{} }) u8;
 var original_read_keyboard: ?ReadKeyboard = null;
+var original_queue_section: ?QueueSection = null;
 var background_key: u8 = 0;
 var background_sampled: u8 = 0;
+
+fn queueSection(manager: usize, destination: i32, mode: i32) callconv(.{ .x86_thiscall = .{} }) u8 {
+    if (game_native_section_queue_allowed(manager, destination) == 0) return 0;
+    return original_queue_section.?(manager, destination, mode);
+}
 
 pub fn queueBackgroundKey(scan: u8) bool {
     if (original_read_keyboard == null) return false;
@@ -112,6 +120,7 @@ pub fn mainInstall(module: usize) bool {
     s.network_window_configure(s.game_window);
     const loading = s.loading_install() != 0;
     log(if (loading) "loading completion and intro synchronization installed" else "loading hook validation failed");
+    if (!trampoline(QueueSection, 0x9097e0, "\x8b\x41\x04\x56\x8b\x74\x24\x08", @intFromPtr(&queueSection), &original_queue_section)) log("native results continuation hook validation failed");
     replace(s.Centers, s.tables[2] + 0x48, 0x775360, @intFromPtr(&layout.centers), &s.original_layout_centers);
     replace(s.Clip, s.tables[0] + 0x24, 0x775020, @intFromPtr(&layout.clip), &s.original_clip);
     _ = trampoline(s.Views, 0x7815f0, "\x55\x8b\xec\x83\xe4\xf0", @intFromPtr(&layout.renderViews), &s.original_render_views);
