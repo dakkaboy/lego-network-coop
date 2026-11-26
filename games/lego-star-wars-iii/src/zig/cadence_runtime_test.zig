@@ -2179,7 +2179,7 @@ fn blueShadowRecordedAim(level: i32, retained_lift_target: bool, corridor_droid:
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
-fn blueShadowGuestOnlyAim(clone_dead: bool, lab_sequence: u32, droid: u16) void {
+fn blueShadowGuestOnlyAim(clone_dead: bool, lab_sequence: u32, droid: u16, both_alive: bool) void {
     mode = 58;
     setup();
     const lab_resume = lab_sequence != 0;
@@ -2189,6 +2189,7 @@ fn blueShadowGuestOnlyAim(clone_dead: bool, lab_sequence: u32, droid: u16) void 
     win.store(u16, other + 0xdc0, 191);
     win.store(u16, component + 0xdc0, if (lab_resume) 181 else 156);
     win.store(u8, component + 0xdde, if (clone_dead) 0 else 4);
+    if (both_alive) win.store(u8, other + 0xdde, 4);
     put(0xfb4940, other);
     put(0xfb4944, component);
     const last_target = if (clone_dead) 0 else component;
@@ -2208,6 +2209,13 @@ fn blueShadowGuestOnlyAim(clone_dead: bool, lab_sequence: u32, droid: u16) void 
     var delta: f32 = 0.015;
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
     if (clone_dead) _ = gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, null, &debug);
+    var probe = std.mem.zeroes(p.SyncPrimaryPerceptionState);
+    probe.clock = win.load(u32, 0xfb4b6c);
+    if (both_alive) {
+        win.store(u16, other + 0xdc0, 321);
+        _ = gate.apply(other, p.SYNC_ACTOR_PRIMARY_PERCEPTION, p.SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET, 0, 0, @ptrCast(&probe), &debug);
+        win.store(u16, other + 0xdc0, 191);
+    }
     var motion = std.mem.zeroes(p.SyncCharacterMotionState);
     motion.clock = win.load(u32, 0xfb4b6c);
     _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
@@ -2219,12 +2227,19 @@ fn blueShadowGuestOnlyAim(clone_dead: bool, lab_sequence: u32, droid: u16) void 
     check(@src(), ct.cadence_prepare_aim_base(task, wrapper, &delta) == 0 and s.fire_task_cursor == 0);
     check(@src(), win.load(usize, task + 0x10) == target and win.load(usize, actor + 0xbdc) == last_target);
     if (clone_dead) _ = gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, null, &debug);
+    if (both_alive) {
+        win.store(u16, other + 0xdc0, 321);
+        _ = gate.apply(other, p.SYNC_ACTOR_PRIMARY_PERCEPTION, p.SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET, 0, 0, @ptrCast(&probe), &debug);
+        win.store(u16, other + 0xdc0, 191);
+    }
     _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, null, &debug);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 
     token.release += 1;
     if (lab_resume) {
         frame.fire_task_gates[@intFromBool(clone_dead)].payload.character_motion.clock +%= 1;
+    } else if (both_alive) {
+        frame.fire_task_gates[0].payload.perception.clock +%= 1;
     } else {
         win.store(u8, other + 0xdde, 4);
     }
@@ -2623,11 +2638,12 @@ fn arenaRunRandomChecks() void {
     blueShadowRecordedAim(74, false, false);
     blueShadowRecordedAim(74, true, false);
     blueShadowRecordedAim(74, true, true);
-    blueShadowGuestOnlyAim(false, 0, 321);
-    blueShadowGuestOnlyAim(true, 0, 321);
-    blueShadowGuestOnlyAim(false, 1, 321);
-    blueShadowGuestOnlyAim(false, 1, 333);
-    blueShadowGuestOnlyAim(true, 3, 333);
+    blueShadowGuestOnlyAim(false, 0, 321, false);
+    blueShadowGuestOnlyAim(false, 0, 321, true);
+    blueShadowGuestOnlyAim(true, 0, 321, false);
+    blueShadowGuestOnlyAim(false, 1, 321, false);
+    blueShadowGuestOnlyAim(false, 1, 333, false);
+    blueShadowGuestOnlyAim(true, 3, 333, false);
     hiddenLabAimBeforeMotion(false);
     hiddenLabAimBeforeMotion(true);
     droidAimOrder(29);

@@ -273,14 +273,21 @@ fn blueShadowGuestOnlyAim(actor: usize, task: usize) bool {
     const droid = read(u16, actor + 0xdc0);
     if (droid != 321 and (droid != 333 or !lab_exit)) return false;
     if (!lab_resume and frame.level != 70) return false;
+    const clock = read(u32, 0xfb4b6c);
     if (!lab_resume) {
         const ahsoka = read(usize, 0xfb4940);
         const clone = read(usize, 0xfb4944);
         if (!s.valid(ahsoka, 0x1440) or !s.valid(clone, 0x1440) or
-            read(u16, ahsoka + 0xdc0) != 191 or read(u8, ahsoka + 0xdde) != 0 or
+            read(u16, ahsoka + 0xdc0) != 191 or
             read(u16, clone + 0xdc0) != 156) return false;
         const last_target = read(usize, actor + 0xbdc);
         const target = read(usize, task + 0x10);
+        if (read(u8, ahsoka + 0xdde) != 0) {
+            if (read(u8, clone + 0xdde) == 0 or s.fire_task_cursor >= frame.fire_task_gate_count) return false;
+            const head = &frame.fire_task_gates[s.fire_task_cursor];
+            if (head.kind != p.SYNC_ACTOR_PRIMARY_PERCEPTION or head.flags != p.SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET or
+                head.value != 0 or head.payload.perception.clock != clock or head.character != 321) return false;
+        }
         if (read(u8, clone + 0xdde) == 0) {
             if (last_target != 0 or (target != 0 and target != ahsoka and target != clone)) return false;
         } else if (last_target != clone or (target != 0 and target != clone)) return false;
@@ -292,8 +299,7 @@ fn blueShadowGuestOnlyAim(actor: usize, task: usize) bool {
     for (frame.fire_task_gates[0..frame.fire_task_gate_count]) |entry| {
         if (entry.slot != slot or entry.generation != generation) continue;
         if (entry.kind == p.SYNC_ACTOR_AIM_BASE or entry.kind == p.SYNC_ACTOR_AIM_TASK) return false;
-        if (entry.kind == p.SYNC_ACTOR_CHARACTER_MOTION and
-            (!lab_resume or entry.payload.character_motion.clock == read(u32, 0xfb4b6c))) host_motion = true;
+        if (entry.kind == p.SYNC_ACTOR_CHARACTER_MOTION and entry.payload.character_motion.clock == clock) host_motion = true;
     }
     return host_motion;
 }
