@@ -1493,7 +1493,8 @@ fn forceReleaseCountdown(level: i32) void {
         _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
         check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
     }
-    if (level != 74 and level != 71) return;
+    if (level != 74 and level != 73 and level != 71) return;
+    if (level == 73) win.store(u16, other + 0xdc0, 333);
     if (level == 71) {
         win.store(u16, actor + 0xdc0, 333);
         win.store(u16, other + 0xdc0, 333);
@@ -2391,6 +2392,7 @@ pub fn main() void {
     blueShadowPadmeSupport();
     forceReleaseCountdown(7);
     forceReleaseCountdown(71);
+    forceReleaseCountdown(73);
     forceReleaseCountdown(74);
     geonosisGuestForceScan();
 }

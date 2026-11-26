@@ -111,7 +111,9 @@ pub export fn force_release_expired(actor: usize, status: u32) c_int {
     if (level != 7 and level != 71 and level != 73 and level != 74) return expired;
     const character = s.read(u16, actor + 0xdc0);
     if (character != 321 and character != 333) return expired;
-    if ((level == 74 or (level == 71 and character == 333)) and s.journal.host == 0 and s.fire_task_cursor != 0) {
+    if ((level == 74 or (level == 73 and character == 321) or (level == 71 and character == 333)) and
+        s.journal.host == 0 and s.fire_task_cursor != 0)
+    {
         const frame = s.journal.frame.?;
         const cursor = s.fire_task_cursor;
         const last = &frame.fire_task_gates[cursor - 1];
