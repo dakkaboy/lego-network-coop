@@ -34,13 +34,17 @@ fn blueShadowAimTarget(actor: usize, target: usize, input: *p.SyncAimTaskState) 
     input.* = reconciled;
     return ahsoka;
 }
-fn liftAimTarget(op: *const s.Lease, actor: usize, input: *p.SyncAimTaskState) ?usize {
+fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, input: *p.SyncAimTaskState) ?usize {
     const frame = s.journal.frame.?;
-    if (frame.level != 74 or s.journal.host != 0 or read(u16, actor + 0xdc0) != 321 or
-        read(f32, actor + 0x24) <= 30 or s.fire_task_cursor >= frame.fire_task_gate_count) return null;
+    if (s.journal.host != 0 or s.fire_task_cursor >= frame.fire_task_gate_count) return null;
+    const droid = read(i16, actor + 0xdc0);
+    const lift = frame.level == 74 and droid == 321 and read(f32, actor + 0x24) > 30;
+    const obi_wan = if (frame.level == 73 and droid == 333) read(usize, 0xfb4944) else 0;
+    const lab_exit = s.valid(obi_wan, 0x1440) and read(u16, obi_wan + 0xdc0) == 181;
+    if (!lift and !lab_exit) return null;
     const expected = &frame.fire_task_gates[s.fire_task_cursor];
     const aim = &expected.payload.aim;
-    if (expected.kind != p.SYNC_ACTOR_AIM_TASK or expected.character != 321 or aim.target_generation == 0) return null;
+    if (expected.kind != p.SYNC_ACTOR_AIM_TASK or expected.character != droid or aim.target_generation == 0) return null;
     const owner = s.reference(expected);
     if (s.entities_resolve_reference(&owner) != actor or !s.live(op)) return null;
     var reconciled = input.*;
@@ -48,9 +52,11 @@ fn liftAimTarget(op: *const s.Lease, actor: usize, input: *p.SyncAimTaskState) ?
     reconciled.target_generation = aim.target_generation;
     if (!@import("cadence_context.zig").aim(aim, &reconciled)) return null;
     const target = s.entities_actor(aim.target_slot, aim.target_generation);
-    if (!s.live(op) or !s.valid(target, 0x1440) or read(f32, target + 0x24) <= 30) return null;
+    if (!s.live(op) or !s.valid(target, 0x1440)) return null;
     const character = read(u16, target + 0xdc0);
-    if (character != 181 and character != 184) return null;
+    if (lift) {
+        if (read(f32, target + 0x24) <= 30 or (character != 181 and character != 184)) return null;
+    } else if (character != 138) return null;
     input.* = reconciled;
     return target;
 }
@@ -85,7 +91,7 @@ pub export fn cadence_prepare_aim_task(actor: usize, task: usize) void {
     const target = read(usize, task + 0x10);
     var stale_target_replacement: ?usize = null;
     if (target != 0 and s.entities_observed_identity(target, &input.target_slot, &input.target_generation) == 0) {
-        stale_target_replacement = liftAimTarget(&op, actor, &input) orelse {
+        stale_target_replacement = staleBlueShadowAimTarget(&op, actor, &input) orelse {
             if (s.live(&op)) reject(&op, actor, 8);
             return;
         };

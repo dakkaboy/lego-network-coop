@@ -1952,17 +1952,20 @@ fn blueShadowReleasedAim() void {
     check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 }
 
-fn blueShadowRecordedAim(lift: bool) void {
-    mode = if (lift) 60 else 59;
+fn blueShadowRecordedAim(level: i32) void {
+    const stale = level != 70;
+    mode = if (stale) 60 else 59;
     setup();
-    frame.level = if (lift) 74 else 70;
-    win.store(u16, actor + 0xdc0, if (lift) 184 else 191);
+    frame.level = level;
+    win.store(u16, actor + 0xdc0, if (level == 73) 138 else if (stale) 184 else 191);
     win.store(f32, actor + 0x24, 39);
     win.store(f32, other + 0x24, 41);
     win.store(u8, actor + 0xdde, 4);
-    win.store(u16, other + 0xdc0, 321);
+    win.store(u16, other + 0xdc0, if (level == 73) 333 else 321);
+    win.store(u16, component + 0xdc0, 181);
     put(other + 8, model);
     put(0xfb4940, actor);
+    put(0xfb4944, if (level == 73) component else 0);
     put(task + 0x10, actor);
     var token = std.mem.zeroes(Token);
     token.owner = actor;
@@ -1979,13 +1982,13 @@ fn blueShadowRecordedAim(lift: bool) void {
 
     client = true;
     token.release += 1;
-    const stale_target = if (lift) runtime else 0;
+    const stale_target = if (stale) runtime else 0;
     put(task + 0x10, stale_target);
     put(other + 0xbdc, stale_target);
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
     ct.cadence_prepare_aim_task(other, task);
     check(@src(), win.load(usize, task + 0x10) == actor);
-    if (lift) check(@src(), win.load(usize, other + 0xbdc) == actor);
+    if (stale) check(@src(), win.load(usize, other + 0xbdc) == actor);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 
     token.release += 1;
@@ -2350,8 +2353,9 @@ fn arenaRunRandomChecks() void {
     blueShadowDroidMotionOrder(337, true, false);
     blueShadowDroidMotionOrder(333, false, true);
     blueShadowReleasedAim();
-    blueShadowRecordedAim(false);
-    blueShadowRecordedAim(true);
+    blueShadowRecordedAim(70);
+    blueShadowRecordedAim(73);
+    blueShadowRecordedAim(74);
     blueShadowGuestOnlyAim(false, false);
     blueShadowGuestOnlyAim(true, false);
     blueShadowGuestOnlyAim(false, true);
