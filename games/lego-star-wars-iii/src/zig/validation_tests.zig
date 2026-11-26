@@ -27,7 +27,7 @@ test "wire validation: all tick sites and boundary values match the original" {
     var oracle = Cursor.init(0);
     defer oracle.finish();
     inline for (@typeInfo(s).@"struct".decl_names) |name| {
-        if (comptime std.mem.eql(u8, name, "SWAMP_PERISCOPE_QUERY")) continue;
+        if (comptime std.mem.startsWith(u8, name, "SWAMP_")) continue;
         if (comptime std.mem.eql(u8, name, "RTS_WAIT_SAMPLE") or std.mem.startsWith(u8, name, "PACK_BEHAVIOR") or std.mem.startsWith(u8, name, "pack_behavior_") or std.mem.eql(u8, name, "PACK_FIRE_TARGET") or std.mem.eql(u8, name, "PACK_FIRE_FIELDS") or std.mem.eql(u8, name, "PACK_MODE28_RECOVERY_DURATION") or std.mem.startsWith(u8, name, "PACK_SPAWN_") or std.mem.startsWith(u8, name, "ZILLO_") or std.mem.startsWith(u8, name, "ARENA_ROPE_")) continue;
         const site = @field(s, name);
         for (values) |value| {

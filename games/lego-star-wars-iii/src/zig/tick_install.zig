@@ -48,8 +48,9 @@ extern fn native_rts_wait_sample_input() void;
 extern fn native_rts_wait_seed_input() void;
 extern fn native_pack_spawn_rng_input() void;
 extern fn native_pack_spawn_birth_input() void;
-pub fn patches() [54]hook.Patch {
+pub fn patches() [55]hook.Patch {
     return [_]hook.Patch{
+        .{ .address = s.site.SWAMP_DROID_MODEL_BRANCH, .expected = "\x0f\xb7\x83\xf4\x02\x00\x00\x66\x83\xf8\x16\x75\x16\xf7\x83\x84\x0c\x00\x00\x00\x00\x10\x00\x75\x0a", .target = @intFromPtr(&@import("tick_swamp_droid.zig").swamp_droid_model_thunk), .opcode = 0xe9 },
         .{ .address = s.site.SWAMP_PERISCOPE_QUERY, .expected = "\xe8\x8c\xfd\xff\xff", .target = @intFromPtr(&@import("tick_swamp_periscope.zig").swamp_periscope_query_thunk), .opcode = 0xe8 },
         .{ .address = s.site.ZILLO_THROW, .expected = "\xe8\x3b\xf8\xff\xff", .target = @intFromPtr(&@import("tick_zillo_rng.zig").prepareAndThrow), .opcode = 0xe8 },
         .{ .address = s.site.ZILLO_RELEASE, .expected = "\xe8\xab\x31\xfd\xff", .target = @intFromPtr(&@import("tick_zillo_rng.zig").prepareAndRelease), .opcode = 0xe8 },

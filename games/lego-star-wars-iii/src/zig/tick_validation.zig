@@ -9,6 +9,7 @@ const fire_sites = blk: {
 const coefficients = [_]u32{ 0xfb0fc4, 0xfb0fa8, 0xfb0fb4, 0xfb102c, 0xfb0fb0, 0xfb0fac, 0xfb1028, 0xfb0fa0, 0xfb1014, 0xfb0fc0, 0xfb1070, 0xfb1018, 0xfb101c, 0xfb0fb8, 0xfb0fa4, 0xfb0fbc, 0xfb0fc8 };
 const hit_sites = [_]u32{ s.PACK_HIT_REACTION, s.PACK_HIT_AVOIDANCE, s.PACK_HIT_DEBRIS, s.PACK_HIT_SHOCK, s.PACK_HIT_HEADING, s.PACK_IMPULSE_TIMER, s.PACK_IMPULSE_SPEED, s.PACK_IMPULSE_HEADING, s.PACK_DEATH_CLIP, s.PACK_MODE10_DURATION, s.PACK_MODE10_CLIP_PHASE, s.PACK_MODE28_RECOVERY_DURATION };
 const groups = [_][]const u32{
+    &.{ s.SWAMP_DROID_MODEL_BRANCH, s.SWAMP_DROID_MODEL_BRANCH + 1, s.SWAMP_DROID_MODEL_BRANCH + 2 },
     &.{ s.ZILLO_THROW, s.ZILLO_THROW + 1, s.ZILLO_THROW + 2, s.ZILLO_THROW + 3 },
     &.{ s.ZILLO_RELEASE, s.ZILLO_RELEASE + 1, s.ZILLO_RELEASE + 2, s.ZILLO_RELEASE + 3, s.ZILLO_RELEASE + 4, s.ZILLO_RELEASE + 5 },
     &.{ s.ZILLO_SPREAD, s.ZILLO_SPREAD + 1, s.ZILLO_SPREAD + 2, s.ZILLO_SPREAD + 3, s.ZILLO_SPREAD + 4, s.ZILLO_SPREAD + 5 },
@@ -70,6 +71,12 @@ fn angle(bits: u32) bool {
 }
 pub fn gateValid(gate: p.SyncTickGate) bool {
     if (gate.site >= s.SWAMP_PERISCOPE_QUERY and gate.site < s.SWAMP_PERISCOPE_QUERY + 5) return gate.value <= 1;
+    switch (gate.site) {
+        s.SWAMP_DROID_MODEL_BRANCH => return gate.value < p.SYNC_MAX_ACTORS,
+        s.SWAMP_DROID_MODEL_BRANCH + 1 => return gate.value != 0,
+        s.SWAMP_DROID_MODEL_BRANCH + 2 => return gate.value <= 1,
+        else => {},
+    }
     for ([_]u32{ s.PACK_SPAWN_X, s.PACK_SPAWN_Z }) |first| if (gate.site >= first and gate.site < first + 8) return switch (gate.site - first) {
         0, 2, 3, 4 => gate.value <= 65535,
         else => true,

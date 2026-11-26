@@ -24,11 +24,11 @@ export fn entities_observed_identity(value: usize, slot: *u32, generation: *u32)
     generation.* = rope_generation;
     return 1;
 }
-export fn entities_slot(_: usize) c_int {
-    return -1;
+export fn entities_slot(actor: usize) c_int {
+    return if (actor != 0 and actor == rope_actor) 2 else -1;
 }
-export fn entities_generation(_: usize) u32 {
-    return 0;
+export fn entities_generation(actor: usize) u32 {
+    return if (actor != 0 and actor == rope_actor) rope_generation else 0;
 }
 export fn entities_bind_native_actor(_: *const s.p.SyncFrame, _: usize) c_int {
     return 0;
@@ -197,9 +197,32 @@ pub fn main() void {
     check(@src(), @import("tick_input.zig").native_tick_finish() == 0);
     arenaRope(&token);
     swampPeriscope(&token);
+    swampDroidModel(&token);
 }
 
 extern fn swamp_periscope_result(usize, u32) u32;
+extern fn swamp_droid_model_branch(usize) u32;
+
+fn swampDroidModel(token: *const s.Token) void {
+    const input = @import("tick_input.zig");
+    var actor: [0x1440]u8 align(4) = @splat(0);
+    rope_actor = @intFromPtr(&actor);
+    defer rope_actor = 0;
+    s.store(u16, rope_actor + 0xdc0, 321);
+    s.store(u16, rope_actor + 0x2f4, 22);
+    frame.level = 70;
+    phase = 1;
+    check(@src(), input.native_tick_begin(frame, 1, token) != 0);
+    phase = 2;
+    check(@src(), swamp_droid_model_branch(rope_actor) == 1 and frame.tick_gate_count == 3);
+    check(@src(), input.native_tick_finish() != 0 and s.valid.streamValid(frame.tick_gates[0..3]));
+    check(@src(), !s.valid.streamValid(frame.tick_gates[1..3]));
+    s.store(u16, rope_actor + 0x2f4, 0xffff);
+    phase = 1;
+    check(@src(), input.native_tick_begin(frame, 0, token) != 0);
+    phase = 2;
+    check(@src(), swamp_droid_model_branch(rope_actor) == 1 and input.native_tick_finish() != 0);
+}
 
 fn swampPeriscope(token: *const s.Token) void {
     const input = @import("tick_input.zig");
