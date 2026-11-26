@@ -30,11 +30,23 @@ pub export fn spellit_gungan_action100_admitted(actor: usize) c_int {
 fn missingManagerStage(op: *const s.Lease, actor: usize, stage: u32, clock: u32) bool {
     const frame = s.journal.frame.?;
     const cursor = s.fire_task_cursor;
-    if (s.journal.host != 0 or (frame.level != 24 and frame.level != 74) or stage < 4 or cursor == 0 or cursor >= frame.fire_task_gate_count) return false;
+    if (s.journal.host != 0 or (frame.level != 24 and frame.level != 74) or stage < 4 or cursor == 0 or cursor > frame.fire_task_gate_count) return false;
     const previous = &frame.fire_task_gates[cursor - 1];
-    const next = &frame.fire_task_gates[cursor];
-    if (previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or previous.payload.character_motion.clock != clock or previous.slot == next.slot) return false;
+    if (previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or previous.payload.character_motion.clock != clock) return false;
     const character = s.read(u16, actor + 0xdc0);
+    if (cursor == frame.fire_task_gate_count) {
+        if (frame.level != 74 or cursor < 2 or character != 188 or previous.character != 188 or actor != s.read(usize, 0xfb4944)) return false;
+        const query = &frame.fire_task_gates[cursor - 2];
+        if (query.kind != p.SYNC_ACTOR_SPELLIT_QUERY or query.character != 199 or query.payload.state.repeat != clock or query.slot == previous.slot) return false;
+        const padme = s.reference(previous);
+        const jar_jar = s.reference(query);
+        const first_player = s.read(usize, 0xfb4940);
+        // In the bomb room the host may finish the tick with Padme's motion after Jar Jar's query.
+        return first_player != 0 and s.entities_resolve_reference(&padme) == actor and
+            s.entities_resolve_reference(&jar_jar) == first_player and s.live(op);
+    }
+    const next = &frame.fire_task_gates[cursor];
+    if (previous.slot == next.slot) return false;
     const motion_order = if (frame.level == 74)
         character == 188 and next.character == 199
     else

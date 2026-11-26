@@ -126,6 +126,7 @@ pub fn main() void {
     s.fire_task_cursor = 1;
     check(@src(), call(actor, 0, 3, 1) == 0 and s.journal.failed == 0 and fault == 0);
     finish();
+    bombRoomEndOfFrame(frame, actor);
     frame.level = 0;
     win.store(i16, actor + 0xdc0, 184);
     for (0..16) |host| for (0..16) |local| {
@@ -224,6 +225,43 @@ pub fn main() void {
     gunganManagerOmission(frame, actor);
     gunganHostManagerNoOp(frame, actor);
     gunganAction100Admission(frame, actor);
+}
+
+fn bombRoomEndOfFrame(frame: *p.SyncFrame, padme: usize) void {
+    const jar_jar = @intFromPtr(&actors[1]);
+    win.store(i16, padme + 0xdc0, 188);
+    win.store(usize, 0xfb4940, jar_jar);
+    defer win.store(usize, 0xfb4940, 0);
+    frame.level = 74;
+    for (0..4) |scenario| {
+        begin(frame, false);
+        frame.fire_task_gate_count = 2;
+        frame.fire_task_gates[0..2].* = std.mem.zeroes([2]p.SyncFireTaskGate);
+        const query = &frame.fire_task_gates[0];
+        query.kind = p.SYNC_ACTOR_SPELLIT_QUERY;
+        query.slot = 8;
+        query.generation = 19;
+        query.character = 199;
+        query.payload.state.repeat = if (scenario == 1) 50 else 51;
+        const motion = &frame.fire_task_gates[1];
+        motion.kind = p.SYNC_ACTOR_CHARACTER_MOTION;
+        motion.slot = 7;
+        motion.generation = if (scenario == 2) 20 else 19;
+        motion.character = 188;
+        motion.payload.character_motion.clock = 51;
+        s.fire_task_cursor = 2;
+        if (scenario == 3) win.store(usize, 0xfb4944, jar_jar);
+        if (scenario == 0) {
+            check(@src(), call(padme, 0, 4, 1) == 0 and call(padme, 0, 5, 1) == 0);
+            check(@src(), s.journal.failed == 0 and fault == 0);
+        } else {
+            _ = call(padme, 0, 4, 1);
+            check(@src(), s.journal.failed != 0 and fault == 14);
+        }
+        check(@src(), s.fire_task_cursor == 2);
+        finish();
+        win.store(usize, 0xfb4944, padme);
+    }
 }
 
 fn gunganAction100Admission(frame: *p.SyncFrame, player: usize) void {
