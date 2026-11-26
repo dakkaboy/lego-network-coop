@@ -2096,6 +2096,18 @@ fn blueShadowRecordedAim(level: i32, retained_lift_target: bool) void {
     if (stale) check(@src(), win.load(usize, other + 0xbdc) == actor);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 
+    if (level == 73) {
+        token.release += 1;
+        win.store(u16, runtime + 0xdc0, 138);
+        put(runtime + 0x50, 0x1001);
+        put(task + 0x10, runtime);
+        put(other + 0xbdc, 0);
+        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+        check(@src(), ct.cadence_prepare_aim_task(other, task) == 1 and s.fire_task_cursor == 1);
+        check(@src(), win.load(usize, task + 0x10) == runtime and win.load(usize, other + 0xbdc) == 0);
+        check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+    }
+
     token.release += 1;
     put(task + 0x10, stale_target);
     if (level == 73) {

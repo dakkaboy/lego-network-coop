@@ -4,6 +4,7 @@ const s = @import("cadence_state.zig");
 const gate = @import("cadence_gate.zig");
 const equal = @import("validation.zig").equal;
 const read = s.read;
+pub export var clonewars_lab_aim_failure: [12]u32 = @splat(0);
 fn reject(op: *const s.Lease, actor: usize, reason: u32) void {
     s.journal.failed = @bitCast(reason);
     s.failed(op, actor, null, reason);
@@ -34,7 +35,7 @@ fn blueShadowAimTarget(actor: usize, target: usize, input: *p.SyncAimTaskState) 
     input.* = reconciled;
     return ahsoka;
 }
-fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, input: *p.SyncAimTaskState) ?usize {
+fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, task_target: usize, input: *p.SyncAimTaskState) ?usize {
     const frame = s.journal.frame.?;
     if (s.journal.host != 0 or s.fire_task_cursor >= frame.fire_task_gate_count) return null;
     const droid = read(i16, actor + 0xdc0);
@@ -61,13 +62,23 @@ fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, input: *p.SyncAimT
             if (target != last_target or !s.valid(target, 0x1440) or read(u32, target + 0x50) & 3 != 1) return null;
         }
     }
-    if (!s.live(op) or !s.valid(target, 0x1440)) return null;
-    const character = read(u16, target + 0xdc0);
+    if (!s.live(op)) return null;
     if (lift) {
+        if (!s.valid(target, 0x1440)) return null;
+        const character = read(u16, target + 0xdc0);
         if (read(f32, target + 0x24) <= 30 or (character != 181 and character != 184)) return null;
-    } else if (aim.target_character != 138 or character != 138 or read(u32, target + 0x50) & 3 != 1 or s.entities_observed_generation(target) == 0) return null;
+    } else {
+        if (aim.target_character != 138) return null;
+        if (retainedLabClone(task_target)) {
+            target = task_target;
+        } else if (!retainedLabClone(last_target)) return null;
+    }
     input.* = reconciled;
     return target;
+}
+fn retainedLabClone(actor: usize) bool {
+    return s.valid(actor, 0x1440) and read(u16, actor + 0xdc0) == 138 and
+        read(u32, actor + 0x50) & 3 == 1 and s.entities_observed_generation(actor) != 0;
 }
 fn repeatedLabAim(op: *const s.Lease, actor: usize, target: usize, input: *const p.SyncAimTaskState) bool {
     const frame = s.journal.frame.?;
@@ -128,8 +139,14 @@ pub export fn cadence_prepare_aim_task(actor: usize, task: usize) c_int {
     var stale_target_replacement: ?usize = null;
     if (target != 0 and s.entities_observed_identity(target, &input.target_slot, &input.target_generation) == 0) {
         if (repeatedLabAim(&op, actor, target, &input)) return 0;
-        stale_target_replacement = staleBlueShadowAimTarget(&op, actor, &input) orelse {
-            if (s.live(&op)) reject(&op, actor, 8);
+        stale_target_replacement = staleBlueShadowAimTarget(&op, actor, target, &input) orelse {
+            if (s.live(&op)) {
+                const frame = s.journal.frame.?;
+                if (frame.level == 73 and clonewars_lab_aim_failure[0] != frame.epoch) {
+                    clonewars_lab_aim_failure = .{ frame.epoch, frame.sequence, s.fire_task_cursor, input.clock, input.task_class, s.bits(input.minimum), s.bits(input.maximum), @truncate(actor), @truncate(task), @truncate(target), @truncate(read(usize, actor + 0xbdc)), @truncate(read(usize, 0xfb4944)) };
+                }
+                reject(&op, actor, 8);
+            }
             return 1;
         };
     }
