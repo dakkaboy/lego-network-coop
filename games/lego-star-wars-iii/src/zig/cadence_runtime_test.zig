@@ -1626,30 +1626,45 @@ fn blueShadowCompanionMotionOrder(level: i32) void {
         _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 0, @ptrCast(&admission), &debug);
         check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 
-        client = false;
-        fault = 0;
-        query.mode = 1;
-        query.caster_generation = 19;
-        token.release += 1;
-        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
-        _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&spellit_query), &debug);
-        for (0..3) |stage| _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, @intCast(stage), 0, 1, null, &debug);
-        _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&query), &debug);
-        _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 4, 0, 1, null, &debug);
-        _ = gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 0, @ptrCast(&admission), &debug);
-        _ = gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 0, @ptrCast(&admission), &debug);
-        check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+        for ([_]bool{ true, false }) |target_found| {
+            client = false;
+            fault = 0;
+            query.mode = 1;
+            query.caster_generation = 19;
+            var fallback = query;
+            fallback.mode = 2;
+            token.release += 1;
+            check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+            _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&spellit_query), &debug);
+            for (0..3) |stage| _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, @intCast(stage), 0, 1, null, &debug);
+            _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&query), &debug);
+            _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 4, 0, @intFromBool(target_found), null, &debug);
+            if (!target_found) {
+                _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&fallback), &debug);
+                _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+                _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 0, @ptrCast(&admission), &debug);
+            }
+            _ = gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 0, @ptrCast(&admission), &debug);
+            _ = gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 0, @ptrCast(&admission), &debug);
+            check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
-        client = true;
-        token.release += 1;
-        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-        _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&spellit_query), &debug);
-        check(@src(), gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 1, @ptrCast(&admission), &debug) == 0);
-        check(@src(), gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 1, @ptrCast(&admission), &debug) == 0);
-        for (0..3) |stage| _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, @intCast(stage), 0, 1, null, &debug);
-        _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&query), &debug);
-        _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 4, 0, 1, null, &debug);
-        check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+            client = true;
+            token.release += 1;
+            check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+            _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&spellit_query), &debug);
+            if (!target_found) {
+                _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+                check(@src(), gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 1, @ptrCast(&admission), &debug) == 0);
+            }
+            check(@src(), gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 1, @ptrCast(&admission), &debug) == 0);
+            check(@src(), gate.apply(node, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 1, @ptrCast(&admission), &debug) == 0);
+            check(@src(), s.fire_task_cursor == 1 and fault == 0);
+            for (0..3) |stage| _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, @intCast(stage), 0, 1, null, &debug);
+            _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&query), &debug);
+            _ = gate.apply(actor, p.SYNC_ACTOR_FORCE_ELIGIBILITY, 4, 0, @intFromBool(target_found), null, &debug);
+            if (!target_found) _ = gate.apply(node, p.SYNC_ACTOR_FORCE_VISIBILITY, 0, 0, 1, @ptrCast(&fallback), &debug);
+            check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+        }
     }
 }
 

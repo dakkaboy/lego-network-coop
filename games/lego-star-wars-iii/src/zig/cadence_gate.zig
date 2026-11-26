@@ -161,7 +161,7 @@ fn labCompanionAdmission(character: i32, kind: u32, flags: u16, action: u16) boo
     return (character == 188 or character == 199) and kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and
         (flags == 4 or flags == 5) and action == 0;
 }
-fn earlyLabCompanion(op: *const s.Lease, actor: usize, flags: u16, clock: u32) ?c_int {
+fn afterLabForce(clock: u32) ?usize {
     const frame = s.journal.frame.?;
     const cursor = s.fire_task_cursor;
     if (cursor == 0 or cursor + 4 >= frame.fire_task_gate_count) return null;
@@ -173,17 +173,26 @@ fn earlyLabCompanion(op: *const s.Lease, actor: usize, flags: u16, clock: u32) ?
         if (entry.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or entry.flags != stage or entry.value != 1 or
             !equal(&caster, &s.reference(entry))) return null;
     }
-    var index = cursor + 3;
+    const target_index = endLabForceScan(frame, cursor + 3, &caster, clock, 1) orelse return null;
+    if (target_index >= frame.fire_task_gate_count) return null;
+    const target = &frame.fire_task_gates[target_index];
+    if (target.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or target.flags != 4 or !equal(&caster, &s.reference(target))) return null;
+    if (target.value != 0) return target_index + 1;
+    return endLabForceScan(frame, target_index + 1, &caster, clock, 2);
+}
+fn endLabForceScan(frame: *const p.SyncFrame, first: usize, caster: *const p.SyncActor, clock: u32, mode: u32) ?usize {
+    var index = first;
     while (index < frame.fire_task_gate_count) : (index += 1) {
         const entry = &frame.fire_task_gates[index];
         if (!forceScan(entry.kind)) break;
         const query = &entry.payload.force;
-        if (query.caster_slot != caster.slot or query.caster_generation != caster.generation or query.clock != clock or query.mode != 1) return null;
+        if (query.caster_slot != caster.slot or query.caster_generation != caster.generation or query.clock != clock or query.mode != mode) return null;
     }
-    if (index == cursor + 3 or index >= frame.fire_task_gate_count) return null;
-    const target = &frame.fire_task_gates[index];
-    if (target.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or target.flags != 4 or !equal(&caster, &s.reference(target))) return null;
-    index += 1;
+    return if (index == first) null else index;
+}
+fn earlyLabCompanion(op: *const s.Lease, actor: usize, flags: u16, clock: u32, start: usize) ?c_int {
+    const frame = s.journal.frame.?;
+    var index = start;
     while (index < frame.fire_task_gate_count) : (index += 1) {
         const entry = &frame.fire_task_gates[index];
         if (!labCompanionAdmission(entry.character, entry.kind, entry.flags, entry.action) or entry.payload.state.repeat != clock) return null;
@@ -205,15 +214,17 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
     const motion_character = if ((kind == p.SYNC_ACTOR_CHARACTER_MOTION or party_spellit) and state != null and s.valid(actor, 0x1440)) s.read(u16, actor + 0xdc0) else 0;
     const companion = frame.level == 79 and motion_character == 259;
     const lab_companion = labCompanionAdmission(motion_character, kind, flags, action);
-    if (frame.level == 73 and lab_companion and head.kind == p.SYNC_ACTOR_FORCE_ELIGIBILITY) {
-        const clock = s.read(u32, @intFromPtr(state.?));
-        if (earlyLabCompanion(op, actor, flags, clock)) |value| {
+    const lab_actor = frame.level == 73 and (motion_character == 138 or lab_companion);
+    const lab_clock = if (lab_actor) s.read(u32, @intFromPtr(state.?)) else 0;
+    const after_force = if (lab_actor and head.kind == p.SYNC_ACTOR_FORCE_ELIGIBILITY) afterLabForce(lab_clock) else null;
+    if (lab_companion and after_force != null) {
+        if (earlyLabCompanion(op, actor, flags, lab_clock, after_force.?)) |value| {
             debug[1] +%= 1;
             debug[2] +%= @intFromBool(local != value);
             return value;
         }
     }
-    const lab_party = frame.level == 73 and (motion_character == 138 or lab_companion) and head.kind == p.SYNC_ACTOR_FORCE_VISIBILITY;
+    const lab_party = lab_actor and (head.kind == p.SYNC_ACTOR_FORCE_VISIBILITY or after_force != null);
     const corridor_party = frame.level == 74 and motion_character == 184 and s.read(f32, actor + 0x24) < 10 and
         head.kind == p.SYNC_ACTOR_FORCE_VISIBILITY and (kind == p.SYNC_ACTOR_CHARACTER_MOTION or
         (kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and (flags == 4 or flags == 5) and action == 0));
@@ -223,7 +234,7 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
     const droid_aim = (frame.level == 29 or frame.level == 70) and droidAim(head.kind, head.character) and s.valid(actor, 0x1440) and
         droidAim(kind, s.read(i16, actor + 0xdc0));
     if (!competitor and !companion and !blue_shadow_motion and !droid_aim) return null;
-    if (lab_party or corridor_party) {
+    if ((lab_party and after_force == null) or corridor_party) {
         const force = &head.payload.force;
         const caster = s.entities_actor(force.caster_slot, force.caster_generation);
         const caster_character: u16 = if (corridor_party) 181 else 184;
@@ -239,21 +250,21 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
         if (owner == actor or (blue_shadow_droid and owner == 0) or !s.live(op)) return null;
     }
     // Actor updates and targeting checks can run in different orders within a tick.
-    var i = s.fire_task_cursor + 1;
+    var i = after_force orelse s.fire_task_cursor + 1;
     var droid_motion_block = false;
     var lab_motion: ?*const p.SyncFireTaskGate = null;
     while (i < frame.fire_task_gate_count) : (i += 1) {
         const entry = &frame.fire_task_gates[i];
         if (competitor and entry.kind != kind) break;
         if (droid_aim and !droidAim(entry.kind, entry.character)) break;
-        if (blue_shadow_clone and lab_motion == null and forceScan(entry.kind)) {
+        if (blue_shadow_clone and after_force == null and lab_motion == null and forceScan(entry.kind)) {
             const caster = &head.payload.force;
             const query = &entry.payload.force;
             if (query.caster_slot != caster.caster_slot or query.caster_generation != caster.caster_generation or query.clock != caster.clock) return null;
             continue;
         }
         if (party_spellit) {
-            const clock = head.payload.force.clock;
+            const clock = if (after_force != null) lab_clock else head.payload.force.clock;
             if (lab_motion) |motion| {
                 const clone_stage = (entry.kind == p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.kind == p.SYNC_ACTOR_SPELLIT_QUERY) and
                     entry.slot == motion.slot and entry.generation == motion.generation;
