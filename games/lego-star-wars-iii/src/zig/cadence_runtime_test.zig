@@ -2266,6 +2266,31 @@ fn droidAimOrder(level: i32) void {
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
     check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, null, &debug) == 0 and fault == 14);
     check(@src(), ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    if (level != 70) return;
+    fault = 0;
+    client = false;
+    token.release += 1;
+    var probe = std.mem.zeroes(p.SyncPrimaryPerceptionState);
+    probe.clock = 3587;
+    var base = std.mem.zeroes(p.SyncAimBaseState);
+    base.clock = probe.clock;
+    var aim = std.mem.zeroes(p.SyncAimTaskState);
+    aim.clock = probe.clock;
+    const stage = p.SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    _ = gate.apply(actor, p.SYNC_ACTOR_PRIMARY_PERCEPTION, stage, 0, 0, @ptrCast(&probe), &debug);
+    _ = gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, @ptrCast(&base), &debug);
+    _ = gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 1, @ptrCast(&aim), &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    _ = gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, @ptrCast(&base), &debug);
+    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, @ptrCast(&aim), &debug) == 1 and s.fire_task_cursor == 0);
+    _ = gate.apply(actor, p.SYNC_ACTOR_PRIMARY_PERCEPTION, stage, 0, 0, @ptrCast(&probe), &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
 fn hiddenLabAimBeforeMotion(target_is_anakin: bool) void {
