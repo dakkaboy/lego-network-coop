@@ -308,8 +308,8 @@ fn bombRoomBeforeObiWan(frame: *p.SyncFrame, padme: usize) void {
     win.store(usize, 0xfb4944, padme);
     defer win.store(usize, 0xfb4940, 0);
     frame.level = 74;
-    for (0..4) |scenario| {
-        if (scenario == 3) {
+    for (0..5) |scenario| {
+        if (scenario >= 3) {
             win.store(f32, padme + 0x24, -6.812231);
             win.store(f32, padme + 0x2c, 13.52399);
             win.store(usize, 0xfb4940, padme);
@@ -331,7 +331,7 @@ fn bombRoomBeforeObiWan(frame: *p.SyncFrame, padme: usize) void {
         next.character = if (scenario == 3) 184 else 181;
         next.payload.character_motion.clock = if (scenario == 2) 50 else 51;
         s.fire_task_cursor = 1;
-        if (scenario == 0 or scenario == 3) {
+        if (scenario == 0 or scenario >= 3) {
             check(@src(), call(padme, 0, 4, 1) == 0 and call(padme, 0, 5, 1) == 0);
             check(@src(), fault == 0 and s.journal.failed == 0);
         } else {

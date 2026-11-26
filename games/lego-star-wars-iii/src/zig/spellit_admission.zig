@@ -59,12 +59,14 @@ fn missingManagerStage(op: *const s.Lease, actor: usize, stage: u32, clock: u32)
     if (previous.slot == next.slot) return false;
     const player_one = s.read(usize, 0xfb4940);
     const player_two = s.read(usize, 0xfb4944);
+    const partner = if (actor == player_one) player_two else if (actor == player_two) player_one else 0;
+    const garden = s.read(f32, actor + 0x24) < (if (actor == player_one) @as(f32, -6) else -7) and
+        s.read(f32, actor + 0x2c) > 13;
     const motion_order = if (frame.level == 74)
         character == 188 and (next.character == 199 or (next.character == 181 and
-            actor == player_two and s.read(f32, actor + 0x24) < -7 and s.read(f32, actor + 0x2c) > 13 and
-            player_one != 0 and s.entities_resolve_reference(&s.reference(next)) == player_one) or
+            garden and partner != 0 and s.entities_resolve_reference(&s.reference(next)) == partner) or
             (next.character == 184 and actor == player_one and s.valid(player_two, 0x1440) and s.read(i16, player_two + 0xdc0) == 181 and
-                s.read(f32, actor + 0x24) < -6 and s.read(f32, actor + 0x2c) > 13))
+                garden))
     else
         character == 176;
     const next_motion = motion_order and next.kind == p.SYNC_ACTOR_CHARACTER_MOTION and next.payload.character_motion.clock == clock;
