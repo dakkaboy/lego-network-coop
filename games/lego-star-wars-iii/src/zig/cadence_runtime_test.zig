@@ -2135,11 +2135,12 @@ fn blueShadowRecordedAim(level: i32, retained_lift_target: bool) void {
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
-fn blueShadowGuestOnlyAim(clone_dead: bool, lab_resume: bool, droid: u16) void {
+fn blueShadowGuestOnlyAim(clone_dead: bool, lab_sequence: u32, droid: u16) void {
     mode = 58;
     setup();
+    const lab_resume = lab_sequence != 0;
     frame.level = if (lab_resume) 73 else 70;
-    if (lab_resume) frame.sequence = 1;
+    if (lab_resume) frame.sequence = lab_sequence;
     win.store(u16, actor + 0xdc0, droid);
     win.store(u16, other + 0xdc0, 191);
     win.store(u16, component + 0xdc0, if (lab_resume) 181 else 156);
@@ -2179,7 +2180,7 @@ fn blueShadowGuestOnlyAim(clone_dead: bool, lab_resume: bool, droid: u16) void {
 
     token.release += 1;
     if (lab_resume) {
-        frame.fire_task_gates[0].payload.character_motion.clock +%= 1;
+        frame.fire_task_gates[@intFromBool(clone_dead)].payload.character_motion.clock +%= 1;
     } else {
         win.store(u8, other + 0xdde, 4);
     }
@@ -2542,10 +2543,11 @@ fn arenaRunRandomChecks() void {
     blueShadowRecordedAim(73, false);
     blueShadowRecordedAim(74, false);
     blueShadowRecordedAim(74, true);
-    blueShadowGuestOnlyAim(false, false, 321);
-    blueShadowGuestOnlyAim(true, false, 321);
-    blueShadowGuestOnlyAim(false, true, 321);
-    blueShadowGuestOnlyAim(false, true, 333);
+    blueShadowGuestOnlyAim(false, 0, 321);
+    blueShadowGuestOnlyAim(true, 0, 321);
+    blueShadowGuestOnlyAim(false, 1, 321);
+    blueShadowGuestOnlyAim(false, 1, 333);
+    blueShadowGuestOnlyAim(true, 3, 333);
     hiddenLabAimBeforeMotion();
     droidAimOrder(29);
     droidAimOrder(70);
