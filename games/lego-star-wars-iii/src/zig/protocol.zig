@@ -360,7 +360,7 @@ pub const SyncAimTaskState = extern struct {
     minimum: f32,
     maximum: f32,
     task_class: u32,
-    reserved: u32,
+    target_character: u32,
 };
 
 pub const SABER_QUEUE_SCENE: u16 = 0x1000;
@@ -954,7 +954,7 @@ pub const SYNC_PROFILE_BYTES = @as(c_int, 0xb5c0);
 
 pub const SYNC_LAYOUT_VERSION = @as(c_int, 55);
 
-pub const SYNC_WIRE_VERSION = @as(c_int, 225);
+pub const SYNC_WIRE_VERSION = @as(c_int, 226);
 
 pub const SYNC_NATIVE_SPAN_PLAN_MASK = @as(c_uint, 7);
 

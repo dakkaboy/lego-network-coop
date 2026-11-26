@@ -91,7 +91,7 @@ pub fn main() void {
         f.expectSame(@src(), &fx, &regs);
     };
     check(@src(), input_calls == 2000 and visibility_calls == 9000);
-    const a: p.SyncAimTaskState = .{ .target_slot = 1, .target_generation = 8, .rng_engine = 123, .clock = 200, .remaining = -0.1, .minimum = 0.5, .maximum = 1.5, .task_class = 0x721234, .reserved = 0 };
+    const a: p.SyncAimTaskState = .{ .target_slot = 1, .target_generation = 8, .rng_engine = 123, .clock = 200, .remaining = -0.1, .minimum = 0.5, .maximum = 1.5, .task_class = 0x721234, .target_character = 0 };
     var b = a;
     b.rng_engine = 456;
     b.remaining = 0.25;

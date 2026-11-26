@@ -142,7 +142,8 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
         },
         p.SYNC_ACTOR_AIM_TASK => {
             const s = &data.aim;
-            return clean and boolean and s.reserved == 0 and s.task_class != 0 and
+            const valid_character = s.target_character == 0 or (s.target_generation != 0 and s.target_character == 138);
+            return clean and boolean and valid_character and s.task_class != 0 and
                 (if (s.target_generation != 0) s.target_slot < p.SYNC_MAX_ACTORS else s.target_slot == 0) and v.finite(s.*);
         },
         else => return false,

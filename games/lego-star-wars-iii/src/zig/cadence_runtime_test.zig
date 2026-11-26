@@ -1963,6 +1963,7 @@ fn blueShadowRecordedAim(level: i32) void {
     win.store(u8, actor + 0xdde, 4);
     win.store(u16, other + 0xdc0, if (level == 73) 333 else 321);
     win.store(u16, component + 0xdc0, 181);
+    if (level == 73) put(actor + 0x50, 0x1001);
     put(other + 8, model);
     put(0xfb4940, actor);
     put(0xfb4944, if (level == 73) component else 0);
@@ -1984,7 +1985,7 @@ fn blueShadowRecordedAim(level: i32) void {
     token.release += 1;
     const stale_target = if (stale) runtime else 0;
     put(task + 0x10, stale_target);
-    put(other + 0xbdc, stale_target);
+    put(other + 0xbdc, if (level == 73) actor else stale_target);
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
     ct.cadence_prepare_aim_task(other, task);
     check(@src(), win.load(usize, task + 0x10) == actor);
@@ -1993,7 +1994,11 @@ fn blueShadowRecordedAim(level: i32) void {
 
     token.release += 1;
     put(task + 0x10, stale_target);
-    frame.fire_task_gates[0].payload.aim.target_generation += 1;
+    if (level == 73) {
+        frame.fire_task_gates[0].payload.aim.target_character = 188;
+    } else {
+        frame.fire_task_gates[0].payload.aim.target_generation += 1;
+    }
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
     ct.cadence_prepare_aim_task(other, task);
     check(@src(), win.load(usize, task + 0x10) == stale_target and fault == 14);

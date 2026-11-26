@@ -51,12 +51,12 @@ fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, input: *p.SyncAimT
     reconciled.target_slot = aim.target_slot;
     reconciled.target_generation = aim.target_generation;
     if (!@import("cadence_context.zig").aim(aim, &reconciled)) return null;
-    const target = s.entities_actor(aim.target_slot, aim.target_generation);
+    const target = if (lab_exit) read(usize, actor + 0xbdc) else s.entities_actor(aim.target_slot, aim.target_generation);
     if (!s.live(op) or !s.valid(target, 0x1440)) return null;
     const character = read(u16, target + 0xdc0);
     if (lift) {
         if (read(f32, target + 0x24) <= 30 or (character != 181 and character != 184)) return null;
-    } else if (character != 138) return null;
+    } else if (aim.target_character != 138 or character != 138 or read(u32, target + 0x50) & 3 != 1 or s.entities_observed_generation(target) == 0) return null;
     input.* = reconciled;
     return target;
 }
@@ -89,6 +89,9 @@ pub export fn cadence_prepare_aim_task(actor: usize, task: usize) void {
     input.minimum = read(f32, task + 0x14);
     input.maximum = read(f32, task + 0x18);
     const target = read(usize, task + 0x10);
+    if (s.journal.host != 0 and s.journal.frame.?.level == 73 and s.valid(target, 0x1440) and read(u16, target + 0xdc0) == 138) {
+        input.target_character = 138;
+    }
     var stale_target_replacement: ?usize = null;
     if (target != 0 and s.entities_observed_identity(target, &input.target_slot, &input.target_generation) == 0) {
         stale_target_replacement = staleBlueShadowAimTarget(&op, actor, &input) orelse {
