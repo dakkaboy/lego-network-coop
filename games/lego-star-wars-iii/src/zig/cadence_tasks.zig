@@ -268,9 +268,11 @@ pub export fn cadence_prepare_rts_competitor(competitor: usize, delta: *f32) voi
 }
 fn blueShadowGuestOnlyAim(actor: usize, task: usize) bool {
     const frame = s.journal.frame.?;
-    const obi_wan = if (frame.level == 73) read(usize, 0xfb4944) else 0;
-    const lab_exit = s.valid(obi_wan, 0x1440) and read(u16, obi_wan + 0xdc0) == 181;
-    const lab_resume = frame.level == 73 and (frame.sequence == 1 or lab_exit);
+    const lab_player_two = if (frame.level == 73) read(usize, 0xfb4944) else 0;
+    const lab_companion = if (s.valid(lab_player_two, 0x1440)) read(u16, lab_player_two + 0xdc0) else 0;
+    const lab_exit = lab_companion == 181;
+    const lab_resume = frame.level == 73 and (frame.sequence == 1 or
+        (frame.sequence == 2 and lab_companion == 138) or lab_exit);
     const droid = read(u16, actor + 0xdc0);
     if (droid != 321 and (droid != 333 or !lab_exit)) return false;
     if (!lab_resume and frame.level != 70) return false;

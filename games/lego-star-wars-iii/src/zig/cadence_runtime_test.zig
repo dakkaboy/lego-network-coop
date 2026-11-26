@@ -2186,7 +2186,7 @@ fn blueShadowGuestOnlyAim(clone_dead: bool, lab_sequence: u32, droid: u16, both_
     if (lab_resume) frame.sequence = lab_sequence;
     win.store(u16, actor + 0xdc0, droid);
     win.store(u16, other + 0xdc0, 191);
-    win.store(u16, component + 0xdc0, if (lab_resume) 181 else 156);
+    win.store(u16, component + 0xdc0, if (lab_sequence == 2) 138 else if (lab_resume) 181 else 156);
     win.store(u8, component + 0xdde, if (clone_dead) 0 else 4);
     if (both_alive) win.store(u8, other + 0xdde, 4);
     put(0xfb4940, other);
@@ -2641,6 +2641,7 @@ fn arenaRunRandomChecks() void {
     blueShadowGuestOnlyAim(false, 0, 321, true);
     blueShadowGuestOnlyAim(true, 0, 321, false);
     blueShadowGuestOnlyAim(false, 1, 321, false);
+    blueShadowGuestOnlyAim(false, 2, 321, false);
     blueShadowGuestOnlyAim(false, 1, 333, false);
     blueShadowGuestOnlyAim(true, 3, 333, false);
     hiddenLabAimBeforeMotion(false);
