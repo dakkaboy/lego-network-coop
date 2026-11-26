@@ -487,6 +487,39 @@ fn idleWalkReactionClip() void {
         check(@src(), r.reaction_abort_frame(&lease) != 0);
     }
 }
+fn vindiLandingReactionClip() void {
+    for ([_]u16{ 201, 333 }) |character| {
+        mode = 67;
+        setup();
+        clearDebug();
+        frame.level = 73;
+        source = 0;
+        win.store(u16, actor + 0xdc0, character);
+        win.store(i16, actor + 0x2f4, 92);
+        var token = tokenFor();
+        var lease: s.Lease = undefined;
+        begin(&token, &lease, 1);
+        reaction_fixture_clip = 973;
+        invoke_choice();
+        check(@src(), frame.reaction_count == 1 and r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
+
+        client = true;
+        frame.sequence += 1;
+        token.sequence = frame.sequence;
+        token.release += 1;
+        begin(&token, &lease, 0);
+        win.store(i16, actor + 0x2f4, -1);
+        reaction_fixture_clip = 975;
+        invoke_choice();
+        check(@src(), win.load(i16, actor + 0x2f4) == -1);
+        if (character == 201) {
+            check(@src(), reaction_fixture_clip == 973 and fault == 0 and r.reaction_finish() != 0);
+        } else {
+            check(@src(), reaction_fixture_clip == 975 and fault == 17 and r.reaction_finish() == 0);
+        }
+        check(@src(), r.reaction_abort_frame(&lease) != 0);
+    }
+}
 fn geonosisProjectileCooldown(damage: i8, local_timer: f32) void {
     mode = 20;
     setup();
@@ -612,6 +645,7 @@ pub fn main() void {
     installedHooks();
     unchangedNativeChoice();
     idleWalkReactionClip();
+    vindiLandingReactionClip();
     arenaBeforeHit();
     blueShadowLiftContact();
     actionTraceChecks();
