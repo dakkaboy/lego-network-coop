@@ -502,6 +502,9 @@ fn labBlast() void {
     check(@src(), frame.physics_choice_count == 1 and s.physics_input_finish() != 0);
 
     const captured = frame.physics_choices[0];
+    var lower_approach = captured;
+    lower_approach.payload.blast.words[4..7].* = .{ 0xc1102966, 0xc0c37a0e, 0x41db5993 };
+    check(@src(), @import("physics_validation.zig").valid(&lower_approach));
     current.cohort.release += 1;
     put(0xfb4b6c, 30);
     frame.physics_choice_count = 0;
