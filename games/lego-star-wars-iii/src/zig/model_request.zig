@@ -156,7 +156,7 @@ pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) voi
                         ((vindiHiddenMotionAction(e.context.action) and vindiHiddenMotionAction(raw.context.action)) or
                             (e.context.action == 29 and (raw.context.action == 1 or raw.context.action == 10)) or
                             (e.context.action == 10 and raw.context.action == 29) or
-                            (e.context.action == 0xffff and raw.context.action == 11)))))
+                            (e.context.action == 0xffff and (raw.context.action == 11 or raw.context.action == 20))))))
             {
                 local.context.action = e.context.action;
             }
