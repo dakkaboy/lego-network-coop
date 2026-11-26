@@ -14,14 +14,15 @@ fn isDefenseTurretWeapon(level: i32, weapon: i32, flags: u32, source: u8) bool {
 fn isDefenseTurret(actor: usize) bool {
     return s.valid(actor, 0x1440) and s.read(u16, actor + 0xdc0) == 466;
 }
-fn isBombRoomPadmeShot(actor: usize, weapon: i32, flags: u32, source: u8, origin: [3]f32) bool {
-    return weapon == 7 and flags == 0 and source == p.SYNC_SHOT_WEAPON and
+fn isBombRoomPadmeShot(actor: usize, weapon: i32, flags: u32, source: u8, depth: u32, origin: [3]f32) bool {
+    return weapon == 7 and flags == 0 and depth == 0 and
+        (source == p.SYNC_SHOT_WEAPON or source == p.SYNC_SHOT_ACTOR_FOLLOWUP) and
         origin[0] < -17 and origin[2] > 24 and
         s.valid(actor, 0x1440) and s.read(u16, actor + 0xdc0) == 188;
 }
 pub fn canReplayAfterTick(level: i32, shot: *const p.SyncShot) bool {
     if (shot_source.isGeonosisBarrage(level, shot.owner, shot.weapon, shot.flags, shot.source)) return true;
-    if (level == 74 and isBombRoomPadmeShot(tracking.actorAt(shot.owner, shot.owner_generation), shot.weapon, shot.flags, shot.source, shot.origin)) return true;
+    if (level == 74 and isBombRoomPadmeShot(tracking.actorAt(shot.owner, shot.owner_generation), shot.weapon, shot.flags, shot.source, shot.depth, shot.origin)) return true;
     return isDefenseTurretWeapon(level, shot.weapon, shot.flags, shot.source) and
         isDefenseTurret(tracking.actorAt(shot.owner, shot.owner_generation));
 }
@@ -238,7 +239,8 @@ fn invoke(context: usize) callconv(.c) usize {
         const can_defer = (call.owner == 0 and call.target == 0 and shot_source.isGeonosisBarrage(level, slot, weapon, call.flags, call.source)) or
             (slot >= 0 and isDefenseTurretWeapon(level, weapon, call.flags, call.source) and isDefenseTurret(call.owner)) or
             (level == 74 and slot >= 0 and s.valid(call.origin, 12) and
-                isBombRoomPadmeShot(call.owner, weapon, call.flags, call.source, s.read([3]f32, call.origin)));
+                (call.source == p.SYNC_SHOT_WEAPON or call.target == 0) and
+                isBombRoomPadmeShot(call.owner, weapon, call.flags, call.source, call.depth, s.read([3]f32, call.origin)));
         var i: u32 = 0;
         while (control.live(op) and i < s.current.?.shot_count) : (i += 1) {
             const shot = &s.current.?.shots[i];
