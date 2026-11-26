@@ -265,7 +265,10 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
         head.kind == p.SYNC_ACTOR_FORCE_VISIBILITY and (kind == p.SYNC_ACTOR_CHARACTER_MOTION or
         (kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and (flags == 4 or flags == 5) and action == 0));
     const blue_shadow_clone = (frame.level == 70 and motion_character == 156 and forceScan(head.kind)) or lab_party or corridor_party;
-    const blue_shadow_droid = frame.level == 70 and blueShadowDroidMotion(motion_character) and blueShadowDroidDecision(head);
+    const corridor_turret = frame.level == 71 and kind == p.SYNC_ACTOR_CHARACTER_MOTION and motion_character == 437 and
+        droidAim(head.kind, head.character) and head.character == 321;
+    const blue_shadow_droid = corridor_turret or
+        (frame.level == 70 and blueShadowDroidMotion(motion_character) and blueShadowDroidDecision(head));
     const blue_shadow_motion = blue_shadow_clone or blue_shadow_droid;
     const swamp_aim = frame.level == 70 and state != null and declinedSwampTargetProbe(head);
     const corridor_aim = frame.level == 71 and state != null;
@@ -326,13 +329,15 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
         }
         if (blue_shadow_droid) {
             if (blueShadowDroidDecision(entry)) {
+                if (corridor_turret and (!droidAim(entry.kind, entry.character) or entry.character != 321)) return null;
                 if (droidDecisionClock(entry) != motion_clock) return null;
                 const identity = s.reference(entry);
                 const owner = s.entities_resolve_reference(&identity);
                 if (droid_motion_block or owner == 0 or owner == actor or !s.live(op)) return null;
                 continue;
             }
-            if (entry.kind != kind or !blueShadowDroidMotion(entry.character) or entry.payload.character_motion.clock != motion_clock) return null;
+            if (entry.kind != kind or entry.payload.character_motion.clock != motion_clock or
+                (if (corridor_turret) entry.character != 437 else !blueShadowDroidMotion(entry.character))) return null;
             droid_motion_block = true;
         }
         if (s.early_actor_gates.isSet(i)) {

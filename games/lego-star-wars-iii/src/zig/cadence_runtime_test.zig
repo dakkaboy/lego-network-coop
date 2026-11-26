@@ -1783,7 +1783,7 @@ fn labForceChecks(caster: usize, declined: bool, debug: *[4]u32) void {
 fn blueShadowDroidMotionOrder(character: u16, extra_motion: bool, scripted_target: bool) void {
     mode = 58;
     setup();
-    frame.level = 70;
+    frame.level = if (character == 437) 71 else 70;
     win.store(u16, actor + 0xdc0, character);
     win.store(u16, other + 0xdc0, 321);
     var token = std.mem.zeroes(Token);
@@ -2658,6 +2658,7 @@ fn arenaRunRandomChecks() void {
     blueShadowDroidMotionOrder(333, true, false);
     blueShadowDroidMotionOrder(337, true, false);
     blueShadowDroidMotionOrder(333, false, true);
+    blueShadowDroidMotionOrder(437, false, false);
     blueShadowReleasedAim();
     blueShadowRecordedAim(70, false, false);
     blueShadowRecordedAim(73, false, false);
