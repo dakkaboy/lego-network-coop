@@ -137,7 +137,8 @@ pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) voi
                     (frame.level == 64 and hiddenEnemyMotionAction(e.context.action) and hiddenEnemyMotionAction(raw.context.action)) or
                     (frame.level == 73 and e.character == 201 and raw.character == 201 and
                         ((vindiHiddenMotionAction(e.context.action) and vindiHiddenMotionAction(raw.context.action)) or
-                            (e.context.action == 29 and (raw.context.action == 1 or raw.context.action == 10))))))
+                            (e.context.action == 29 and (raw.context.action == 1 or raw.context.action == 10)) or
+                            (e.context.action == 10 and raw.context.action == 29)))))
             {
                 local.context.action = e.context.action;
             }

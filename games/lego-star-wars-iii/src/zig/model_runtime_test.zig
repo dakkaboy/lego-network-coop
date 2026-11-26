@@ -215,15 +215,16 @@ fn run() Snapshot {
     if (mode >= 18) {
         frame.level = switch (mode) {
             20 => 63,
-            24...28, 33 => 73,
+            24...28, 33, 34 => 73,
             29, 32 => 71,
             31 => 74,
             else => 64,
         };
         put(actor + 0x4c, 0x400);
-        if (mode >= 24) win.store(i16, actor + 0xdc0, if (mode < 28 or mode == 33) 201 else 321);
+        if (mode >= 24) win.store(i16, actor + 0xdc0, if (mode < 28 or mode >= 33) 201 else 321);
         win.store(u16, actor + 0x2f4, switch (mode) {
             24, 27, 33 => 29,
+            34 => 10,
             25 => 92,
             29 => 114,
             32 => 13,
@@ -259,6 +260,7 @@ fn run() Snapshot {
             19, 20, 33 => 10,
             24, 25, 29 => 0xffff,
             28, 30, 31, 32 => 114,
+            34 => 29,
             else => 0x29,
         });
         enter(&b);
@@ -446,6 +448,10 @@ pub fn main() void {
     const projectile_landing = run();
     check(@src(), projectile_landing.finish != 0 and projectile_landing.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 10 and win.load(u32, actor + 0x4c) == 0x400);
+    mode = 34;
+    const host_projectile_landing = run();
+    check(@src(), host_projectile_landing.finish != 0 and host_projectile_landing.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 29 and win.load(u32, actor + 0x4c) == 0x400);
     for (28..33) |variant| {
         mode = @intCast(variant);
         const droid = run();
