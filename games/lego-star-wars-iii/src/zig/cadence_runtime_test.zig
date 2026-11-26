@@ -2268,14 +2268,17 @@ fn droidAimOrder(level: i32) void {
     check(@src(), ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 }
 
-fn hiddenLabAimBeforeMotion() void {
+fn hiddenLabAimBeforeMotion(target_is_anakin: bool) void {
     mode = 58;
     setup();
     frame.level = 73;
     win.store(u16, actor + 0xdc0, 321);
     win.store(u16, node + 0xdc0, 321);
-    win.store(u16, other + 0xdc0, 181);
-    put(0xfb4944, other);
+    win.store(u16, other + 0xdc0, if (target_is_anakin) 184 else 181);
+    win.store(u16, component + 0xdc0, 181);
+    put(0xfb4940, if (target_is_anakin) other else 0);
+    put(0xfb4944, if (target_is_anakin) component else other);
+    defer put(0xfb4940, 0);
     defer put(0xfb4944, 0);
     var motion = std.mem.zeroes(p.SyncCharacterMotionState);
     motion.clock = 1083;
@@ -2578,7 +2581,8 @@ fn arenaRunRandomChecks() void {
     blueShadowGuestOnlyAim(false, 1, 321);
     blueShadowGuestOnlyAim(false, 1, 333);
     blueShadowGuestOnlyAim(true, 3, 333);
-    hiddenLabAimBeforeMotion();
+    hiddenLabAimBeforeMotion(false);
+    hiddenLabAimBeforeMotion(true);
     droidAimOrder(29);
     droidAimOrder(70);
 }

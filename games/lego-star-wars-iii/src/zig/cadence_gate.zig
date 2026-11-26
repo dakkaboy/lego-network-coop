@@ -476,6 +476,8 @@ fn skipHiddenLabAim(op: *const s.Lease, actor: usize, state: [*]const u8) void {
     if (frame.level != 73 or !s.valid(actor, 0x1440) or s.read(u16, actor + 0xdc0) != 321) return;
     const obi_wan = s.read(usize, 0xfb4944);
     if (!s.valid(obi_wan, 0x1440) or s.read(u16, obi_wan + 0xdc0) != 181) return;
+    const player_one = s.read(usize, 0xfb4940);
+    const anakin = if (s.valid(player_one, 0x1440) and s.read(u16, player_one + 0xdc0) == 184) player_one else 0;
     const initial = s.fire_task_cursor;
     var index = initial;
     const clock = s.read(u32, @intFromPtr(state));
@@ -487,7 +489,8 @@ fn skipHiddenLabAim(op: *const s.Lease, actor: usize, state: [*]const u8) void {
             base.slot != aim.slot or base.generation != aim.generation or base.payload.aim_base.clock != clock or
             aim.payload.aim.clock != clock or base.payload.aim_base.task_class != aim.payload.aim.task_class or
             s.early_actor_gates.isSet(index) or s.early_actor_gates.isSet(index + 1)) return;
-        if (s.entities_actor(aim.payload.aim.target_slot, aim.payload.aim.target_generation) != obi_wan or !s.live(op)) return;
+        const target = s.entities_actor(aim.payload.aim.target_slot, aim.payload.aim.target_generation);
+        if (!s.live(op) or target == 0 or (target != obi_wan and target != anakin)) return;
     }
     if (index == initial or index >= frame.fire_task_gate_count) return;
     const next = &frame.fire_task_gates[index];
