@@ -193,7 +193,9 @@ pub fn labForceRequestOwner(clock: u32) ?p.SyncActor {
 pub fn labForceRequestFollowedByCompanion(clock: u32) bool {
     const frame = s.journal.frame.?;
     const next = &frame.fire_task_gates[s.fire_task_cursor];
-    return labCompanionAdmission(next.character, next.kind, next.flags, next.action) and next.payload.state.repeat == clock;
+    if (labCompanionAdmission(next.character, next.kind, next.flags, next.action)) return next.payload.state.repeat == clock;
+    return next.character == 138 and next.kind == p.SYNC_ACTOR_CHARACTER_MOTION and
+        next.flags == 0 and next.action == 0 and next.payload.character_motion.clock == clock;
 }
 fn afterLabForce(clock: u32) ?usize {
     const caster = labForceRequestOwner(clock) orelse return null;

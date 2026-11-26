@@ -22,6 +22,9 @@ fn isBombRoomPadmeShot(actor: usize, weapon: i32, flags: u32, source: u8, depth:
 }
 pub fn canReplayAfterTick(level: i32, shot: *const p.SyncShot) bool {
     if (shot_source.isGeonosisBarrage(level, shot.owner, shot.weapon, shot.flags, shot.source)) return true;
+    if (level == 73 and shot.owner == -1 and shot.weapon == 7 and shot.flags == 0x20010892 and
+        shot.source == p.SYNC_SHOT_PROJECTILE_CHILD and shot.depth == 1 and shot.has_projectile_seed != 0 and
+        shot.origin[2] >= 33 and shot.origin[2] <= 42) return true;
     if (level == 74 and isBombRoomPadmeShot(tracking.actorAt(shot.owner, shot.owner_generation), shot.weapon, shot.flags, shot.source, shot.depth, shot.origin)) return true;
     return isDefenseTurretWeapon(level, shot.weapon, shot.flags, shot.source) and
         isDefenseTurret(tracking.actorAt(shot.owner, shot.owner_generation));

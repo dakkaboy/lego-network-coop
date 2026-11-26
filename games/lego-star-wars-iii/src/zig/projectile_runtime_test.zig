@@ -175,8 +175,12 @@ fn primaryCall() usize {
 fn nativeCreation(manager: usize, owner: usize, o: usize, tr: usize, w: usize, flags: u32, x: usize) usize {
     const turret = frame.level == 79 or frame.level == 24;
     const expected_weapon = if (turret or frame.level == 73) frame.shots[0].weapon else 7;
-    const expected_x: f32 = if (frame.level == 74) frame.shots[0].origin[0] else 1;
-    check(@src(), manager == manager_root and owner == actor and w != 0 and win.load(i8, w) == expected_weapon and flags == (if (turret) @as(u32, 0x800) else 0) and x == 0 and win.load(f32, o) == expected_x and win.load(f32, tr) == 1);
+    const lab_child = mode == 37;
+    const expected_x: f32 = if (frame.level == 74 or lab_child) frame.shots[0].origin[0] else 1;
+    const expected_flags: u32 = if (lab_child) 0x20010892 else if (turret) 0x800 else 0;
+    check(@src(), manager == manager_root and owner == (if (lab_child) @as(usize, 0) else actor) and
+        w != 0 and win.load(i8, w) == expected_weapon and flags == expected_flags and x == 0 and
+        win.load(f32, o) == expected_x and win.load(f32, tr) == 1);
     native_calls += 1;
     native_input[0] = win.load(u32, 0xfb4b6c);
     native_input[1] = win.load(u32, 0xe637b4);
@@ -674,6 +678,35 @@ fn extraBombRoomPadmeShot() void {
     phase = 3;
     check(@src(), lifecycle.projectiles_finish() != 0);
 }
+
+fn missingLaboratoryProjectileChild() void {
+    mode = 37;
+    setup(false);
+    session.level = 73;
+    lease.level = 73;
+    frame.level = 73;
+    frame.combat_ready = 1;
+    frame.shot_count = 1;
+    const shot = &frame.shots[0];
+    shot.* = std.mem.zeroes(p.SyncShot);
+    shot.id = 652;
+    shot.owner = -1;
+    shot.weapon = 7;
+    shot.flags = 0x20010892;
+    shot.origin = .{ 1.837059, 0.1157198, 40.32833 };
+    shot.transform = transform.*;
+    shot.source = p.SYNC_SHOT_PROJECTILE_CHILD;
+    shot.depth = 1;
+    shot.has_projectile_seed = 1;
+    frame.projectile_count = 1;
+    frame.projectiles[0].id = shot.id;
+    begin();
+    check(@src(), native_calls == 0 and lifecycle.projectiles_dispatch_pending() == 1);
+    check(@src(), lifecycle.projectiles_dispatch_complete() != 0 and native_calls == 1 and tracking.find(652) != null);
+    check(@src(), secondary_calls == 1 and native_input[4] == 1);
+    phase = 3;
+    check(@src(), lifecycle.projectiles_finish() != 0);
+}
 pub fn main() void {
     check(@src(), @sizeOf(Snapshot) == 5480 and @intFromPtr(&image) < 0x440000 and @intFromPtr(&image) + image.len > 0xfc0000);
     for ([_]usize{ 0x440000, 0x450000, 0x570000, 0x810000, 0x840000, 0x850000, 0x860000, 0x870000, 0x880000, 0xe60000, 0xe80000, 0xe90000, 0xea0000, 0xfb0000 }) |a| protect(a, 0x40);
@@ -727,5 +760,6 @@ pub fn main() void {
     replayRetainedShot(74, 7, false, false, p.SYNC_SHOT_WEAPON);
     replayRetainedShot(74, 7, false, false, p.SYNC_SHOT_ACTOR_FOLLOWUP);
     extraBombRoomPadmeShot();
+    missingLaboratoryProjectileChild();
     installedHooks();
 }
