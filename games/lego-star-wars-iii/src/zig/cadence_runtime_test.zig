@@ -2176,6 +2176,55 @@ fn droidAimOrder(level: i32) void {
     check(@src(), ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 }
 
+fn hiddenLabAimBeforeMotion() void {
+    mode = 58;
+    setup();
+    frame.level = 73;
+    win.store(u16, actor + 0xdc0, 321);
+    win.store(u16, node + 0xdc0, 321);
+    win.store(u16, other + 0xdc0, 181);
+    put(0xfb4944, other);
+    defer put(0xfb4944, 0);
+    var motion = std.mem.zeroes(p.SyncCharacterMotionState);
+    motion.clock = 1083;
+    var base = std.mem.zeroes(p.SyncAimBaseState);
+    base.clock = motion.clock;
+    base.task_class = 8710492;
+    var aim = std.mem.zeroes(p.SyncAimTaskState);
+    aim.clock = motion.clock;
+    aim.task_class = base.task_class;
+    aim.target_slot = 8;
+    aim.target_generation = 19;
+    var debug: [4]u32 = @splat(0);
+    var token = std.mem.zeroes(Token);
+    token.owner = actor;
+    token.owner_nonce = 1;
+    token.thread = win.GetCurrentThreadId();
+    token.release = frame.epoch;
+    token.epoch = frame.epoch;
+    token.sequence = frame.sequence;
+    token.frame = @intFromPtr(frame);
+    var lease: s.Lease = undefined;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    _ = gate.apply(node, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, @ptrCast(&base), &debug);
+    _ = gate.apply(node, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, @ptrCast(&aim), &debug);
+    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    _ = gate.apply(node, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+    client = true;
+    token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    _ = gate.apply(node, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+
+    token.release += 1;
+    frame.fire_task_gates[1].value = 1;
+    check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
+}
+
 fn geonosisGuestForceScan() void {
     mode = 59;
     setup();
@@ -2433,6 +2482,7 @@ fn arenaRunRandomChecks() void {
     blueShadowGuestOnlyAim(true, false, 321);
     blueShadowGuestOnlyAim(false, true, 321);
     blueShadowGuestOnlyAim(false, true, 333);
+    hiddenLabAimBeforeMotion();
     droidAimOrder(29);
     droidAimOrder(70);
 }

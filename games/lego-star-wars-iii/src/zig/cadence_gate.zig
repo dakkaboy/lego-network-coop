@@ -457,6 +457,45 @@ fn skipAbsentBlueShadowMotionDecision(op: *const s.Lease, actor: usize, state: [
     if (s.entities_resolve_reference(&identity) == actor and s.live(op)) s.fire_task_cursor += 1;
 }
 
+fn skipHiddenLabAim(op: *const s.Lease, actor: usize, state: [*]const u8) void {
+    const frame = s.journal.frame.?;
+    if (frame.level != 73 or !s.valid(actor, 0x1440) or s.read(u16, actor + 0xdc0) != 321) return;
+    const obi_wan = s.read(usize, 0xfb4944);
+    if (!s.valid(obi_wan, 0x1440) or s.read(u16, obi_wan + 0xdc0) != 181) return;
+    const initial = s.fire_task_cursor;
+    var index = initial;
+    const clock = s.read(u32, @intFromPtr(state));
+    while (index + 1 < frame.fire_task_gate_count) : (index += 2) {
+        const base = &frame.fire_task_gates[index];
+        if (base.kind != p.SYNC_ACTOR_AIM_BASE) break;
+        const aim = &frame.fire_task_gates[index + 1];
+        if (base.character != 321 or aim.kind != p.SYNC_ACTOR_AIM_TASK or aim.value != 0 or
+            base.slot != aim.slot or base.generation != aim.generation or base.payload.aim_base.clock != clock or
+            aim.payload.aim.clock != clock or base.payload.aim_base.task_class != aim.payload.aim.task_class or
+            s.early_actor_gates.isSet(index) or s.early_actor_gates.isSet(index + 1)) return;
+        if (s.entities_actor(aim.payload.aim.target_slot, aim.payload.aim.target_generation) != obi_wan or !s.live(op)) return;
+    }
+    if (index == initial or index >= frame.fire_task_gate_count) return;
+    const next = &frame.fire_task_gates[index];
+    if (next.kind != p.SYNC_ACTOR_CHARACTER_MOTION or next.payload.character_motion.clock != clock) return;
+    const owner = s.reference(next);
+    if (s.entities_resolve_reference(&owner) != actor or !s.live(op)) return;
+    var pair = initial;
+    while (pair < index) : (pair += 2) {
+        const base = &frame.fire_task_gates[pair];
+        var found = false;
+        for (frame.fire_task_gates[index + 1 .. frame.fire_task_gate_count]) |*motion| {
+            if (motion.kind != p.SYNC_ACTOR_CHARACTER_MOTION or motion.payload.character_motion.clock != clock) break;
+            if (motion.slot == base.slot and motion.generation == base.generation) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return;
+    }
+    s.fire_task_cursor = index;
+}
+
 pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, state: ?[*]u8, debug: *[4]u32) c_int {
     var op: s.Lease = undefined;
     if (!s.get(&op) or !s.active) return value;
@@ -470,7 +509,10 @@ pub fn apply(actor: usize, kind: u32, flags: u16, action: u16, value: c_int, sta
     if (s.journal.host == 0 and (kind == p.SYNC_ACTOR_CHARACTER_MOTION or kind == p.SYNC_ACTOR_RTS_COMPETITOR) and flags == 0 and action == 0) {
         if (state) |pointer| {
             skipSpellItNoOp(&op, actor, kind, pointer);
-            if (kind == p.SYNC_ACTOR_CHARACTER_MOTION) skipAbsentBlueShadowMotionDecision(&op, actor, pointer);
+            if (kind == p.SYNC_ACTOR_CHARACTER_MOTION) {
+                skipAbsentBlueShadowMotionDecision(&op, actor, pointer);
+                skipHiddenLabAim(&op, actor, pointer);
+            }
         }
     }
     if (s.journal.host != 0) {
