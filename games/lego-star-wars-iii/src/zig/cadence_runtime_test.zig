@@ -98,7 +98,7 @@ export fn entities_observed_generation(_: usize) u32 {
     return 19;
 }
 export fn entities_observed_identity(a: usize, slot: *u32, generation: *u32) c_int {
-    if (mode == 60 and a == runtime) return 0;
+    if ((mode == 60 or mode == 62) and a == runtime) return 0;
     slot.* = (if (a == actor) @as(u32, 7) else 8) - @as(u32, if (mode == 59) 7 else 0);
     generation.* = if (client and mode == 17) 20 else 19;
     return @intFromBool(a != 0);
@@ -115,7 +115,11 @@ export fn entities_bind_native_reference(_: *const p.SyncActor, _: usize) c_int 
 }
 export fn entities_actor(slot: u32, generation: u32) usize {
     if (mode == 60 and generation != 19) return 0;
+    if (mode == 62) return 0;
     return if (slot == 7) actor else other;
+}
+export fn entities_retained_actor(slot: u32, generation: u32) usize {
+    return if (mode == 62 and slot == 7 and generation == 19) actor else 0;
 }
 export fn entities_resolve_reference(state: *const p.SyncActor) usize {
     resolves += 1;
@@ -1998,7 +2002,7 @@ fn blueShadowReleasedAim() void {
     check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 }
 
-fn blueShadowRecordedAim(level: i32) void {
+fn blueShadowRecordedAim(level: i32, retained_lift_target: bool) void {
     const stale = level != 70;
     mode = if (stale) 60 else 59;
     setup();
@@ -2031,7 +2035,11 @@ fn blueShadowRecordedAim(level: i32) void {
     token.release += 1;
     const stale_target = if (stale) runtime else 0;
     put(task + 0x10, stale_target);
-    put(other + 0xbdc, if (level == 73) actor else stale_target);
+    put(other + 0xbdc, if (level == 73 or retained_lift_target) actor else stale_target);
+    if (retained_lift_target) {
+        mode = 62;
+        put(actor + 0x50, 0x8005);
+    }
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
     _ = ct.cadence_prepare_aim_task(other, task);
     check(@src(), win.load(usize, task + 0x10) == actor);
@@ -2480,9 +2488,10 @@ fn arenaRunRandomChecks() void {
     blueShadowDroidMotionOrder(337, true, false);
     blueShadowDroidMotionOrder(333, false, true);
     blueShadowReleasedAim();
-    blueShadowRecordedAim(70);
-    blueShadowRecordedAim(73);
-    blueShadowRecordedAim(74);
+    blueShadowRecordedAim(70, false);
+    blueShadowRecordedAim(73, false);
+    blueShadowRecordedAim(74, false);
+    blueShadowRecordedAim(74, true);
     blueShadowGuestOnlyAim(false, false, 321);
     blueShadowGuestOnlyAim(true, false, 321);
     blueShadowGuestOnlyAim(false, true, 321);

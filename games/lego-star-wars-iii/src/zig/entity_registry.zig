@@ -141,6 +141,15 @@ pub export fn entities_actor(remote: u32, generation: u32) usize {
     if (s.lan_is_host() != 0 and s.local[index].key.generation != generation) return 0;
     return actor;
 }
+pub export fn entities_retained_actor(remote: u32, generation: u32) usize {
+    if (remote >= p.SYNC_MAX_ACTORS or generation == 0 or s.lan_is_host() != 0) return 0;
+    const binding = &s.known[remote];
+    const slot = binding.local_slot;
+    if (binding.remote_generation != generation or slot < 0 or slot >= s.game_actor_count()) return 0;
+    const actor = s.address(@intCast(slot));
+    return if (entities_allocation_retained(actor, binding.local_generation) != 0) actor else 0;
+}
+
 pub export fn entities_allocation_retained(actor: usize, generation: u32) c_int {
     if (generation == 0 or s.nativePool() != s.pool) return 0;
     const raw = s.rawSlot(actor);

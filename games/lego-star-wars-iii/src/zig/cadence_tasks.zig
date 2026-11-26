@@ -51,7 +51,16 @@ fn staleBlueShadowAimTarget(op: *const s.Lease, actor: usize, input: *p.SyncAimT
     reconciled.target_slot = aim.target_slot;
     reconciled.target_generation = aim.target_generation;
     if (!@import("cadence_context.zig").aim(aim, &reconciled)) return null;
-    const target = if (lab_exit) read(usize, actor + 0xbdc) else s.entities_actor(aim.target_slot, aim.target_generation);
+    const last_target = read(usize, actor + 0xbdc);
+    var target = last_target;
+    if (lift) {
+        target = s.entities_actor(aim.target_slot, aim.target_generation);
+        if (target == 0) {
+            // After the lift fight, a native aim target can leave the active party while its allocation is retained.
+            target = s.entities_retained_actor(aim.target_slot, aim.target_generation);
+            if (target != last_target or !s.valid(target, 0x1440) or read(u32, target + 0x50) & 3 != 1) return null;
+        }
+    }
     if (!s.live(op) or !s.valid(target, 0x1440)) return null;
     const character = read(u16, target + 0xdc0);
     if (lift) {

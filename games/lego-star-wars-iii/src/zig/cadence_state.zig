@@ -74,6 +74,7 @@ pub extern fn entities_observed_generation(usize) u32;
 pub extern fn entities_allocation_retained(usize, u32) c_int;
 pub extern fn entities_bind_native_reference(*const p.SyncActor, usize) c_int;
 pub extern fn entities_actor(u32, u32) usize;
+pub extern fn entities_retained_actor(u32, u32) usize;
 extern fn game_sync_native_fault(c_int) void;
 pub fn live(op: *const Lease) bool {
     return binding.live(op) and journal.frame != null and @intFromPtr(journal.frame.?) == op.cohort.frame;
