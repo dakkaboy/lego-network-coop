@@ -20,6 +20,10 @@ fn vindiHiddenMotionAction(action: u32) bool {
     return action == 0xffff or action == 29 or action == 92;
 }
 fn blueShadowDroidMotion(level: i32, host: *const p.SyncModelInput, local: *const p.SyncModelInput) bool {
+    if (level == 70) {
+        // The swamp producer has already replayed the native stationary branch.
+        return host.character == 321 and local.character == 321 and host.context.action == 0xffff and local.context.action == 22;
+    }
     if (level != 71 and level != 73 and level != 74) return false;
     if (host.character != local.character or (host.character != 321 and !(level == 73 and host.character == 333))) return false;
     const a = host.context.action;
