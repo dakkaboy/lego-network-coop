@@ -1475,23 +1475,26 @@ fn forceReleaseCountdown(level: i32) void {
     if (level == 71) {
         const apply = gate.apply;
         var motion = std.mem.zeroes(p.SyncCharacterMotionState);
-        motion.clock = 28720;
+        motion.clock = 45139;
         put(0xfb4b6c, motion.clock);
-        win.store(u16, other + 0xdc0, 321);
-        client = false;
-        token.release += 1;
-        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
-        _ = apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
-        check(@src(), expired(actor, 0x100) == 0);
-        _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
-        check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+        for ([_]u16{ 321, 333 }) |character| {
+            win.store(u16, actor + 0xdc0, character);
+            win.store(u16, other + 0xdc0, character);
+            client = false;
+            token.release += 1;
+            check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+            _ = apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+            check(@src(), expired(actor, 0x100) == 0);
+            _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+            check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
-        client = true;
-        token.release += 1;
-        check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-        _ = apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
-        _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
-        check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+            client = true;
+            token.release += 1;
+            check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+            _ = apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+            _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+            check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+        }
     }
     if (level != 74 and level != 73 and level != 71) return;
     if (level == 73) win.store(u16, other + 0xdc0, 333);

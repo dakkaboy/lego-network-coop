@@ -468,9 +468,10 @@ fn skipAbsentBlueShadowMotionDecision(op: *const s.Lease, actor: usize, state: [
     if (previous.slot != support.slot or previous.generation != support.generation or
         previous.value != 0 or next.kind != p.SYNC_ACTOR_CHARACTER_MOTION or next.payload.character_motion.clock != clock) return;
     if (frame.level == 71) {
-        if (support.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or support.flags != 3 or support.value != 0 or
+        if (support.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or support.flags != 3 or support.action != 0 or support.value != 0 or
             previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or previous.payload.character_motion.clock != clock or
-            previous.character != 321 or support.character != 321 or next.character != 321 or next.slot == support.slot) return;
+            (support.character != 321 and support.character != 333) or previous.character != support.character or
+            next.character != support.character or next.slot == support.slot) return;
     } else if (support.kind != p.SYNC_FIRE_ATTACK_SUPPORT or support.value != 3) {
         return;
     } else if (frame.level == 73) {
