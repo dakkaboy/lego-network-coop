@@ -2256,25 +2256,31 @@ fn droidAimOrder(level: i32) void {
     token.frame = @intFromPtr(frame);
     var lease: s.Lease = undefined;
     var debug: [4]u32 = @splat(0);
+    var corridor_base = std.mem.zeroes(p.SyncAimBaseState);
+    var corridor_task = std.mem.zeroes(p.SyncAimTaskState);
+    corridor_base.clock = 1837;
+    corridor_task.clock = 1837;
+    const base_state: ?[*]u8 = if (level == 71) @ptrCast(&corridor_base) else null;
+    const task_state: ?[*]u8 = if (level == 71) @ptrCast(&corridor_task) else null;
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
-    _ = gate.apply(actor, p.SYNC_ACTOR_AIM_BASE, 0, 0, 3, null, &debug);
-    _ = gate.apply(actor, p.SYNC_ACTOR_AIM_TASK, 0, 0, 4, null, &debug);
-    _ = gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 5, null, &debug);
-    _ = gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 6, null, &debug);
+    _ = gate.apply(actor, p.SYNC_ACTOR_AIM_BASE, 0, 0, 3, base_state, &debug);
+    _ = gate.apply(actor, p.SYNC_ACTOR_AIM_TASK, 0, 0, 4, task_state, &debug);
+    _ = gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 5, base_state, &debug);
+    _ = gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 6, task_state, &debug);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
     client = true;
     token.release += 1;
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, null, &debug) == 5);
-    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, null, &debug) == 6 and s.fire_task_cursor == 0);
-    check(@src(), gate.apply(actor, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, null, &debug) == 3);
-    check(@src(), gate.apply(actor, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, null, &debug) == 4 and s.fire_task_cursor == 4);
+    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, base_state, &debug) == 5);
+    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, task_state, &debug) == 6 and s.fire_task_cursor == 0);
+    check(@src(), gate.apply(actor, p.SYNC_ACTOR_AIM_BASE, 0, 0, 0, base_state, &debug) == 3);
+    check(@src(), gate.apply(actor, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, task_state, &debug) == 4 and s.fire_task_cursor == 4);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 
     token.release += 1;
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
-    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, null, &debug) == 0 and fault == 14);
+    check(@src(), gate.apply(other, p.SYNC_ACTOR_AIM_TASK, 0, 0, 0, task_state, &debug) == 0 and fault == 14);
     check(@src(), ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 
     if (level != 70) return;
@@ -2620,4 +2626,5 @@ fn arenaRunRandomChecks() void {
     hiddenLabAimBeforeMotion(true);
     droidAimOrder(29);
     droidAimOrder(70);
+    droidAimOrder(71);
 }

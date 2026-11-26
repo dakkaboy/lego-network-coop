@@ -108,7 +108,7 @@ pub export fn request_mode_source_checkpoint(saved: [*]u32, fx: [*]const u8) voi
         var replay = state.journal;
         const frame = replay.frame.?;
         if (entry) |head| {
-            if ((frame.level == 29 or frame.level == 70) and resolved != actor and combatDroid(frame.level, local.character) and
+            if ((frame.level == 29 or frame.level == 70 or frame.level == 71) and resolved != actor and combatDroid(frame.level, local.character) and
                 combatDroid(frame.level, head.character) and head.native_clock == local.native_clock)
             {
                 var i = replay.cursor + 1;
