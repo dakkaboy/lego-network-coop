@@ -5,6 +5,58 @@ const read = s.read;
 extern fn entities_allocation_live(usize, u32) c_int;
 pub export var clonewars_script_attack_target_debug: [4]u32 = @splat(0);
 pub export var clonewars_script_assigned_target_debug: [4]u32 = @splat(0);
+pub extern fn swamp_script_fallback_thunk() void;
+export const swamp_script_cache_continue: usize = 0x899b00;
+export const swamp_script_fallback_continue: usize = 0x899b02;
+
+pub export fn swamp_script_fallback(actor: usize) c_int {
+    const saved = s.win.GetLastError();
+    defer s.win.SetLastError(saved);
+    var op: s.Lease = undefined;
+    if (!s.ready(&op) or s.journal.host != 0 or !s.valid(actor, 0x1440)) return 0;
+    const frame = s.journal.frame.?;
+    const cursor = s.fire_task_cursor;
+    if (frame.level != 70 or cursor >= frame.fire_task_gate_count) return 0;
+    const next = &frame.fire_task_gates[cursor];
+    if (next.kind != p.SYNC_ACTOR_PRIMARY_PERCEPTION or next.flags != p.SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET or
+        next.payload.perception.clock != read(u32, 0xfb4b6c)) return 0;
+    const identity = s.reference(next);
+    return @intFromBool(s.entities_resolve_reference(&identity) == actor and s.live(&op));
+}
+
+comptime {
+    asm (
+        \\.text
+        \\.globl _swamp_script_fallback_thunk
+        \\_swamp_script_fallback_thunk:
+        \\    pushfl
+        \\    pushal
+        \\    movl %esp,%edx
+        \\    subl $544,%esp
+        \\    andl $-16,%esp
+        \\    movl %edx,512(%esp)
+        \\    fxsave (%esp)
+        \\    fninit
+        \\    movl $0x1f80,516(%esp)
+        \\    ldmxcsr 516(%esp)
+        \\    subl $12,%esp
+        \\    pushl 44(%edx)
+        \\    cld
+        \\    call _swamp_script_fallback
+        \\    addl $16,%esp
+        \\    fxrstor (%esp)
+        \\    movl 512(%esp),%esp
+        \\    testl %eax,%eax
+        \\    jnz 1f
+        \\    popal
+        \\    popfl
+        \\    cmpl $0,0xb8(%esi)
+        \\    jmp *_swamp_script_cache_continue
+        \\1:  popal
+        \\    popfl
+        \\    jmp *_swamp_script_fallback_continue
+    );
+}
 
 fn targetLive(target: usize) bool {
     return s.valid(target, 0x1440) and read(u32, target + 0x50) & 3 == 3 and read(u8, target + 0x54) == 0;

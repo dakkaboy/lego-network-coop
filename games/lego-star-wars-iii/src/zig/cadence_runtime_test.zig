@@ -429,7 +429,7 @@ export fn projectiles_observe_live(object: usize, out: *ProjectileIdentity) c_in
 }
 fn installedHooks() void {
     const patches = @import("cadence_install.zig").patches();
-    check(@src(), patches.len == 65);
+    check(@src(), patches.len == 66);
     for (patches) |patch| {
         check(@src(), (patch.address & 0xffff) + patch.expected.len <= 0x10000);
         protect(patch.address & ~@as(usize, 0xffff), 0x10000, 0x40);
@@ -1977,12 +1977,15 @@ fn blueShadowNativeOpponent(assigned: bool) void {
     client = true;
     token.release += 1;
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), cp.swamp_script_fallback(actor) == @intFromBool(!assigned));
+    check(@src(), cp.swamp_script_fallback(other) == 0 and s.fire_task_cursor == 0);
     check(@src(), select(actor, 0) == other and select(actor, other) == 0);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 
     token.release += 1;
     win.store(u32, 0xfb4b6c, 103);
     check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    check(@src(), cp.swamp_script_fallback(actor) == 0);
     check(@src(), select(actor, 0) == 0 and fault == 14);
     check(@src(), ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 

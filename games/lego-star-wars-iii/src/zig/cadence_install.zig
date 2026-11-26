@@ -78,7 +78,7 @@ pub export var rider_fire_hidden_resume: usize = 0x4397ef;
 extern fn rider_fire_visibility_thunk() void;
 extern fn arena_run_random_thunk() void;
 extern fn zillo_support_throw_thunk() void;
-pub fn patches() [65]hooks.Patch {
+pub fn patches() [66]hooks.Patch {
     return [_]hooks.Patch{
         .{ .address = 0x99a39b, .expected = "\x33\x8a\x68\x02\x00\x00", .target = @intFromPtr(&@import("barc_suspension.zig").barc_suspension_thunk) },
         .{ .address = 0x9977c9, .expected = "\xe8\xc2\x4a\xff\xff", .target = @intFromPtr(&@import("barc_alignment.zig").barc_alignment_thunk), .opcode = 0xe8 },
@@ -130,6 +130,7 @@ pub fn patches() [65]hooks.Patch {
         .{ .address = 0x4518ba, .expected = "\xe8\x21\x68\x3a\x00", .target = @intFromPtr(&@import("force_query_observe.zig").force_query_observe_thunk), .opcode = 0xe8 },
         .{ .address = 0x9ddc19, .expected = "\x8b\x86\x64\x01\x00\x00", .target = @intFromPtr(&primary_perception_thunk) },
         .{ .address = 0x899b48, .expected = "\x89\x86\xb8\x00\x00\x00\x85\xc0", .target = @intFromPtr(&script_attack_target_thunk) },
+        .{ .address = 0x899af9, .expected = "\x83\xbe\xb8\x00\x00\x00\x00", .target = @intFromPtr(&@import("cadence_perception.zig").swamp_script_fallback_thunk) },
         .{ .address = 0x9dde18, .expected = "\x8b\x86\x14\x0e\x00\x00", .target = @intFromPtr(&script_assigned_target_thunk) },
         .{ .address = 0x899ed0, .expected = "\xd9\x44\x24\x14\x8b\x44\x24\x0c", .target = @intFromPtr(&aim_base_input_thunk) },
         .{ .address = 0x963ca5, .expected = "\x80\x78\x42\x00\x75\x09", .target = @intFromPtr(&script_shoot_visibility_thunk) },
