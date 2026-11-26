@@ -295,5 +295,16 @@ comptime {
         \\1:
         \\    popfl
         \\    jmp *_background_device_skip
+        \\.globl _transition_effect_world_guard
+        \\_transition_effect_world_guard:
+        \\    testl %esi,%esi
+        \\    jz 2f
+        \\    jmp *_transition_effect_world
+        \\2:
+        \\    cmpb $0,0x3c(%ebp)
+        \\    jne 3f
+        \\    jmp *_transition_effect_skip
+        \\3:
+        \\    jmp *_transition_effect_fallback
     );
 }

@@ -211,11 +211,13 @@ pub fn main() void {
     call(0x732bd9, 0x731d00);
     seed(0x7c7d7c, "\x80\x78\x42\x00\x74\x67");
     seed(0x756080, "\x8b\x4c\x24\x04\xa1\x14\x0b\xfb\x00");
+    seed(0x8a1a0c, "\x80\x7d\x3c\x00\x74\x04\x85\xf6\x74\x0a");
     call(0x781659, 0x77afa0);
     check(@src(), install.camera_install_qualified_main() == 1 and s.main_install_state == 1 and calls[2] == 1 and calls[3] == 1 and calls[4] == 1 and s.personal_hooks_ready and s.clonewars_camera_native_order_installed == 1);
     check(@src(), install.camera_install_qualified_main() == 1 and calls[2] == 1);
     for (s.tables) |table| check(@src(), s.load(usize, table + 8) == @intFromPtr(&@import("camera_layout.zig").update));
     check(@src(), s.load(u8, 0x7815f0) == 0xe9 and s.load(u8, 0x756080) == 0xe9 and s.clonewars_saber_host_repair[1] == 1);
+    check(@src(), s.load(u8, 0x8a1a0c) == 0xe9);
     current = allocate(0x2000);
     root = allocate(0x2000);
     box = allocate(0x1000);
