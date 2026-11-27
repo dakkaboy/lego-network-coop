@@ -93,6 +93,9 @@ pub export fn reaction_apply_choice(actor: usize, output: *u32) void {
             // The same hit can select the same clip from either idle or walk.
             if ((hidden_enemy_melee or ambush_projectile) and
                 ((action == -1 and e.old_action == 1) or (action == 1 and e.old_action == -1))) break :matched e.old_action;
+            if (level == 73 and caller == 0x81f27f and source != 0 and read(u16, actor + 0xdc0) == 184 and
+                action == 11 and e.old_action == -1 and e.kind == p.SYNC_REACTION_CLIP and
+                e.payload.clip.selection.clip == 73 and local_clip == 73) break :matched e.old_action;
             if (level == 73 and s.attacker == 0 and source == 0 and read(u16, actor + 0xdc0) == 201 and
                 action == -1 and e.old_action == 92 and e.kind == p.SYNC_REACTION_CLIP and
                 ((e.payload.clip.selection.clip == 973 and local_clip == 975) or

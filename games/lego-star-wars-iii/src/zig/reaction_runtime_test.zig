@@ -453,19 +453,22 @@ fn unchangedNativeChoice() void {
     }
 }
 fn idleWalkReactionClip() void {
-    for (0..5) |variant| {
+    for (0..7) |variant| {
         mode = 60 + @as(u32, @intCast(variant));
         setup();
         clearDebug();
         const projectile = variant >= 3;
+        const blue_shadow = variant >= 5;
         source = if (projectile) 3063 else 0;
-        frame.level = if (projectile) 6 else if (variant == 2) 63 else 64;
+        frame.level = if (blue_shadow) 73 else if (projectile) 6 else if (variant == 2) 63 else 64;
         damage_caller = if (projectile) 0x81f27f else if (variant == 1) 0 else 0x871848;
+        if (blue_shadow) win.store(u16, actor + 0xdc0, 184);
         win.store(i16, actor + 0x2f4, -1);
         var token = tokenFor();
         var lease: s.Lease = undefined;
         begin(&token, &lease, 1);
-        reaction_fixture_clip = 522;
+        const host_clip: u32 = if (blue_shadow) 73 else 522;
+        reaction_fixture_clip = host_clip;
         invoke_choice();
         check(@src(), frame.reaction_count == 1 and r.reaction_finish() != 0);
         check(@src(), r.reaction_abort_frame(&lease) != 0);
@@ -474,13 +477,14 @@ fn idleWalkReactionClip() void {
         token.sequence = frame.sequence;
         token.release += 1;
         begin(&token, &lease, 0);
-        win.store(i16, actor + 0x2f4, 1);
-        const selected: u32 = if (variant == 3) 522 else 73;
+        const guest_action: i16 = if (blue_shadow) 11 else 1;
+        win.store(i16, actor + 0x2f4, guest_action);
+        const selected: u32 = if (variant == 3 or variant == 6) 522 else 73;
         reaction_fixture_clip = selected;
         invoke_choice();
-        check(@src(), win.load(i16, actor + 0x2f4) == 1);
-        if (variant == 0 or variant == 3) {
-            check(@src(), reaction_fixture_clip == 522 and fault == 0 and r.reaction_finish() != 0);
+        check(@src(), win.load(i16, actor + 0x2f4) == guest_action);
+        if (variant == 0 or variant == 3 or variant == 5) {
+            check(@src(), reaction_fixture_clip == host_clip and fault == 0 and r.reaction_finish() != 0);
         } else {
             check(@src(), reaction_fixture_clip == selected and fault == 17 and r.reaction_finish() == 0);
         }
