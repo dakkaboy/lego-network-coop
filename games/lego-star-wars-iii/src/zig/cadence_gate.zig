@@ -492,7 +492,16 @@ fn skipAbsentBlueShadowMotionDecision(op: *const s.Lease, actor: usize, state: [
             previous.character == 321 and previous.payload.character_motion.clock == clock and next.slot != support.slot;
         if ((!vindi and !droid) or (next.character != 321 and next.character != 333)) return;
     } else {
-        if (!padmeSupportNoOp(previous, support, clock) or next.character != 199) return;
+        if (!padmeSupportNoOp(previous, support, clock)) return;
+        if (next.character != 199) {
+            if (next.character != 184 or cursor + 3 >= frame.fire_task_gate_count) return;
+            const area = &frame.fire_task_gates[cursor + 2];
+            const mode = &frame.fire_task_gates[cursor + 3];
+            for ([_]*const p.SyncFireTaskGate{ area, mode }, [_]u16{ 4, 5 }) |entry, stage| {
+                if (entry.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.slot != next.slot or entry.generation != next.generation or
+                    entry.flags != stage or entry.action != 0 or entry.value != 0 or entry.payload.state.repeat != clock) return;
+            }
+        }
     }
     const identity = s.reference(next);
     if (s.entities_resolve_reference(&identity) == actor and s.live(op)) s.fire_task_cursor += 1;
