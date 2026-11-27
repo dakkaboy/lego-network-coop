@@ -498,12 +498,13 @@ fn skipAbsentBlueShadowMotionDecision(op: *const s.Lease, actor: usize, state: [
     } else {
         if (!padmeSupportNoOp(previous, support, clock)) return;
         if (next.character != 199) {
-            if (next.character != 184 or cursor + 3 >= frame.fire_task_gate_count) return;
+            if ((next.character != 184 and next.character != 181) or cursor + 3 >= frame.fire_task_gate_count) return;
             const area = &frame.fire_task_gates[cursor + 2];
             const mode = &frame.fire_task_gates[cursor + 3];
+            const admitted: c_int = @intFromBool(next.character == 181);
             for ([_]*const p.SyncFireTaskGate{ area, mode }, [_]u16{ 4, 5 }) |entry, stage| {
                 if (entry.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.slot != next.slot or entry.generation != next.generation or
-                    entry.flags != stage or entry.action != 0 or entry.value != 0 or entry.payload.state.repeat != clock) return;
+                    entry.flags != stage or entry.action != 0 or entry.value != admitted or entry.payload.state.repeat != clock) return;
             }
         }
     }
