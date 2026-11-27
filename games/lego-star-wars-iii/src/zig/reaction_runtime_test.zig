@@ -40,6 +40,7 @@ export var reaction_fixture_clip: u32 = 0;
 export var reaction_fixture_draw: u32 = 0;
 extern fn invoke_choice() void;
 extern fn invoke_draw() void;
+extern fn invoke_item_contact(native_allowed: c_int) c_int;
 comptime {
     asm (
         \\.text
@@ -67,6 +68,17 @@ comptime {
         \\movl %eax,_reaction_fixture_draw
         \\addl $84,%esp
         \\popl %esi
+        \\ret
+        \\_invoke_item_contact:
+        \\pushl %edi
+        \\movl _reaction_fixture_actor,%edi
+        \\xorl %ecx,%ecx
+        \\cmpl $0,8(%esp)
+        \\setz %cl
+        \\movl $1,%edx
+        \\movl $0x87fffd,%eax
+        \\call *%eax
+        \\popl %edi
         \\ret
     );
 }
@@ -356,6 +368,8 @@ fn installedHooks() void {
     for (sites, sizes, prefixes) |site, size, prefix| @memcpy(bytes(site, size), prefix[0..size]);
     win.store(u8, 0x96a1c4, 0xc3);
     win.store(u8, 0x96b2e9, 0xc3);
+    @memcpy(bytes(0x880005, 6), "\xb8\x01\x00\x00\x00\xc3");
+    @memcpy(bytes(0x88017c, 3), "\x31\xc0\xc3");
     for (sites, prefixes) |site, prefix| {
         win.store(u8, site, 0xcc);
         check(@src(), r.reaction_install() == 0);
@@ -667,7 +681,7 @@ fn blueShadowRexContact() void {
         var lease: s.Lease = undefined;
         begin(&token, &lease, 1);
         check(@src(), item.reaction_item_range_hook(actor, target, 1.5) == 1);
-        check(@src(), item.reaction_item_contact(actor, target, host_allowed) == host_allowed);
+        check(@src(), invoke_item_contact(host_allowed) == host_allowed);
         check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
 
         client = true;
@@ -677,7 +691,7 @@ fn blueShadowRexContact() void {
         begin(&token, &lease, 0);
         win.store(f32, target + 0x24, 15);
         check(@src(), item.reaction_item_range_hook(actor, target, 1.5) == host_allowed);
-        if (host_allowed != 0) check(@src(), item.reaction_item_contact(actor, target, 0) == 1);
+        if (host_allowed != 0) check(@src(), invoke_item_contact(0) == 1);
         check(@src(), fault == 0 and r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
     }
 }
