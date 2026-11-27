@@ -77,8 +77,10 @@ pub export fn force_request_first_target(actor: usize, target: usize) usize {
     defer s.win.SetLastError(saved);
     var lease: s.Lease = undefined;
     if (!s.ready(&lease)) return target;
-    if (s.journal.frame.?.level == 73 and s.valid(actor, 0x1440) and
-        s.read(u16, actor + 0xdc0) == 184 and s.read(u32, actor + 0x50) & 0x200 != 0)
+    const level = s.journal.frame.?.level;
+    if (s.valid(actor, 0x1440) and s.read(u32, actor + 0x50) & 0x200 != 0 and
+        ((level == 73 and s.read(u16, actor + 0xdc0) == 184) or
+            (level == 71 and s.read(u16, actor + 0xdc0) == 181 and s.read(f32, actor + 0x28) > 5.5)))
     {
         const primary = @import("force_primary_target.zig");
         const clock = s.read(u32, 0xfb4b6c);
