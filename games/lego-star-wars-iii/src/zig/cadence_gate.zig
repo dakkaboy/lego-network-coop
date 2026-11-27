@@ -486,8 +486,11 @@ fn skipAbsentBlueShadowMotionDecision(op: *const s.Lease, actor: usize, state: [
     } else if (support.kind != p.SYNC_FIRE_ATTACK_SUPPORT or support.value != 3) {
         return;
     } else if (frame.level == 73) {
-        if (support.character != 201 or previous.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or previous.flags != 5 or
-            previous.payload.state.repeat != clock or (next.character != 321 and next.character != 333)) return;
+        const vindi = support.character == 201 and previous.kind == p.SYNC_ACTOR_SPELLIT_ADMISSION and previous.flags == 5 and
+            previous.payload.state.repeat == clock;
+        const droid = support.character == 321 and previous.kind == p.SYNC_ACTOR_CHARACTER_MOTION and
+            previous.character == 321 and previous.payload.character_motion.clock == clock and next.slot != support.slot;
+        if ((!vindi and !droid) or (next.character != 321 and next.character != 333)) return;
     } else {
         if (!padmeSupportNoOp(previous, support, clock) or next.character != 199) return;
     }

@@ -1373,6 +1373,22 @@ fn blueShadowContactDecisions() void {
     check(@src(), cb.cadence_apply_attack_support(other, &support_value) == 1 and s.fire_task_cursor == 9);
     _ = apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
+
+    client = false;
+    win.store(i16, actor + 0xdc0, 333);
+    guest_token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&guest_token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 1) != 0);
+    _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    _ = apply(other, p.SYNC_FIRE_ATTACK_SUPPORT, 0, 0, 3, null, &debug);
+    _ = apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
+
+    client = true;
+    guest_token.release += 1;
+    check(@src(), ci.cadence_bind_cohort(&guest_token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
+    _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    _ = apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
 export fn combat_damage_native_caller() u32 {
