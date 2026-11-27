@@ -222,7 +222,7 @@ fn run() Snapshot {
             24...28, 33...35, 39...49 => 73,
             29, 32, 37, 50 => 71,
             31 => 74,
-            36, 38 => 70,
+            36, 38, 51 => 70,
             else => 64,
         };
         put(actor + 0x4c, 0x400);
@@ -285,6 +285,7 @@ fn run() Snapshot {
             43 => 11,
             44 => 114,
             45 => 20,
+            51 => 92,
             36, 38 => 22,
             else => 0x29,
         });
@@ -528,6 +529,10 @@ pub fn main() void {
         check(@src(), swamp_droid.finish != 0 and swamp_droid.fault == 0);
         check(@src(), win.load(u16, actor + 0x2f4) == 22 and win.load(u32, actor + 0x4c) == 0x400);
     }
+    mode = 51;
+    const swamp_landing = run();
+    check(@src(), swamp_landing.finish != 0 and swamp_landing.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 92);
     mode = 37;
     const corridor_droid = run();
     check(@src(), corridor_droid.finish != 0 and corridor_droid.fault == 0);

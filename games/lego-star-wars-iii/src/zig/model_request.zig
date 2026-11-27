@@ -23,7 +23,8 @@ fn blueShadowDroidMotion(level: i32, host: *const p.SyncModelInput, local: *cons
     if (level == 70) {
         // The swamp producer has already replayed the native stationary branch.
         return host.character == 321 and local.character == 321 and
-            (host.context.action == 0xffff or host.context.action == 10) and local.context.action == 22;
+            (((host.context.action == 0xffff or host.context.action == 10) and local.context.action == 22) or
+                (host.input_mode == 1 and local.input_mode == 1 and host.context.action == 0xffff and local.context.action == 92));
     }
     if (level != 71 and level != 73 and level != 74) return false;
     if (level == 73 and host.character == 337 and local.character == 337) return host.context.action == 0xffff and local.context.action == 10;
