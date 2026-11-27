@@ -1,6 +1,45 @@
 comptime {
     asm (
         \\.text
+        \\.globl _reaction_item_contact_thunk
+        \\_reaction_item_contact_thunk:
+        \\    pushfl
+        \\    pushal
+        \\    movl %esp,%eax
+        \\    subl $544,%esp
+        \\    andl $-16,%esp
+        \\    movl %eax,512(%esp)
+        \\    fxsave (%esp)
+        \\    fninit
+        \\    movl $0x1f80,516(%esp)
+        \\    ldmxcsr 516(%esp)
+        \\    cld
+        \\    movl 0(%eax),%ecx
+        \\    movl 20(%eax),%edx
+        \\    testl 24(%eax),%edx
+        \\    setz %dl
+        \\    movzbl %dl,%edx
+        \\    subl $4,%esp
+        \\    pushl %edx
+        \\    pushl 0x2bc(%ecx)
+        \\    pushl %ecx
+        \\    call _reaction_item_contact
+        \\    addl $16,%esp
+        \\    fxrstor (%esp)
+        \\    movl 512(%esp),%esp
+        \\    testl %eax,%eax
+        \\    jz 1f
+        \\    popal
+        \\    popfl
+        \\    testl %edx,%ecx
+        \\    jmp *_reaction_item_contact_apply
+        \\1:  popal
+        \\    popfl
+        \\    testl %edx,%ecx
+        \\    jmp *_reaction_item_contact_skip
+    );
+    asm (
+        \\.text
         \\.globl _reaction_choice_thunk
         \\_reaction_choice_thunk:
         \\pushfl

@@ -349,10 +349,10 @@ fn protect(address: usize, protection: u32) void {
     check(@src(), win.VirtualProtect(address, 0x10000, protection, &old) != 0);
 }
 fn installedHooks() void {
-    const sites = [_]usize{ 0x96a1bd, 0x96b2e1, 0x410cf3, 0x87ffb7, 0x89e430, 0x96b95e, 0x96ad96, 0x87acd0 };
-    const sizes = [_]usize{ 7, 8, 5, 5, 7, 7, 10, 5 };
-    const prefixes = [_][]const u8{ "\x8b\x7c\x24\x50\x83\xff\xff", "\x89\x44\x24\x44\xdb\x44\x24\x44", "\xe8\xc8\x97\x55\x00", "\xe8\xf4\x2d\xf1\xff", "\x56\x8b\x74\x24\x08\x85\xf6", "\x0f\xbe\xbe\xde\x0d\x00\x00", "\xf7\x86\x80\x0c\x00\x00\x00\x10\x00\x00", "\xe8\xeb\xf7\x0e\x00" };
-    for ([_]usize{ 0x410000, 0x870000, 0x890000, 0x960000 }) |a| protect(a, 0x40);
+    const sites = [_]usize{ 0x96a1bd, 0x96b2e1, 0x410cf3, 0x87ffb7, 0x89e430, 0x96b95e, 0x96ad96, 0x87acd0, 0x87fffd };
+    const sizes = [_]usize{ 7, 8, 5, 5, 7, 7, 10, 5, 8 };
+    const prefixes = [_][]const u8{ "\x8b\x7c\x24\x50\x83\xff\xff", "\x89\x44\x24\x44\xdb\x44\x24\x44", "\xe8\xc8\x97\x55\x00", "\xe8\xf4\x2d\xf1\xff", "\x56\x8b\x74\x24\x08\x85\xf6", "\x0f\xbe\xbe\xde\x0d\x00\x00", "\xf7\x86\x80\x0c\x00\x00\x00\x10\x00\x00", "\xe8\xeb\xf7\x0e\x00", "\x85\xd1\x0f\x85\x77\x01\x00\x00" };
+    for ([_]usize{ 0x410000, 0x870000, 0x880000, 0x890000, 0x960000 }) |a| protect(a, 0x40);
     for (sites, sizes, prefixes) |site, size, prefix| @memcpy(bytes(site, size), prefix[0..size]);
     win.store(u8, 0x96a1c4, 0xc3);
     win.store(u8, 0x96b2e9, 0xc3);
@@ -362,7 +362,7 @@ fn installedHooks() void {
         win.store(u8, site, prefix[0]);
         for (sites, sizes, prefixes) |a, size, expected| check(@src(), std.mem.eql(u8, bytes(a, size), expected[0..size]));
     }
-    for ([_]usize{ 0x410000, 0x870000, 0x890000, 0x960000 }) |a| protect(a, 0x20);
+    for ([_]usize{ 0x410000, 0x870000, 0x880000, 0x890000, 0x960000 }) |a| protect(a, 0x20);
     check(@src(), r.reaction_install() != 0 and r.reaction_install() != 0 and r.reaction_ready() != 0);
     for (sites) |a| {
         var info: win.MemoryInfo = undefined;
@@ -652,7 +652,34 @@ pub fn main() void {
     vindiLandingReactionClip();
     arenaBeforeHit();
     blueShadowLiftContact();
+    blueShadowRexContact();
     actionTraceChecks();
+}
+
+fn blueShadowRexContact() void {
+    for ([_]c_int{ 0, 1 }) |host_allowed| {
+        mode = 0;
+        setup();
+        frame.level = 71;
+        win.store(u16, actor + 0xdc0, 156);
+        win.store(u16, target + 0xdc0, 321);
+        var token = tokenFor();
+        var lease: s.Lease = undefined;
+        begin(&token, &lease, 1);
+        check(@src(), item.reaction_item_range_hook(actor, target, 1.5) == 1);
+        check(@src(), item.reaction_item_contact(actor, target, host_allowed) == host_allowed);
+        check(@src(), r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
+
+        client = true;
+        frame.sequence += 1;
+        token.sequence = frame.sequence;
+        token.release += 1;
+        begin(&token, &lease, 0);
+        win.store(f32, target + 0x24, 15);
+        check(@src(), item.reaction_item_range_hook(actor, target, 1.5) == host_allowed);
+        if (host_allowed != 0) check(@src(), item.reaction_item_contact(actor, target, 0) == 1);
+        check(@src(), fault == 0 and r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
+    }
 }
 
 fn blueShadowLiftContact() void {

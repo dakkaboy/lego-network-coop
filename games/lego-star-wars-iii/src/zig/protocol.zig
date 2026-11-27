@@ -240,7 +240,7 @@ pub const SyncItemRange = extern struct {
     heading: u16,
     reverse: u16,
     animation: i16,
-    reserved: u16,
+    contact: u16,
     actor_position: [3]f32,
     target_position: [3]f32,
     actor_radius: f32,
@@ -955,7 +955,7 @@ pub const SYNC_PROFILE_BYTES = @as(c_int, 0xb5c0);
 
 pub const SYNC_LAYOUT_VERSION = @as(c_int, 55);
 
-pub const SYNC_WIRE_VERSION = @as(c_int, 232);
+pub const SYNC_WIRE_VERSION = @as(c_int, 233);
 
 pub const SYNC_NATIVE_SPAN_PLAN_MASK = @as(c_uint, 7);
 

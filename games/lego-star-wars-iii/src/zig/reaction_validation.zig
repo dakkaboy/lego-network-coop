@@ -28,7 +28,8 @@ pub fn valid(entry: ?*const p.SyncReactionChoice) bool {
     if (e.slot >= p.SYNC_MAX_ACTORS or e.generation == 0 or !abi.validLevel(e.character) or e.old_action < -32768 or e.old_action > 32767 or !v.finite(e.origin)) return false;
     if (e.kind == p.SYNC_REACTION_ITEM_RANGE) {
         const r = &e.payload.range;
-        return r.target_slot < p.SYNC_MAX_ACTORS and r.target_slot != e.slot and r.target_generation != 0 and r.reverse <= 1 and r.reserved == 0 and v.finite(r.*);
+        return r.target_slot < p.SYNC_MAX_ACTORS and r.target_slot != e.slot and r.target_generation != 0 and r.reverse <= 1 and
+            (r.contact == 0 or (e.character == 156 and r.contact <= 2)) and v.finite(r.*);
     }
     const clip = &e.payload.clip;
     if (e.kind == p.SYNC_REACTION_DAMAGE_DRAW) return clip.source_id != 0 and clip.arena_attacker_slot == 0 and clip.arena_attacker_generation == 0 and clip.selection.damage_draw <= 65535 and v.zero(&clip.hit);

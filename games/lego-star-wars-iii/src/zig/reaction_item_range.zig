@@ -17,6 +17,10 @@ const Actor = extern struct {
     radius: f32,
 };
 const native: *const fn (usize, usize, f32) callconv(.c) c_int = @ptrFromInt(0x792db0);
+fn corridorContact(level: i32, actor: usize, target: usize) bool {
+    return level == 71 and s.valid(actor, 0x1440) and s.valid(target, 0x1440) and
+        read(u16, actor + 0xdc0) == 156 and read(u16, target + 0xdc0) == 321;
+}
 fn replay(range: *const p.SyncItemRange) c_int {
     var actor = std.mem.zeroes(Actor);
     var target = std.mem.zeroes(Actor);
@@ -56,6 +60,7 @@ fn apply(actor: usize, target: usize, reach: f32) c_int {
             r.actor_radius = read(f32, actor + 0x1088);
             r.target_radius = read(f32, target + 0x1088);
             r.reach = reach;
+            if (corridorContact(s.journal.frame.?.level, actor, target)) r.contact = 1;
         }
     }
     const entry = s.journal.peek();
@@ -68,9 +73,10 @@ fn apply(actor: usize, target: usize, reach: f32) c_int {
         } else if (entry) |e| {
             const a = &local.payload.range;
             const b = &e.payload.range;
-            if (e.kind == p.SYNC_REACTION_ITEM_RANGE and validation.valid(e) and e.slot == local.slot and e.generation == local.generation and e.character == local.character and e.old_action == local.old_action and b.animation == a.animation and b.target_slot == a.target_slot and b.target_generation == a.target_generation) {
+            if (e.kind == p.SYNC_REACTION_ITEM_RANGE and validation.valid(e) and e.slot == local.slot and e.generation == local.generation and e.character == local.character and e.old_action == local.old_action and b.animation == a.animation and b.target_slot == a.target_slot and b.target_generation == a.target_generation and (a.contact == 0) == (b.contact == 0)) {
                 s.journal.cursor += 1;
                 s.clonewars_item_range_debug[1] +%= 1;
+                if (b.contact != 0) return @intFromBool(b.contact == 2);
                 if (equal(a, b)) return native(actor, target, reach);
                 s.clonewars_item_range_debug[2] +%= 1;
                 s.clonewars_item_range_debug[4..7].* = .{ s.journal.frame.?.sequence, e.slot, b.target_slot };
@@ -104,6 +110,33 @@ pub export fn reaction_item_range_hook(actor: usize, target: usize, reach: f32) 
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
     return apply(actor, target, reach);
+}
+pub export fn reaction_item_contact(actor: usize, target: usize, native_allowed: c_int) c_int {
+    const saved = s.win.GetLastError();
+    defer s.win.SetLastError(saved);
+    var op: s.Lease = undefined;
+    if (!s.get(&op) or !s.active) return native_allowed;
+    const frame = s.journal.frame.?;
+    if (!corridorContact(frame.level, actor, target)) return native_allowed;
+    if (s.journal.failed != 0) return 0;
+    const host = s.journal.host != 0;
+    const index = if (host) frame.reaction_count else s.journal.cursor;
+    if (index != 0) {
+        const entry = &frame.reactions[index - 1];
+        if (entry.kind == p.SYNC_REACTION_ITEM_RANGE and entry.payload.range.contact != 0 and
+            s.entities_resolve_reference(&s.identity(entry)) == actor and
+            s.entities_actor(entry.payload.range.target_slot, entry.payload.range.target_generation) == target and s.live(&op))
+        {
+            // Record the final decision after the native range and target-mask checks.
+            if (host) entry.payload.range.contact = if (native_allowed != 0) 2 else 1;
+            return @intFromBool(entry.payload.range.contact == 2);
+        }
+    }
+    if (s.live(&op)) {
+        s.journal.failed = 10;
+        s.failed(&op, actor, null, read(i16, actor + 0x2f4), 0, 10, std.math.maxInt(u32));
+    }
+    return 0;
 }
 comptime {
     std.debug.assert(@offsetOf(Actor, "position") == 0x24 and @offsetOf(Actor, "heading") == 0x6c and @offsetOf(Actor, "target") == 0x2bc and @offsetOf(Actor, "flags") == 0x2fc and @offsetOf(Actor, "radius") == 0x1088);

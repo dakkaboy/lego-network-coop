@@ -13,6 +13,9 @@ export const reaction_lep_contact_allowed: usize = 0x96adb3;
 extern fn reaction_arena_contact_thunk() void;
 extern fn native_action_trace_thunk() void;
 extern fn reaction_item_range_hook(usize, usize, f32) c_int;
+extern fn reaction_item_contact_thunk() void;
+export const reaction_item_contact_apply: usize = 0x880005;
+export const reaction_item_contact_skip: usize = 0x88017c;
 pub fn install() c_int {
     if (s.clonewars_reaction_installed == 1) return 1;
     const patches = [_]hooks.Patch{
@@ -24,6 +27,7 @@ pub fn install() c_int {
         .{ .address = 0x410cf3, .expected = "\xe8\xc8\x97\x55\x00", .target = @intFromPtr(&reaction_arena_contact_thunk), .opcode = 0xe8 },
         .{ .address = 0x87acd0, .expected = "\xe8\xeb\xf7\x0e\x00", .target = @intFromPtr(&@import("reaction_arena.zig").liftContact), .opcode = 0xe8 },
         .{ .address = 0x87ffb7, .expected = "\xe8\xf4\x2d\xf1\xff", .target = @intFromPtr(&reaction_item_range_hook), .opcode = 0xe8 },
+        .{ .address = 0x87fffd, .expected = "\x85\xd1\x0f\x85\x77\x01\x00\x00", .target = @intFromPtr(&reaction_item_contact_thunk) },
     };
     const ok = hooks.apply(&patches);
     s.clonewars_reaction_installed = if (ok) 1 else -1;
