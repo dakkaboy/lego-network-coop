@@ -2463,10 +2463,15 @@ fn hiddenLabAimBeforeMotion(target_is_anakin: bool) void {
     check(@src(), fault == 14 and ci.cadence_finish() == 0 and ci.cadence_abort_frame(&lease) != 0);
 }
 
-fn geonosisGuestForceScan() void {
+fn extraGuestForceScan(level: i32) void {
     mode = 59;
     setup();
-    frame.level = 79;
+    frame.level = level;
+    if (level == 70) {
+        win.store(u16, actor + 0xdc0, 191);
+        put(0xfb4940, actor);
+    }
+    defer if (level == 70) put(0xfb4940, 0);
     var token = std.mem.zeroes(Token);
     token.owner = actor;
     token.owner_nonce = 1;
@@ -2568,7 +2573,8 @@ pub fn main() void {
     forceReleaseCountdown(71);
     forceReleaseCountdown(73);
     forceReleaseCountdown(74);
-    geonosisGuestForceScan();
+    extraGuestForceScan(79);
+    extraGuestForceScan(70);
 }
 fn arenaRunRandomAbi() void {
     const random = @import("arena_run_random.zig");

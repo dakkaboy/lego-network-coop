@@ -37,8 +37,11 @@ pub export fn cadence_force_target_visibility(candidate: usize, caster: usize, m
     const local: c_int = @intFromBool(visible != 0);
     const frame = s.journal.frame.?;
     // An extra local scan must not pick a target for a player the host did not scan.
-    if (frame.level == 79 and s.journal.host == 0 and s.journal.failed == 0 and
-        input.caster_slot < 2 and (mode == 1 or mode == 2) and !hostScannedForceCaster(frame, &input))
+    const geonosis_player = frame.level == 79 and input.caster_slot < 2 and (mode == 1 or mode == 2);
+    const swamp_ahsoka = frame.level == 70 and mode == 1 and s.read(u16, caster + 0xdc0) == 191 and
+        (caster == s.read(usize, 0xfb4940) or caster == s.read(usize, 0xfb4944));
+    if ((geonosis_player or swamp_ahsoka) and s.journal.host == 0 and s.journal.failed == 0 and
+        !hostScannedForceCaster(frame, &input))
     {
         s.clonewars_force_target_debug[2] +%= @intFromBool(local != 0);
         return 0;
