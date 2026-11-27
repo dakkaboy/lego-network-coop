@@ -467,4 +467,21 @@ pub fn main() void {
     const switch_key = support_key;
     put(model + 0x3c, second_receiver);
     check(@src(), !level.source(body, &support_key) and level.resolve(switch_key[0], switch_key[1]) == 0);
+
+    bytes(filename, "BlueShadowVirus_C_temp.led\x00");
+    bytes(body_name, "Black_Box\x00");
+    put(shape, 0xc695d4);
+    put(body, 0xc69eac);
+    put(receiver, 0xc20f64);
+    win.store(u8, body + 0x19, 0x46);
+    win.store(f32, receiver + 0x70, 0.70104);
+    win.store(f32, receiver + 0x78, 4.51104);
+    bytes(counted, &.{ 7, '#', '1', '1', '5', '2', 0 });
+    check(@src(), level.source(body, &support_key));
+    const corridor_key = support_key;
+    bytes(counted, &.{ 7, '#', '1', '1', '5', '3', 0 });
+    check(@src(), level.source(body, &support_key) and std.mem.eql(u32, &corridor_key, &support_key));
+    check(@src(), level.resolve(corridor_key[0], corridor_key[1]) == body);
+    win.store(f32, receiver + 0x78, 9.21258);
+    check(@src(), level.source(body, &support_key) and !std.mem.eql(u32, &corridor_key, &support_key));
 }

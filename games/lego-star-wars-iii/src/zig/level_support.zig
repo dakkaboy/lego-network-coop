@@ -94,6 +94,9 @@ fn key(read: *Reader, ctx: Context, body: usize, output: *Identity) bool {
     if (!read.readable(name, 1)) return false;
     const stored = win.load(u8, name);
     if (stored < 3 or !read.readable(name, stored) or win.load(u8, name + stored - 1) != 0) return false;
+    const corridor_box = kind == 0x40 and body_class == 0x869eac and shape_class == 0x8695d4 and owner_class == 0x820f64 and
+        named(read, filename, "BlueShadowVirus_C_temp.led") and named(read, win.load(usize, body + 0x1c), "Black_Box") and
+        win.load(u8, name + 1) == '#';
     var hash: Hash = .{};
     if (kind == 0x20 and !staticLevelSupport(read, &hash, body, owner, name + 1, stored - 1, filename, .{ body_class, shape_class, owner_class })) return false;
     hash.bytes("level-scene-character-support");
@@ -102,7 +105,14 @@ fn key(read: *Reader, ctx: Context, body: usize, output: *Identity) bool {
     if (!@import("support_shape.zig").geometry(read, &hash, win.load(usize, body + 0x24), shape_class)) return false;
     hash.number(owner_class);
     if (!text(read, &hash, ctx.world + 0x81) or !text(read, &hash, filename) or !text(read, &hash, win.load(usize, entry + 0x40))) return false;
-    if (kind == 0x40 and !text(read, &hash, name + 1)) return false;
+    if (corridor_box) {
+        for (2..stored - 1) |i| if (!std.ascii.isDigit(win.load(u8, name + i))) return false;
+        // The same authored box receives a different generated owner number on each peer.
+        const placement = win.load([16]f32, owner + 0x40);
+        if (!@import("validation.zig").finite(placement)) return false;
+        hash.bytes("blue-shadow-corridor-box");
+        for (placement) |value| hash.number(if (value == 0) 0 else @as(u32, @bitCast(value)));
+    } else if (kind == 0x40 and !text(read, &hash, name + 1)) return false;
     if (!text(read, &hash, win.load(usize, body + 0x1c))) return false;
     if (read.nameLength(name + 1) != @as(u32, stored) - 1) return false;
     const legacy = hash.words[0..2].*;
