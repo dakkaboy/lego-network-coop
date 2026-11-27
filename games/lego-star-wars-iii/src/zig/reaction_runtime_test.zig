@@ -488,7 +488,7 @@ fn idleWalkReactionClip() void {
     }
 }
 fn vindiLandingReactionClip() void {
-    for ([_]u16{ 201, 333 }) |character| {
+    for ([_]u16{ 201, 201, 333 }, [_]u32{ 973, 975, 973 }, [_]u32{ 975, 973, 975 }) |character, host_clip, guest_clip| {
         mode = 67;
         setup();
         clearDebug();
@@ -499,7 +499,7 @@ fn vindiLandingReactionClip() void {
         var token = tokenFor();
         var lease: s.Lease = undefined;
         begin(&token, &lease, 1);
-        reaction_fixture_clip = 973;
+        reaction_fixture_clip = host_clip;
         invoke_choice();
         check(@src(), frame.reaction_count == 1 and r.reaction_finish() != 0 and r.reaction_abort_frame(&lease) != 0);
 
@@ -509,13 +509,13 @@ fn vindiLandingReactionClip() void {
         token.release += 1;
         begin(&token, &lease, 0);
         win.store(i16, actor + 0x2f4, -1);
-        reaction_fixture_clip = 975;
+        reaction_fixture_clip = guest_clip;
         invoke_choice();
         check(@src(), win.load(i16, actor + 0x2f4) == -1);
         if (character == 201) {
-            check(@src(), reaction_fixture_clip == 973 and fault == 0 and r.reaction_finish() != 0);
+            check(@src(), reaction_fixture_clip == host_clip and fault == 0 and r.reaction_finish() != 0);
         } else {
-            check(@src(), reaction_fixture_clip == 975 and fault == 17 and r.reaction_finish() == 0);
+            check(@src(), reaction_fixture_clip == guest_clip and fault == 17 and r.reaction_finish() == 0);
         }
         check(@src(), r.reaction_abort_frame(&lease) != 0);
     }
