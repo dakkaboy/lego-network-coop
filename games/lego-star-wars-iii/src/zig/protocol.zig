@@ -863,6 +863,7 @@ pub const SYNC_ACTOR_TUBE_CONTACT: c_int = 23;
 pub const SYNC_ACTOR_MELEE_CONTACT: c_int = 24;
 pub const SYNC_ACTOR_SABER_TARGET: c_int = 26;
 pub const SYNC_ACTOR_PROJECTILE_BRANCH: c_int = 27;
+pub const SYNC_ACTOR_LAB_SABER_DAMAGE: c_int = 28;
 pub const SYNC_ACTOR_GEONOSIS_VEHICLE_DEATH: c_int = 25;
 pub const SYNC_TRANSITION_NATIVE_CYCLE: u32 = 2;
 
@@ -954,7 +955,7 @@ pub const SYNC_PROFILE_BYTES = @as(c_int, 0xb5c0);
 
 pub const SYNC_LAYOUT_VERSION = @as(c_int, 55);
 
-pub const SYNC_WIRE_VERSION = @as(c_int, 229);
+pub const SYNC_WIRE_VERSION = @as(c_int, 230);
 
 pub const SYNC_NATIVE_SPAN_PLAN_MASK = @as(c_uint, 7);
 

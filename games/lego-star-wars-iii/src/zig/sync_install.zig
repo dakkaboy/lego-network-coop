@@ -62,6 +62,7 @@ pub fn safe(_: usize, _: *const s.owner.Input, _: usize) callconv(.c) c_int {
         if (api.cadence_install() == 0) return 0;
         s.module_install_mask |= 8;
         if (api.reaction_install() == 0) return 0;
+        @import("reaction_receipt.zig").lab_saber_damage = @import("projectile_actor_branch.zig").labSaberDamage;
         s.module_install_mask |= 64;
         if (api.rts_spawn_timers_install() == 0) return 0;
         if (api.model_input_install() == 0) return 0;

@@ -1294,6 +1294,7 @@ fn hiddenEnemyForceEligibility() void {
 fn blueShadowContactDecisions() void {
     const apply = @import("cadence_gate.zig").apply;
     const firstTarget = @import("force_request.zig").force_request_first_target;
+    const saberDamage = @import("projectile_actor_branch.zig").labSaberDamage;
     mode = 58;
     setup();
     frame.level = 73;
@@ -1339,8 +1340,9 @@ fn blueShadowContactDecisions() void {
     check(@src(), firstTarget(actor, 0) == 0);
     check(@src(), firstTarget(actor, support + 0x50) == support + 0x50);
     check(@src(), firstTarget(actor, task) == task);
-    check(@src(), frame.fire_task_gate_count == 7);
-    for (frame.fire_task_gates[0..7]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
+    win.store(i16, other + 0xdc0, 321);
+    check(@src(), saberDamage(other, 0) == 0 and frame.fire_task_gate_count == 8);
+    for (frame.fire_task_gates[0..8]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
     client = true;
@@ -1360,6 +1362,8 @@ fn blueShadowContactDecisions() void {
     check(@src(), firstTarget(actor, 0) == support + 0x250);
     put(gizmo + 0x150, wrapper);
     check(@src(), firstTarget(actor, 0) == wrapper);
+    check(@src(), saberDamage(other, 1) == 0 and s.fire_task_cursor == 8);
+    check(@src(), saberDamage(other, 1) == 0 and s.fire_task_cursor == 8);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 

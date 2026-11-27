@@ -21,6 +21,25 @@ export const projectile_player_hit_native: usize = 0x96a4c0;
 export const projectile_hit_action_continue: usize = 0x96a95a;
 
 pub export var clonewars_projectile_actor_branch_debug: [4]u32 = @splat(0);
+pub export var clonewars_lab_saber_damage_debug: [4]u32 = @splat(0);
+
+pub fn labSaberDamage(actor: usize, amount: c_int) c_int {
+    var lease: s.Lease = undefined;
+    if (amount < 0 or amount > 127 or !s.ready(&lease) or s.journal.frame.?.level != 73 or
+        !s.valid(actor, 0x1440) or s.read(i16, actor + 0xdc0) != 321) return amount;
+    const frame = s.journal.frame.?;
+    var clock = s.read(u32, 0xfb4b6c);
+    if (s.journal.host == 0) {
+        const slot = s.entities_slot(actor);
+        const generation = s.entities_observed_generation(actor);
+        if (slot < 0 or generation == 0 or !s.live(&lease)) return amount;
+        // A local hit can reach health subtraction after the host took an earlier reaction branch.
+        if (s.fire_task_cursor >= frame.fire_task_gate_count) return 0;
+        const next = &frame.fire_task_gates[s.fire_task_cursor];
+        if (next.kind != p.SYNC_ACTOR_LAB_SABER_DAMAGE or next.slot != @as(u32, @intCast(slot))) return 0;
+    }
+    return @import("cadence_gate.zig").apply(actor, p.SYNC_ACTOR_LAB_SABER_DAMAGE, 0, 0, amount, @ptrCast(&clock), &clonewars_lab_saber_damage_debug);
+}
 
 export fn projectile_actor_branch(actor: usize, object: usize, local: c_int) usize {
     const saved = s.win.GetLastError();

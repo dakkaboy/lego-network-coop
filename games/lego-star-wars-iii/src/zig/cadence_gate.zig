@@ -29,6 +29,7 @@ fn length(kind: u32) usize {
         p.SYNC_ACTOR_MELEE_CONTACT => @sizeOf(p.SyncMeleeContact),
         p.SYNC_ACTOR_SABER_TARGET => @sizeOf(p.SyncSaberQueue),
         p.SYNC_ACTOR_PROJECTILE_BRANCH => @sizeOf([2]u32),
+        p.SYNC_ACTOR_LAB_SABER_DAMAGE => @sizeOf(u32),
         p.SYNC_ACTOR_FORCE_ELIGIBILITY => @sizeOf([4]u32),
         else => @sizeOf(p.SyncFireTaskState),
     };
@@ -38,6 +39,7 @@ fn contextFailure(gate: *const p.SyncFireTaskGate, state: [*]const u8) u32 {
     switch (gate.kind) {
         p.SYNC_ACTOR_FORCE_ELIGIBILITY => if (!std.mem.eql(u8, data.storage[0..4], state[0..4])) return 20,
         p.SYNC_ACTOR_PROJECTILE_BRANCH => if (!std.mem.eql(u8, data.storage[0..8], state[0..8])) return 29,
+        p.SYNC_ACTOR_LAB_SABER_DAMAGE => if (!std.mem.eql(u8, data.storage[0..4], state[0..4])) return 29,
         p.SYNC_ACTOR_SABER_TARGET => {
             const local = s.read(p.SyncSaberQueue, @intFromPtr(state));
             if (data.saber_target.clock != local.clock or

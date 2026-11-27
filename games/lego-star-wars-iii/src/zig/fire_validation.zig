@@ -59,6 +59,7 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
             p.SYNC_ACTOR_MELEE_CONTACT => @sizeOf(p.SyncMeleeContact),
             p.SYNC_ACTOR_SABER_TARGET => @sizeOf(p.SyncSaberQueue),
             p.SYNC_ACTOR_PROJECTILE_BRANCH => @sizeOf([2]u32),
+            p.SYNC_ACTOR_LAB_SABER_DAMAGE => @sizeOf(u32),
             p.SYNC_ACTOR_FORCE_ELIGIBILITY => @sizeOf([4]u32),
             else => @sizeOf(p.SyncFireTaskState),
         };
@@ -85,6 +86,7 @@ pub fn valid(g: *const p.SyncFireTaskGate) bool {
                 (g.flags == 1 and (g.character == 156 or g.character == 188) and g.value == 1) or
                 (g.flags == 2 and g.character == 184 and boolean)),
         p.SYNC_ACTOR_SABER_TARGET => return clean and (g.character == 184 or g.character == 191) and g.value == 0 and saberQueueValid(&data.saber_target),
+        p.SYNC_ACTOR_LAB_SABER_DAMAGE => return clean and g.character == 321 and g.value >= 0 and g.value <= 127,
         p.SYNC_ACTOR_MELEE_CONTACT => return g.action == 0 and data.melee_contact.attacker_slot < p.SYNC_MAX_ACTORS and data.melee_contact.attacker_generation != 0 and switch (g.flags) {
             0 => g.value == 1 and data.melee_contact.attack_pool_slot == 0 and @as(u32, @bitCast(data.melee_contact.impact_time)) == 0,
             1 => boolean and data.melee_contact.attack_pool_slot < 4096 and std.math.isFinite(data.melee_contact.impact_time) and data.melee_contact.impact_time >= 0,

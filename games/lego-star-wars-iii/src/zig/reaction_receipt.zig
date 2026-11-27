@@ -62,7 +62,14 @@ pub export fn reaction_damage_begin(receipt: *s.Receipt, actor: usize, source: u
     }
 }
 pub export var clonewars_projectile_damage_corrections: u32 = 0;
+pub var lab_saber_damage: ?*const fn (usize, c_int) c_int = null;
 pub export fn reaction_projectile_damage_amount(actor: usize, amount: c_int) c_int {
+    if (s.combat_damage_native_caller() == 0x9b36e0) {
+        const saved = s.win.GetLastError();
+        defer s.win.SetLastError(saved);
+        if (lab_saber_damage) |decide| return decide(actor, amount);
+        return amount;
+    }
     if (amount < 0 or s.combat_damage_native_caller() != 0x81f27f) return amount;
     const saved = s.win.GetLastError();
     defer s.win.SetLastError(saved);
