@@ -1903,13 +1903,16 @@ fn blueShadowPadmeSupport() void {
         if (followed_by_jar_jar) _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
         check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
     }
-    for (0..5) |variant| {
+    for (0..6) |variant| {
         const trailing = variant == 1;
+        const rex = variant == 5;
         const follows_manager_checks = variant >= 3;
-        const admitted: c_int = @intFromBool(variant == 4);
+        const admitted: c_int = @intFromBool(variant >= 4);
+        frame.level = if (rex) 71 else 74;
+        win.store(i16, actor + 0xdc0, if (rex) 156 else 188);
         win.store(i16, other + 0xdc0, switch (variant) {
             3 => 184,
-            4 => 181,
+            4, 5 => 181,
             else => 199,
         });
         const prior_kind: u32 = if (variant == 2) p.SYNC_ACTOR_SPELLIT_ADMISSION else p.SYNC_ACTOR_SPELLIT_QUERY;
@@ -1936,6 +1939,8 @@ fn blueShadowPadmeSupport() void {
         };
         check(@src(), ci.cadence_finish() != 0 and s.fire_task_cursor == frame.fire_task_gate_count and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
     }
+    frame.level = 74;
+    win.store(i16, actor + 0xdc0, 188);
     win.store(i16, other + 0xdc0, 199);
 
     win.store(f32, actor + 0x24, -6.6884594);
