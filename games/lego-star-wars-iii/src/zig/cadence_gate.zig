@@ -274,8 +274,10 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
     const blue_shadow_motion = blue_shadow_clone or blue_shadow_droid;
     const swamp_aim = frame.level == 70 and state != null and (droidAim(head.kind, head.character) or declinedSwampTargetProbe(head));
     const corridor_aim = frame.level == 71 and state != null;
+    const swamp_probe = swamp_aim and kind == p.SYNC_ACTOR_PRIMARY_PERCEPTION and
+        flags == p.SYNC_PERCEPTION_SCRIPT_ATTACK_TARGET and action == 0 and local == 0;
     const droid_aim = (frame.level == 29 or frame.level == 70 or corridor_aim) and (droidAim(head.kind, head.character) or swamp_aim) and s.valid(actor, 0x1440) and
-        droidAim(kind, s.read(i16, actor + 0xdc0));
+        (droidAim(kind, s.read(i16, actor + 0xdc0)) or (swamp_probe and combatDroid(s.read(i16, actor + 0xdc0))));
     if (!competitor and !companion and !blue_shadow_motion and !droid_aim) return null;
     if ((lab_party and after_force == null) or corridor_party) {
         const force = &head.payload.force;
@@ -289,6 +291,7 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
     if (blue_shadow_droid and droidDecisionClock(head) != motion_clock) return null;
     const aim_clock = if ((swamp_aim or corridor_aim) and droid_aim) switch (kind) {
         p.SYNC_ACTOR_AIM_BASE => s.read(p.SyncAimBaseState, @intFromPtr(state.?)).clock,
+        p.SYNC_ACTOR_PRIMARY_PERCEPTION => s.read(p.SyncPrimaryPerceptionState, @intFromPtr(state.?)).clock,
         else => s.read(p.SyncAimTaskState, @intFromPtr(state.?)).clock,
     } else 0;
     if ((swamp_aim or corridor_aim) and droid_aim and droidDecisionClock(head) != aim_clock) return null;
