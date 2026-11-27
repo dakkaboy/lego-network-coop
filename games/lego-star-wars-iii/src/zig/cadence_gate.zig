@@ -272,7 +272,7 @@ fn replayEarlyActorGate(op: *const s.Lease, actor: usize, kind: u32, flags: u16,
     const blue_shadow_droid = corridor_turret or
         (frame.level == 70 and blueShadowDroidMotion(motion_character) and blueShadowDroidDecision(head));
     const blue_shadow_motion = blue_shadow_clone or blue_shadow_droid;
-    const swamp_aim = frame.level == 70 and state != null and declinedSwampTargetProbe(head);
+    const swamp_aim = frame.level == 70 and state != null and (droidAim(head.kind, head.character) or declinedSwampTargetProbe(head));
     const corridor_aim = frame.level == 71 and state != null;
     const droid_aim = (frame.level == 29 or frame.level == 70 or corridor_aim) and (droidAim(head.kind, head.character) or swamp_aim) and s.valid(actor, 0x1440) and
         droidAim(kind, s.read(i16, actor + 0xdc0));
