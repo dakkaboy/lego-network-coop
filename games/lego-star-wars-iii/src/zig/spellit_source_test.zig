@@ -484,4 +484,13 @@ pub fn main() void {
     check(@src(), level.resolve(corridor_key[0], corridor_key[1]) == body);
     win.store(f32, receiver + 0x78, 9.21258);
     check(@src(), level.source(body, &support_key) and !std.mem.eql(u32, &corridor_key, &support_key));
+    bytes(body_name, "Canister_Dummy\x00");
+    win.store(u8, body + 0x19, 0x26);
+    win.store(f32, receiver + 0x70, 2.637355);
+    win.store(f32, receiver + 0x78, 41.57484);
+    check(@src(), level.source(body, &support_key));
+    const canister_key = support_key;
+    bytes(counted, &.{ 7, '#', '1', '2', '5', '3', 0 });
+    check(@src(), level.source(body, &support_key) and std.mem.eql(u32, &canister_key, &support_key));
+    check(@src(), level.resolve(canister_key[0], canister_key[1]) == body);
 }

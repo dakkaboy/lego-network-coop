@@ -94,26 +94,29 @@ fn key(read: *Reader, ctx: Context, body: usize, output: *Identity) bool {
     if (!read.readable(name, 1)) return false;
     const stored = win.load(u8, name);
     if (stored < 3 or !read.readable(name, stored) or win.load(u8, name + stored - 1) != 0) return false;
-    const corridor_box = kind == 0x40 and body_class == 0x869eac and shape_class == 0x8695d4 and owner_class == 0x820f64 and
-        named(read, filename, "BlueShadowVirus_C_temp.led") and named(read, win.load(usize, body + 0x1c), "Black_Box") and
-        win.load(u8, name + 1) == '#';
+    const label = win.load(usize, body + 0x1c);
+    const blue_shadow_object = body_class == 0x869eac and shape_class == 0x8695d4 and owner_class == 0x820f64 and
+        named(read, filename, "BlueShadowVirus_C_temp.led") and win.load(u8, name + 1) == '#';
+    const corridor_box = blue_shadow_object and kind == 0x40 and named(read, label, "Black_Box");
+    const lab_canister = blue_shadow_object and kind == 0x20 and named(read, label, "Canister_Dummy") and
+        win.load(usize, body + 0x14) == 0 and win.load(usize, body + 0x98) == 0;
     var hash: Hash = .{};
-    if (kind == 0x20 and !staticLevelSupport(read, &hash, body, owner, name + 1, stored - 1, filename, .{ body_class, shape_class, owner_class })) return false;
+    if (kind == 0x20 and !lab_canister and !staticLevelSupport(read, &hash, body, owner, name + 1, stored - 1, filename, .{ body_class, shape_class, owner_class })) return false;
     hash.bytes("level-scene-character-support");
     hash.number(body_class);
     hash.number(shape_class);
     if (!@import("support_shape.zig").geometry(read, &hash, win.load(usize, body + 0x24), shape_class)) return false;
     hash.number(owner_class);
     if (!text(read, &hash, ctx.world + 0x81) or !text(read, &hash, filename) or !text(read, &hash, win.load(usize, entry + 0x40))) return false;
-    if (corridor_box) {
+    if (corridor_box or lab_canister) {
         for (2..stored - 1) |i| if (!std.ascii.isDigit(win.load(u8, name + i))) return false;
-        // The same authored box receives a different generated owner number on each peer.
+        // Generated owner numbers can differ between peers for the same authored object.
         const placement = win.load([16]f32, owner + 0x40);
         if (!@import("validation.zig").finite(placement)) return false;
-        hash.bytes("blue-shadow-corridor-box");
+        hash.bytes(if (lab_canister) "blue-shadow-lab-canister" else "blue-shadow-corridor-box");
         for (placement) |value| hash.number(if (value == 0) 0 else @as(u32, @bitCast(value)));
     } else if (kind == 0x40 and !text(read, &hash, name + 1)) return false;
-    if (!text(read, &hash, win.load(usize, body + 0x1c))) return false;
+    if (!text(read, &hash, label)) return false;
     if (read.nameLength(name + 1) != @as(u32, stored) - 1) return false;
     const legacy = hash.words[0..2].*;
     const origin = @import("zillo_support_origin.zig").append(&hash, ctx.world, owner, body);
