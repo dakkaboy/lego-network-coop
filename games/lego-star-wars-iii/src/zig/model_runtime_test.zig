@@ -222,7 +222,7 @@ fn run() Snapshot {
             24...28, 33...35, 39...49, 53, 54 => 73,
             29, 32, 37, 50 => 71,
             31 => 74,
-            36, 38, 51, 52 => 70,
+            36, 38, 51, 52, 55 => 70,
             else => 64,
         };
         put(actor + 0x4c, 0x400);
@@ -238,6 +238,7 @@ fn run() Snapshot {
             44 => 1,
             25, 52 => 92,
             53 => 11,
+            55 => 0,
             29 => 114,
             32 => 13,
             40 => 102,
@@ -248,6 +249,7 @@ fn run() Snapshot {
         });
     }
     if (mode == 41) put(provider + 0xb0, 4);
+    if (mode == 55) put(provider + 0xb0, 3);
     enter(&b);
     source();
     if (mode == 10) source();
@@ -266,6 +268,7 @@ fn run() Snapshot {
         saved[17] = 0x3e800000;
         saved[19] = 0x3f000000;
         put(provider + 0xb0, if (mode >= 47) @as(u32, 1) else 2);
+        if (mode == 55) put(provider + 0xb0, 3);
         win.store(u16, actor + 0x76, 5);
         put(actor + 0xcf4, 0x3f000000);
         win.store(u8, model_object + 0x42, 1);
@@ -279,7 +282,7 @@ fn run() Snapshot {
         if (mode >= 18) win.store(u16, actor + 0x2f4, switch (mode) {
             18, 27, 54 => 1,
             19, 20, 33, 39, 46 => 10,
-            24, 25, 29, 40, 41, 47...50, 52 => 0xffff,
+            24, 25, 29, 40, 41, 47...50, 52, 55 => 0xffff,
             28, 30, 31, 32, 35, 37 => 114,
             34, 53 => 29,
             42 => 102,
@@ -545,6 +548,10 @@ pub fn main() void {
     mode = 52;
     const swamp_host_landing = run();
     check(@src(), swamp_host_landing.finish != 0 and swamp_host_landing.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 0xffff);
+    mode = 55;
+    const swamp_zero_action = run();
+    check(@src(), swamp_zero_action.finish != 0 and swamp_zero_action.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 0xffff);
     mode = 37;
     const corridor_droid = run();
