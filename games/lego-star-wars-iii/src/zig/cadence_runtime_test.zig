@@ -1976,17 +1976,17 @@ fn blueShadowPadmeSupport() void {
     defer put(0xfb4940, 0);
     query.manager_class = 0x84c2ac;
     query.caller_site = 0x457f0a;
-    for (0..4) |variant| {
-        win.store(u16, other + 0xdc0, if (variant == 3) 184 else 199);
-        const empty_query = variant == 1;
+    for (0..5) |variant| {
+        win.store(u16, other + 0xdc0, if (variant >= 3) 184 else 199);
+        const empty_query = variant == 1 or variant == 4;
         const stages: []const u16 = switch (variant) {
             0, 3 => &.{ 4, 5, 2, 3 },
-            1 => &.{ 4, 5, 2, 0, 1 },
+            1, 4 => &.{ 4, 5, 2, 0, 1 },
             else => &.{ 4, 5 },
         };
         const results: []const c_int = switch (variant) {
             0, 3 => &.{ 0, 1, 0, 0 },
-            1 => &.{ 0, 1, 1, 0, 1 },
+            1, 4 => &.{ 0, 1, 1, 0, 1 },
             else => &.{ 0, 0 },
         };
         client = false;
@@ -1998,6 +1998,10 @@ fn blueShadowPadmeSupport() void {
         }
         if (empty_query) _ = gate.apply(actor, p.SYNC_ACTOR_SPELLIT_QUERY, 0, 0, 0, @ptrCast(&query), &debug);
         _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        if (variant == 4) {
+            _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 0, @ptrCast(&admission), &debug);
+            _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 0, @ptrCast(&admission), &debug);
+        }
         check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
         client = true;
@@ -2005,6 +2009,10 @@ fn blueShadowPadmeSupport() void {
         check(@src(), ci.cadence_bind_cohort(&token) != 0 and ci.cadence_frame_lease_get(&lease) != 0 and ci.cadence_begin(frame, 0) != 0);
         _ = gate.apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
         _ = gate.apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+        if (variant == 4) {
+            _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 4, 0, 0, @ptrCast(&admission), &debug);
+            _ = gate.apply(other, p.SYNC_ACTOR_SPELLIT_ADMISSION, 5, 0, 0, @ptrCast(&admission), &debug);
+        }
         check(@src(), s.fire_task_cursor == frame.fire_task_gate_count and ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
     }
 }

@@ -395,7 +395,8 @@ fn skipSpellItNoOp(op: *const s.Lease, actor: usize, kind: u32, state: [*]const 
         p.SYNC_ACTOR_CHARACTER_MOTION => {
             const matches_party = if (frame.level == 74)
                 previous.character == 188 and (next.character == 199 or
-                    (next.character == 184 and !manager_declined and !empty_query))
+                    (next.character == 184 and !manager_declined and
+                        (!empty_query or followedByManagerChecks(frame, next_index, next, clock, 0))))
             else
                 previous.character == 176 and next.character == 138;
             if (!matches_party or next.payload.character_motion.clock != clock or
@@ -472,9 +473,9 @@ pub fn skipTrailingPadmeSupport(op: *const s.Lease) void {
     }
 }
 
-fn followedByManagerChecks(frame: *const p.SyncFrame, cursor: u32, next: *const p.SyncFireTaskGate, clock: u32, admitted: c_int) bool {
-    if (cursor + 3 >= frame.fire_task_gate_count) return false;
-    for ([_]u16{ 4, 5 }, cursor + 2..) |stage, index| {
+fn followedByManagerChecks(frame: *const p.SyncFrame, motion_index: usize, next: *const p.SyncFireTaskGate, clock: u32, admitted: c_int) bool {
+    if (motion_index + 2 >= frame.fire_task_gate_count) return false;
+    for ([_]u16{ 4, 5 }, motion_index + 1..) |stage, index| {
         const entry = &frame.fire_task_gates[index];
         if (entry.kind != p.SYNC_ACTOR_SPELLIT_ADMISSION or entry.slot != next.slot or entry.generation != next.generation or
             entry.flags != stage or entry.action != 0 or entry.value != admitted or entry.payload.state.repeat != clock) return false;
@@ -495,7 +496,7 @@ fn skipAbsentBlueShadowMotionDecision(op: *const s.Lease, actor: usize, state: [
     if (frame.level == 71 and support.kind == p.SYNC_FIRE_ATTACK_SUPPORT) {
         if (support.character != 156 or support.value != 3 or previous.kind != p.SYNC_ACTOR_SPELLIT_QUERY or
             previous.payload.spellit.clock != clock or next.character != 181 or next.slot == support.slot or
-            !followedByManagerChecks(frame, cursor, next, clock, 1)) return;
+            !followedByManagerChecks(frame, cursor + 1, next, clock, 1)) return;
     } else if (frame.level == 71) {
         if (support.kind != p.SYNC_ACTOR_FORCE_ELIGIBILITY or support.flags != 3 or support.action != 0 or support.value != 0 or
             previous.kind != p.SYNC_ACTOR_CHARACTER_MOTION or previous.payload.character_motion.clock != clock or
@@ -513,7 +514,7 @@ fn skipAbsentBlueShadowMotionDecision(op: *const s.Lease, actor: usize, state: [
         if (!padmeSupportNoOp(previous, support, clock)) return;
         if (next.character != 199) {
             if ((next.character != 184 and next.character != 181) or
-                !followedByManagerChecks(frame, cursor, next, clock, @intFromBool(next.character == 181))) return;
+                !followedByManagerChecks(frame, cursor + 1, next, clock, @intFromBool(next.character == 181))) return;
         }
     }
     const identity = s.reference(next);
