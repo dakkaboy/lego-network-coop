@@ -1343,6 +1343,10 @@ fn blueShadowContactDecisions() void {
     win.store(i16, other + 0xdc0, 321);
     check(@src(), saberDamage(other, 0) == 0 and frame.fire_task_gate_count == 8);
     for (frame.fire_task_gates[0..8]) |*entry| check(@src(), @import("fire_validation.zig").valid(entry));
+    var motion = std.mem.zeroes(p.SyncCharacterMotionState);
+    motion.clock = win.load(u32, 0xfb4b6c);
+    _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    _ = apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0);
 
     client = true;
@@ -1364,6 +1368,10 @@ fn blueShadowContactDecisions() void {
     check(@src(), firstTarget(actor, 0) == wrapper);
     check(@src(), saberDamage(other, 1) == 0 and s.fire_task_cursor == 8);
     check(@src(), saberDamage(other, 1) == 0 and s.fire_task_cursor == 8);
+    _ = apply(other, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
+    var support_value: c_int = 3;
+    check(@src(), cb.cadence_apply_attack_support(other, &support_value) == 1 and s.fire_task_cursor == 9);
+    _ = apply(actor, p.SYNC_ACTOR_CHARACTER_MOTION, 0, 0, 0, @ptrCast(&motion), &debug);
     check(@src(), ci.cadence_finish() != 0 and ci.cadence_abort_frame(&lease) != 0 and fault == 0);
 }
 
