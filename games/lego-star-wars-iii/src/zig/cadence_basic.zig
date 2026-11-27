@@ -103,6 +103,18 @@ pub export fn cadence_apply_attack_support(actor: usize, support: *c_int) c_int 
     if (s.ready(&lease) and s.journal.host == 0) {
         const frame = s.journal.frame.?;
         const cursor = s.fire_task_cursor;
+        if (frame.level == 73 and cursor != 0 and cursor < frame.fire_task_gate_count) {
+            const previous = &frame.fire_task_gates[cursor - 1];
+            const next = &frame.fire_task_gates[cursor];
+            const clock = s.read(u32, 0xfb4b6c);
+            if (previous.kind == p.SYNC_ACTOR_CHARACTER_MOTION and previous.character == 321 and
+                next.kind == p.SYNC_ACTOR_CHARACTER_MOTION and next.slot != previous.slot and
+                previous.payload.character_motion.clock == clock and next.payload.character_motion.clock == clock)
+            {
+                const identity = s.reference(previous);
+                if (s.entities_resolve_reference(&identity) == actor and s.live(&lease)) return 1;
+            }
+        }
         if (frame.level == 74 and cursor != 0 and cursor <= frame.fire_task_gate_count) {
             const previous = &frame.fire_task_gates[cursor - 1];
             const clock = s.read(u32, 0xfb4b6c);
