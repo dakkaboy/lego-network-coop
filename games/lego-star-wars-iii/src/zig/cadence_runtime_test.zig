@@ -1966,15 +1966,16 @@ fn blueShadowPadmeSupport() void {
     defer put(0xfb4940, 0);
     query.manager_class = 0x84c2ac;
     query.caller_site = 0x457f0a;
-    for (0..3) |variant| {
+    for (0..4) |variant| {
+        win.store(u16, other + 0xdc0, if (variant == 3) 184 else 199);
         const empty_query = variant == 1;
         const stages: []const u16 = switch (variant) {
-            0 => &.{ 4, 5, 2, 3 },
+            0, 3 => &.{ 4, 5, 2, 3 },
             1 => &.{ 4, 5, 2, 0, 1 },
             else => &.{ 4, 5 },
         };
         const results: []const c_int = switch (variant) {
-            0 => &.{ 0, 1, 0, 0 },
+            0, 3 => &.{ 0, 1, 0, 0 },
             1 => &.{ 0, 1, 1, 0, 1 },
             else => &.{ 0, 0 },
         };

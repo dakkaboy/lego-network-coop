@@ -393,7 +393,11 @@ fn skipSpellItNoOp(op: *const s.Lease, actor: usize, kind: u32, state: [*]const 
     const clock = previous.payload.character_motion.clock;
     switch (kind) {
         p.SYNC_ACTOR_CHARACTER_MOTION => {
-            const matches_party = if (frame.level == 74) previous.character == 188 and next.character == 199 else previous.character == 176 and next.character == 138;
+            const matches_party = if (frame.level == 74)
+                previous.character == 188 and (next.character == 199 or
+                    (next.character == 184 and !manager_declined and !empty_query))
+            else
+                previous.character == 176 and next.character == 138;
             if (!matches_party or next.payload.character_motion.clock != clock or
                 s.read(p.SyncCharacterMotionState, @intFromPtr(state)).clock != clock) return;
         },
