@@ -219,7 +219,7 @@ fn run() Snapshot {
     if (mode >= 18) {
         frame.level = switch (mode) {
             20 => 63,
-            24...28, 33...35, 39...49 => 73,
+            24...28, 33...35, 39...49, 53 => 73,
             29, 32, 37, 50 => 71,
             31 => 74,
             36, 38, 51, 52 => 70,
@@ -227,7 +227,7 @@ fn run() Snapshot {
         };
         put(actor + 0x4c, 0x400);
         if (mode >= 24) win.store(i16, actor + 0xdc0, switch (mode) {
-            24...27, 33, 34, 43, 45 => 201,
+            24...27, 33, 34, 43, 45, 53 => 201,
             35, 37, 40, 42, 47...49 => 333,
             46 => 337,
             else => 321,
@@ -237,6 +237,7 @@ fn run() Snapshot {
             34, 38, 41 => 10,
             44 => 1,
             25, 52 => 92,
+            53 => 11,
             29 => 114,
             32 => 13,
             40 => 102,
@@ -280,7 +281,7 @@ fn run() Snapshot {
             19, 20, 33, 39, 46 => 10,
             24, 25, 29, 40, 41, 47...50, 52 => 0xffff,
             28, 30, 31, 32, 35, 37 => 114,
-            34 => 29,
+            34, 53 => 29,
             42 => 102,
             43 => 11,
             44 => 114,
@@ -502,6 +503,10 @@ pub fn main() void {
     const lab_vindi_reaction = run();
     check(@src(), lab_vindi_reaction.finish != 0 and lab_vindi_reaction.fault == 0);
     check(@src(), win.load(u16, actor + 0x2f4) == 20 and win.load(u32, actor + 0x4c) == 0x400);
+    mode = 53;
+    const lab_vindi_walk = run();
+    check(@src(), lab_vindi_walk.finish != 0 and lab_vindi_walk.fault == 0);
+    check(@src(), win.load(u16, actor + 0x2f4) == 29);
     mode = 44;
     const lab_b1_motion = run();
     check(@src(), lab_b1_motion.finish != 0 and lab_b1_motion.fault == 0);
